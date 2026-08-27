@@ -10,5 +10,15 @@
   },
   "observability": {
     "enabled": true
+  },
+  "vars": {
+    "SUPABASE_URL": "https://ujyvvykxakgtbpwdnsnd.supabase.co",
+    "LINE_LOGIN_CHANNEL_ID": "2011286846",
+    "LINE_LOGIN_REDIRECT_URI": "https://jarvis-webapp.tonteng4455.workers.dev/api/auth/callback",
+    "R2_ACCOUNT_ID": "211184922480287e29b5087106a7cdae",
+    "R2_ACCESS_KEY_ID": "014c6b2a1094527446cc8985361fd8ef",
+    "R2_BUCKET_NAME": "jarvis-line-bot-files",
+    "USER_CAP": "200",
+    "PREMIUM_CAP_BONUS_SLOTS": "5"
   }
 }
