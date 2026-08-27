@@ -1,11 +1,9 @@
 'use client';
 // app/dashboard/notes/page.jsx — Google Keep-style notes (Premium only).
 //
-// Everything auto-saves — no "Save" button anywhere, matching Keep.
-// Also: auto-refreshes periodically (so a note added via the LINE bot
-// shows up here without a manual page reload), supports drag-to-reorder
-// within a section, and has a "grouped by category" view alongside the
-// normal pinned/others masonry view.
+// Everything auto-saves — no explicit "Save" required for most actions,
+// but title/content edits wait until you click "เสร็จสิ้น" or click
+// away before hitting the network (local state only until then).
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { DashNav, PremiumUpsell } from '../_components';
@@ -23,25 +21,50 @@ const COLORS = [
   { key: 'gray', label: 'เทา' },
 ];
 
-const REFRESH_MS = 8000; // auto-refresh interval — paused while any card is being edited
+const CATEGORIES = [
+  { key: 'general', label: '📄 ทั่วไป' },
+  { key: 'work', label: '💼 งาน' },
+  { key: 'personal', label: '🙋 ส่วนตัว' },
+  { key: 'idea', label: '💡 ไอเดีย' },
+  { key: 'shopping', label: '🛒 ช้อปปิ้ง' },
+];
+
+function categoryLabel(key) {
+  return CATEGORIES.find(c => c.key === key)?.label || key || 'ทั่วไป';
+}
 
 function colorBg(key) {
   return `var(--note-${key || 'default'})`;
 }
 
-// --- New-note composer: click to expand, auto-saves on blur ---
+// Textarea that grows to fit its content — no scrollbar, no cramped box.
+function AutoGrowTextarea({ value, onChange, placeholder, autoFocus, className }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) { ref.current.style.height = 'auto'; ref.current.style.height = `${ref.current.scrollHeight}px`; }
+  }, [value]);
+  return (
+    <textarea ref={ref} className={className} placeholder={placeholder} value={value}
+      onChange={onChange} autoFocus={autoFocus} rows={1} style={{ overflow: 'hidden' }} />
+  );
+}
+
+// --- New-note composer: click to expand, auto-grows, has a category
+// picker, and only saves when you click "เสร็จสิ้น" or click away. ---
 function Composer({ onCreate, onEditingChange }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [category, setCategory] = useState('general');
+  const [catOpen, setCatOpen] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => { onEditingChange(open); }, [open, onEditingChange]);
 
   async function commit() {
     if (!title.trim() && !content.trim()) { setOpen(false); return; }
-    await onCreate({ title, content });
-    setTitle(''); setContent(''); setOpen(false);
+    await onCreate({ title, content, category });
+    setTitle(''); setContent(''); setCategory('general'); setOpen(false);
   }
 
   useEffect(() => {
@@ -52,7 +75,7 @@ function Composer({ onCreate, onEditingChange }) {
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, title, content]);
+  }, [open, title, content, category]);
 
   if (!open) {
     return (
@@ -65,19 +88,30 @@ function Composer({ onCreate, onEditingChange }) {
     <div className="note-composer" ref={ref}>
       <input className="note-title-input" placeholder="หัวข้อ" value={title}
         onChange={e => setTitle(e.target.value)} autoFocus />
-      <textarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." rows={3}
-        value={content} onChange={e => setContent(e.target.value)} />
-      <div style={{ textAlign: 'right', marginTop: '0.4rem' }}>
+      <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content}
+        onChange={e => setContent(e.target.value)} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', position: 'relative' }}>
+        <button className="note-icon-btn" onClick={() => setCatOpen(v => !v)} onMouseDown={e => e.stopPropagation()}>
+          {categoryLabel(category)} ▾
+        </button>
+        {catOpen && (
+          <div className="note-swatch-row" style={{ position: 'absolute', top: '100%', left: 0, background: 'rgba(255,255,255,0.95)', borderRadius: 10, zIndex: 5, flexDirection: 'column', alignItems: 'stretch' }}>
+            {CATEGORIES.map(c => (
+              <span key={c.key} onClick={() => { setCategory(c.key); setCatOpen(false); }}
+                style={{ padding: '0.35rem 0.7rem', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{c.label}</span>
+            ))}
+          </div>
+        )}
         <button onClick={commit} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem' }}>เสร็จสิ้น</button>
       </div>
     </div>
   );
 }
 
-// --- One note card: click content to edit inline, auto-saves on blur.
-// Also draggable — dragging is handled by the parent grid (this just
-// wires up the native drag event handlers it's given as props). ---
-function NoteCard({ note, onUpdate, onDelete, onEditingChange, dragProps }) {
+// --- One note card: click content to edit inline (auto-grows). Saves
+// on "เสร็จสิ้น" or clicking away. Drag handle is its own small element
+// so dragging never swallows clicks on the toolbar buttons. ---
+function NoteCard({ note, onUpdate, onDelete, onEditingChange, onDragStart, onDragOverCard, onDropCard }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
@@ -87,27 +121,33 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, dragProps }) {
   useEffect(() => { if (!editing) { setTitle(note.title); setContent(note.content); } }, [note.title, note.content, editing]);
   useEffect(() => { onEditingChange(note.id, editing); }, [editing, note.id, onEditingChange]);
 
+  function saveEdit() {
+    setEditing(false);
+    if (title !== note.title || content !== note.content) onUpdate(note.id, { title, content });
+  }
+
   useEffect(() => {
     if (!editing) return;
     function onClickOutside(e) {
-      if (ref.current && !ref.current.contains(e.target)) {
-        setEditing(false);
-        if (title !== note.title || content !== note.content) {
-          onUpdate(note.id, { title, content });
-        }
-      }
+      if (ref.current && !ref.current.contains(e.target)) saveEdit();
     }
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, title, content]);
 
+  const isArchived = note.archived;
+
   return (
-    <div className="note-card" ref={ref} style={{ background: colorBg(note.color) }} {...dragProps}>
+    <div className="note-card" ref={ref} style={{ background: colorBg(note.color) }}
+      onDragOver={onDragOverCard} onDrop={onDropCard}>
       {editing ? (
         <>
           <input className="note-title-input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
-          <textarea className="note-content-textarea" rows={4} value={content} onChange={e => setContent(e.target.value)} />
+          <AutoGrowTextarea className="note-content-textarea" value={content} onChange={e => setContent(e.target.value)} />
+          <div style={{ textAlign: 'right', marginTop: '0.4rem' }}>
+            <button onClick={saveEdit} className="glass-btn" style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
+          </div>
         </>
       ) : (
         <div onClick={() => setEditing(true)} style={{ cursor: 'text', minHeight: 30 }}>
@@ -117,14 +157,24 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, dragProps }) {
       )}
 
       <div className="note-toolbar">
-        <span className="note-icon-btn" title="ลากเพื่อสลับตำแหน่ง" style={{ cursor: 'grab' }}>⠿</span>
-        <button className="note-icon-btn" title="ปักหมุด" onClick={() => onUpdate(note.id, { pinned: !note.pinned })}>
+        <span className="note-icon-btn" title="ลากเพื่อสลับตำแหน่ง" draggable
+          onDragStart={onDragStart} style={{ cursor: 'grab' }}>⠿</span>
+        <button className="note-icon-btn" title="ปักหมุด" onMouseDown={e => e.stopPropagation()}
+          onClick={() => onUpdate(note.id, { pinned: !note.pinned })}>
           {note.pinned ? '📌' : '📍'}
         </button>
-        <button className="note-icon-btn" title="สี" onClick={() => setPickerOpen(v => !v)}>🎨</button>
-        <button className="note-icon-btn" title="เก็บเข้าคลัง" onClick={() => onUpdate(note.id, { archived: true })}>🗄️</button>
-        <button className="note-icon-btn" title="ลบ" onClick={() => { if (confirm('ลบโน้ตนี้ใช่ไหม?')) onDelete(note.id); }}>🗑️</button>
-        <span className="muted" style={{ marginLeft: 'auto', fontSize: '0.65rem' }}>{note.category}</span>
+        <button className="note-icon-btn" title="สี" onMouseDown={e => e.stopPropagation()}
+          onClick={() => setPickerOpen(v => !v)}>🎨</button>
+        {isArchived ? (
+          <button className="note-icon-btn" title="ย้ายกลับไปโน้ตปกติ" onMouseDown={e => e.stopPropagation()}
+            onClick={() => onUpdate(note.id, { archived: false })}>↩️</button>
+        ) : (
+          <button className="note-icon-btn" title="เก็บเข้าคลัง" onMouseDown={e => e.stopPropagation()}
+            onClick={() => onUpdate(note.id, { archived: true })}>🗄️</button>
+        )}
+        <button className="note-icon-btn" title="ลบ" onMouseDown={e => e.stopPropagation()}
+          onClick={() => { if (confirm('ลบโน้ตนี้ใช่ไหม?')) onDelete(note.id); }}>🗑️</button>
+        <span className="muted" style={{ marginLeft: 'auto', fontSize: '0.65rem' }}>{categoryLabel(note.category)}</span>
       </div>
 
       {pickerOpen && (
@@ -133,6 +183,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, dragProps }) {
             <span key={c.key} title={c.label}
               className={`note-swatch${note.color === c.key ? ' active' : ''}`}
               style={{ background: colorBg(c.key) }}
+              onMouseDown={e => e.stopPropagation()}
               onClick={() => { onUpdate(note.id, { color: c.key }); setPickerOpen(false); }} />
           ))}
         </div>
@@ -141,14 +192,21 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, dragProps }) {
   );
 }
 
-// A masonry section whose cards can be dragged to reorder AMONG each
-// other (dragging is scoped per-section — e.g. pinned notes reorder
-// within pinned, others within others — matching how Keep itself keeps
-// pinned/unpinned as separate reorderable groups).
-function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorder }) {
+// A masonry section whose cards can be dragged to reorder among each
+// other. The drag HANDLE (⠿) is the only draggable element — not the
+// whole card — so dragging never intercepts clicks on the toolbar
+// buttons (pin/color/archive/delete), which native HTML5 drag-and-drop
+// otherwise tends to swallow when the entire card is draggable.
+function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorder, onDragStateChange }) {
   const dragIndex = useRef(null);
 
-  function handleDrop(targetIndex) {
+  function handleDragStart(i) {
+    dragIndex.current = i;
+    onDragStateChange(true);
+  }
+  function handleDrop(e, targetIndex) {
+    e.preventDefault();
+    onDragStateChange(false);
     const from = dragIndex.current;
     dragIndex.current = null;
     if (from === null || from === targetIndex) return;
@@ -167,12 +225,9 @@ function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorde
           onUpdate={onUpdate}
           onDelete={onDelete}
           onEditingChange={onEditingChange}
-          dragProps={{
-            draggable: true,
-            onDragStart: () => { dragIndex.current = i; },
-            onDragOver: (e) => e.preventDefault(),
-            onDrop: () => handleDrop(i),
-          }}
+          onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); handleDragStart(i); }}
+          onDragOverCard={(e) => e.preventDefault()}
+          onDropCard={(e) => handleDrop(e, i)}
         />
       ))}
     </div>
@@ -187,6 +242,7 @@ export default function NotesPage() {
   const [viewMode, setViewMode] = useState('all'); // 'all' | 'grouped'
   const [composerEditing, setComposerEditing] = useState(false);
   const editingIds = useRef(new Set());
+  const draggingRef = useRef(false);
 
   const load = useCallback(async (archived = showArchived) => {
     const res = await fetch(`/api/notes?archived=${archived}`);
@@ -198,18 +254,16 @@ export default function NotesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh — so a note added via the LINE bot shows up here
-  // without a manual reload. Paused while the composer or any card is
-  // actively being edited, so a poll never clobbers in-progress typing.
-  // Also simply doesn't run at all for a locked (Free) account — there's
-  // nothing to refresh behind the paywall, so polling would just be
-  // wasted requests forever for as long as that tab stays open.
+  // Auto-refresh — a note added via the LINE bot shows up here without
+  // a manual reload. Paused while: locked (nothing to refresh), the
+  // composer or any card is being edited, or a drag is in progress —
+  // a poll mid-drag or mid-typing would clobber unsaved local state.
   useEffect(() => {
     if (locked) return;
     const timer = setInterval(() => {
-      if (composerEditing || editingIds.current.size > 0) return;
+      if (composerEditing || editingIds.current.size > 0 || draggingRef.current) return;
       load();
-    }, REFRESH_MS);
+    }, 8000);
     return () => clearInterval(timer);
   }, [load, composerEditing, locked]);
 
@@ -217,10 +271,10 @@ export default function NotesPage() {
     if (isEditing) editingIds.current.add(id); else editingIds.current.delete(id);
   }, []);
 
-  async function createNote({ title, content }) {
+  async function createNote({ title, content, category }) {
     const res = await fetch('/api/notes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, content }),
+      body: JSON.stringify({ title, content, category }),
     });
     if (res.ok) load();
   }
@@ -240,8 +294,6 @@ export default function NotesPage() {
     await fetch(`/api/notes/${id}`, { method: 'DELETE' });
   }
 
-  // Persist a new drag order: assign sequential sort_order to just the
-  // notes in this section (pinned or others), save optimistically.
   async function reorderSection(reordered, sectionIds) {
     const idToOrder = new Map(reordered.map((n, i) => [n.id, i]));
     setNotes(prev => prev?.map(n => sectionIds.has(n.id) ? { ...n, sort_order: idToOrder.get(n.id) } : n));
@@ -296,11 +348,13 @@ export default function NotesPage() {
                 <>
                   <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>📌 ปักหมุด</div>
                   <DraggableSection notes={pinned} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing}
+                    onDragStateChange={(v) => { draggingRef.current = v; }}
                     onReorder={(r) => reorderSection(r, new Set(pinned.map(n => n.id)))} />
                   {others.length > 0 && <div className="text-white-muted" style={{ margin: '1rem 0 0.5rem', fontWeight: 600 }}>อื่นๆ</div>}
                 </>
               )}
               <DraggableSection notes={others} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing}
+                onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r) => reorderSection(r, new Set(others.map(n => n.id)))} />
             </>
           )}
@@ -308,9 +362,10 @@ export default function NotesPage() {
           {viewMode === 'grouped' && Object.entries(grouped).map(([category, catNotes]) => (
             <div key={category} style={{ marginBottom: '1.5rem' }}>
               <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>
-                🏷️ {category} <span style={{ opacity: 0.7 }}>({catNotes.length})</span>
+                🏷️ {categoryLabel(category)} <span style={{ opacity: 0.7 }}>({catNotes.length})</span>
               </div>
               <DraggableSection notes={catNotes} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing}
+                onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r) => reorderSection(r, new Set(catNotes.map(n => n.id)))} />
             </div>
           ))}
