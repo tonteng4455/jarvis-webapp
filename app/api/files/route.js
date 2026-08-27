@@ -23,7 +23,7 @@ import { AwsClient } from 'aws4fetch';
 export const runtime = 'edge';
 
 export async function GET() {
-  const { session, isPremium } = await getPremiumSession(cookies());
+  const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
@@ -51,7 +51,7 @@ export async function GET() {
 }
 
 export async function DELETE(request) {
-  const session = await getSession(cookies());
+  const session = await getSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const { id } = await request.json();

@@ -7,7 +7,7 @@ import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 export const runtime = 'edge';
 
 export async function GET() {
-  const session = await getSession(cookies());
+  const session = await getSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
