@@ -12,7 +12,6 @@ import { cookies } from 'next/headers';
 import { getSession } from '../../../../lib/session';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 
-export const runtime = 'edge';
 
 export async function POST(request) {
   const session = await getSession(await cookies());

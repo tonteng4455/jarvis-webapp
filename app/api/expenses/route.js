@@ -4,7 +4,6 @@ import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../lib/premium';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 
-export const runtime = 'edge';
 
 export async function GET() {
   const { session, isPremium } = await getPremiumSession(await cookies());

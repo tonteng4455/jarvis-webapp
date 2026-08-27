@@ -20,7 +20,6 @@ import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 import { r2Bucket, presignGetUrl } from '../../../lib/r2';
 import { AwsClient } from 'aws4fetch';
 
-export const runtime = 'edge';
 
 export async function GET() {
   const { session, isPremium } = await getPremiumSession(await cookies());

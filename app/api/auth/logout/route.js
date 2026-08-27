@@ -2,7 +2,6 @@
 import { NextResponse } from 'next/server';
 import { SESSION_COOKIE_NAME } from '../../../../lib/session';
 
-export const runtime = 'edge';
 
 export async function POST(request) {
   const res = NextResponse.redirect(new URL('/login', request.url));

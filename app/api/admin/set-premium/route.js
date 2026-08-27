@@ -16,7 +16,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 
-export const runtime = 'edge';
 
 const USER_CAP = Number(process.env.USER_CAP) > 0 ? Number(process.env.USER_CAP) : 200;
 const PREMIUM_CAP_BONUS_SLOTS = Number(process.env.PREMIUM_CAP_BONUS_SLOTS) > 0 ? Number(process.env.PREMIUM_CAP_BONUS_SLOTS) : 5;

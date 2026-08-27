@@ -17,7 +17,6 @@ import { getSession } from '../../../../lib/session';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { presignPutUrl, r2Bucket } from '../../../../lib/r2';
 
-export const runtime = 'edge';
 
 export async function POST(request) {
   const session = await getSession(await cookies());

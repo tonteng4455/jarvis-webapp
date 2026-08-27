@@ -8,7 +8,6 @@
 import { NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 
-export const runtime = 'edge';
 
 export async function GET(request) {
   const state = randomBytes(16).toString('hex');

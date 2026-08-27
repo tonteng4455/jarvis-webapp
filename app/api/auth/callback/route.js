@@ -11,7 +11,6 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { createSessionToken, sessionCookieOptions } from '../../../../lib/session';
 
-export const runtime = 'edge';
 
 export async function GET(request) {
   const url = new URL(request.url);
