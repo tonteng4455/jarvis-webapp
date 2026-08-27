@@ -163,6 +163,73 @@ a { color: inherit; }
 .muted { color: #6b6f85; font-size: 0.78rem; }
 .text-white-muted { color: rgba(255,255,255,0.85); font-size: 0.8rem; }
 
+/* ---------- Notes (Keep-style) ---------- */
+:root {
+  --note-default: rgba(255,255,255,0.55);
+  --note-red: rgba(255,138,128,0.45);
+  --note-orange: rgba(255,183,94,0.45);
+  --note-yellow: rgba(255,224,102,0.45);
+  --note-green: rgba(149,224,153,0.45);
+  --note-teal: rgba(120,224,214,0.45);
+  --note-blue: rgba(130,177,255,0.45);
+  --note-purple: rgba(200,163,255,0.45);
+  --note-pink: rgba(255,158,204,0.45);
+  --note-gray: rgba(190,196,209,0.45);
+}
+.note-masonry {
+  column-count: 1;
+  column-gap: 0.85rem;
+}
+@media (min-width: 560px) { .note-masonry { column-count: 2; } }
+@media (min-width: 860px) { .note-masonry { column-count: 3; } }
+@media (min-width: 1200px) { .note-masonry { column-count: 4; } }
+.note-card {
+  break-inside: avoid;
+  margin-bottom: 0.85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 4px 20px rgba(31,38,135,0.08);
+  padding: 0.85rem 0.9rem 0.5rem;
+  transition: box-shadow 0.15s ease;
+  position: relative;
+}
+.note-card:hover { box-shadow: 0 8px 28px rgba(31,38,135,0.16); }
+.note-composer {
+  break-inside: avoid;
+  margin-bottom: 1.25rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.7);
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: blur(20px);
+  padding: 0.85rem 0.9rem;
+  box-shadow: 0 4px 20px rgba(31,38,135,0.1);
+}
+.note-title-input {
+  width: 100%; border: none; background: transparent; outline: none;
+  font-weight: 700; font-size: 0.95rem; margin-bottom: 0.35rem; color: #1a1d29;
+}
+.note-content-textarea {
+  width: 100%; border: none; background: transparent; outline: none; resize: none;
+  font-size: 0.85rem; color: #2c2f3d; font-family: inherit; line-height: 1.5;
+}
+.note-toolbar {
+  display: flex; align-items: center; gap: 0.35rem; margin-top: 0.5rem;
+  opacity: 0.85;
+}
+.note-icon-btn {
+  border: none; background: transparent; cursor: pointer; font-size: 0.95rem;
+  padding: 0.25rem 0.4rem; border-radius: 8px; line-height: 1;
+}
+.note-icon-btn:hover { background: rgba(0,0,0,0.06); }
+.note-swatch {
+  width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
+  border: 1.5px solid rgba(0,0,0,0.15); display: inline-block;
+}
+.note-swatch.active { border: 2px solid #4b3fd6; }
+.note-swatch-row { display: flex; gap: 0.4rem; flex-wrap: wrap; padding: 0.5rem 0.2rem; }
+
 /* ---------- Table (admin) — collapses to stacked cards on mobile ---------- */
 .glass-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .glass-table th { text-align: left; padding: 0.5rem; color: rgba(255,255,255,0.9); font-weight: 600; }
