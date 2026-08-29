@@ -57,13 +57,21 @@ function LiffEntryPageInner() {
         const idToken = window.liff.getIDToken();
         if (!idToken) { setStatus('❌ ไม่พบข้อมูลยืนยันตัวตนจาก LINE'); return; }
 
+        // Shape check, shown only if the verify step below fails — a
+        // real JWT is header.payload.signature (2 dots, fairly long).
+        // If liff.getIDToken() is returning something malformed (wrong
+        // scope, stale SDK state, etc.), this makes that visible
+        // directly on-screen instead of needing DevTools.
+        const tokenShape = `length=${idToken.length}, dots=${(idToken.match(/\./g) || []).length}, starts="${idToken.slice(0, 12)}..."`;
+
         const res = await fetch('/api/auth/liff', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          console.error('LIFF auth failed:', body);
-          setStatus(`❌ เข้าสู่ระบบไม่สำเร็จ: ${body.error || res.status}${body.detail ? ` — ${body.detail}` : ''}`);
+          console.error('LIFF auth failed:', body, 'token shape:', tokenShape);
+          const serverDebug = body.debug ? `\nserver เห็น: client_id=${body.debug.client_id_used}, token length=${body.debug.id_token_length}, dots=${body.debug.id_token_dots}` : '';
+          setStatus(`❌ เข้าสู่ระบบไม่สำเร็จ: ${body.error || res.status}${body.detail ? ` — ${body.detail}` : ''}\n\nclient เห็น: ${tokenShape}${serverDebug}`);
           return;
         }
 
@@ -83,7 +91,7 @@ function LiffEntryPageInner() {
 
   return (
     <main className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-      <p className="text-white-muted">{status}</p>
+      <p className="text-white-muted" style={{ whiteSpace: 'pre-wrap', textAlign: 'center', padding: '0 1rem' }}>{status}</p>
     </main>
   );
 }

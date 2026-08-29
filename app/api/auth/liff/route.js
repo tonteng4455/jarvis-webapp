@@ -30,7 +30,14 @@ export async function POST(request) {
     if (!verifyRes.ok) {
       const detail = await verifyRes.text();
       console.error('LIFF id_token verify failed:', detail);
-      return NextResponse.json({ error: 'invalid_id_token', detail }, { status: 401 });
+      return NextResponse.json({
+        error: 'invalid_id_token', detail,
+        // Cross-check info — lets us confirm the server actually used
+        // the right channel ID, and that the token it received wasn't
+        // truncated somewhere in transit (a real JWT is long, with
+        // exactly 2 dots separating header/payload/signature).
+        debug: { client_id_used: process.env.LINE_LOGIN_CHANNEL_ID, id_token_length: idToken.length, id_token_dots: (idToken.match(/\./g) || []).length },
+      }, { status: 401 });
     }
     const verified = await verifyRes.json(); // { sub, name, picture, ... }
     const lineUserId = verified.sub;
