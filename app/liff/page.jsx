@@ -60,7 +60,12 @@ function LiffEntryPageInner() {
         const res = await fetch('/api/auth/liff', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }),
         });
-        if (!res.ok) { setStatus('❌ เข้าสู่ระบบไม่สำเร็จ ลองปิดแล้วเปิดใหม่ครับ'); return; }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          console.error('LIFF auth failed:', body);
+          setStatus(`❌ เข้าสู่ระบบไม่สำเร็จ: ${body.error || res.status}${body.detail ? ` — ${body.detail}` : ''}`);
+          return;
+        }
 
         if (cancelled) return;
         const to = params.get('to') || '/dashboard';
