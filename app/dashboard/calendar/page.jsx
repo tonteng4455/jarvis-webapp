@@ -149,7 +149,17 @@ function CalendarPageInner() {
   async function cancelEvent(id) {
     if (!confirm('ยกเลิกนัดหมายนี้ใช่ไหม?')) return;
     const res = await fetch(`/api/calendar/${id}`, { method: 'DELETE' });
-    if (res.ok) load();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // Was silently doing nothing on failure before — no status
+      // message, no console log — so a failed delete just looked like
+      // "the button doesn't work" with zero clue why.
+      console.error('cancelEvent failed:', data);
+      setStatus(`❌ ยกเลิกไม่สำเร็จ: ${data.error || res.status}`);
+      return;
+    }
+    setStatus('✅ ยกเลิกนัดหมายแล้วครับ');
+    load();
   }
 
   return (

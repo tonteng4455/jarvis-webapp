@@ -12,15 +12,13 @@
     "enabled": true
   },
   "vars": {
-    "SUPABASE_URL": "https://ujyvvykxakgtbpwdnsnd.supabase.co",
-    "LINE_LOGIN_CHANNEL_ID": "2011286846",
+    "SUPABASE_URL": "https://xxxxx.supabase.co",
+    "LINE_LOGIN_CHANNEL_ID": "PUT_YOUR_CHANNEL_ID_HERE",
     "LINE_LOGIN_REDIRECT_URI": "https://jarvis-webapp.tonteng4455.workers.dev/api/auth/callback",
-    "R2_ACCOUNT_ID": "211184922480287e29b5087106a7cdae",
-    "R2_ACCESS_KEY_ID": "014c6b2a1094527446cc8985361fd8ef",
+    "R2_ACCOUNT_ID": "PUT_YOUR_ACCOUNT_ID_HERE",
+    "R2_ACCESS_KEY_ID": "PUT_YOUR_R2_ACCESS_KEY_ID_HERE",
     "R2_BUCKET_NAME": "jarvis-line-bot-files",
     "USER_CAP": "200",
-    "PREMIUM_CAP_BONUS_SLOTS": "5",
-    "WORKER_URL": "https://line-bot-engine.tonteng4455.workers.dev",
-    "NEXT_PUBLIC_LIFF_ID": "2011286846-CKLapBCE"
+    "PREMIUM_CAP_BONUS_SLOTS": "5"
   }
 }
