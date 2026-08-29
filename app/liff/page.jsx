@@ -11,8 +11,17 @@
 // go (?to=/dashboard/notes&id=123, etc).
 //
 // Query params:
-//   to  — destination path under /dashboard (defaults to /dashboard)
-//   id  — an item id to auto-open on that page (note/task/event)
+//   to    — destination path (defaults to /dashboard)
+//   id    — an item id to auto-open on that page (note/task/event) —
+//           only meaningful for Premium's full dashboard pages, which
+//           need a real logged-in session
+//   token — a scoped, single-item edit token (see lib/scopedToken.js on
+//           the API side) — used when to=/edit. The token itself IS
+//           the access grant; no LIFF login/session needed for this
+//           path at all, so it's handled first below and skips the
+//           whole login dance entirely (fewer steps, fewer failure
+//           points, and correct: a Free user's LIFF login has nothing
+//           to do with whether their scoped token is valid).
 
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -34,6 +43,16 @@ function LiffEntryPageInner() {
 
     async function run() {
       try {
+        const to = params.get('to') || '/dashboard';
+        const scopedToken = params.get('token');
+
+        // Scoped single-item edit link (Free users) — the token is
+        // the whole access grant, skip LIFF login/session entirely.
+        if (to === '/edit' && scopedToken) {
+          window.location.replace(`/edit?token=${encodeURIComponent(scopedToken)}`);
+          return;
+        }
+
         // Load the LIFF SDK dynamically — only this page needs it, no
         // reason to ship it on every route.
         await loadLiffSdk();
@@ -76,7 +95,6 @@ function LiffEntryPageInner() {
         }
 
         if (cancelled) return;
-        const to = params.get('to') || '/dashboard';
         const id = params.get('id');
         const dest = id ? `${to}${to.includes('?') ? '&' : '?'}id=${encodeURIComponent(id)}` : to;
         window.location.replace(dest);
