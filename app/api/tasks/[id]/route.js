@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../../lib/premium';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
+import { callBotInternal } from '../../../../lib/botWorker';
 
 const EDITABLE_FIELDS = ['task_name', 'priority', 'category', 'is_done', 'archived', 'recurrence', 'recurrence_time'];
 const RECURRENCE_FIELDS = ['recurrence', 'recurrence_time'];
@@ -43,7 +44,7 @@ export async function PATCH(request, { params }) {
 
   let recurrenceSync = null;
   if (RECURRENCE_FIELDS.some(f => f in updates)) {
-    recurrenceSync = await syncRecurrenceViaWorker(session.lineUserId, params.id);
+    recurrenceSync = await callBotInternal('/internal/task-recurrence', { userId: session.lineUserId, taskId: params.id });
   }
 
   return NextResponse.json({ task: data, recurrenceSync });
@@ -58,24 +59,4 @@ export async function DELETE(request, { params }) {
   const { error } = await supabase.from('tasks').delete().eq('id', params.id).eq('user_id', session.lineUserId);
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
   return NextResponse.json({ deleted: true });
-}
-
-async function syncRecurrenceViaWorker(userId, taskId) {
-  const workerUrl = process.env.WORKER_URL;
-  const secret = process.env.INTERNAL_API_SECRET;
-  if (!workerUrl || !secret) {
-    console.error('WORKER_URL/INTERNAL_API_SECRET not configured — cannot sync task routine to Google');
-    return { synced: false, error: 'not_configured' };
-  }
-  try {
-    const res = await fetch(`${workerUrl}/internal/task-recurrence`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': secret },
-      body: JSON.stringify({ userId, taskId }),
-    });
-    return await res.json();
-  } catch (e) {
-    console.error('syncRecurrenceViaWorker failed:', e);
-    return { synced: false, error: e.message };
-  }
 }
