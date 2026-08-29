@@ -1,5 +1,4 @@
 # jarvis-webapp — Phase 1 (Core Architecture, Auth, Quota, Manual Premium)
-
 Scope of this phase, per what we agreed on:
 - Supabase schema for tiers/quota (`users` table + trigger, reusing the
   existing `user_files` table — NOT a separate `files` table)
