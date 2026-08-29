@@ -13,7 +13,7 @@ export async function GET() {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from('calendar_events')
-    .select('id, title, start_time, end_time, location, status, reminder_minutes, google_event_id')
+    .select('id, title, start_time, end_time, location, description, status, reminder_minutes, google_event_id')
     .eq('user_id', session.lineUserId)
     .neq('status', 'cancelled')
     .order('start_time', { ascending: true })
