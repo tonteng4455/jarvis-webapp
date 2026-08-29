@@ -81,7 +81,7 @@ async function syncViaWorker(userId, eventId) {
   const secret = process.env.INTERNAL_API_SECRET;
   if (!workerUrl || !secret) {
     console.error('WORKER_URL/INTERNAL_API_SECRET not configured — cannot sync event to Google');
-    return { synced: false, error: 'not_configured' };
+    return { synced: false, error: `not_configured (WORKER_URL=${workerUrl ? 'set' : 'MISSING'}, INTERNAL_API_SECRET=${secret ? 'set' : 'MISSING'})` };
   }
   try {
     const res = await fetch(`${workerUrl}/internal/calendar-sync`, {
@@ -89,7 +89,15 @@ async function syncViaWorker(userId, eventId) {
       headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': secret },
       body: JSON.stringify({ userId, eventId }),
     });
-    return await res.json();
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // The Worker itself rejected the request (401 = secret mismatch
+      // between the two sides, 404 = event not found under this
+      // userId) — surface the HTTP status since body.error alone
+      // ("unauthorized"/"not_found") doesn't say WHICH check failed.
+      return { synced: false, error: `worker_returned_${res.status}: ${body.error || 'no detail'}` };
+    }
+    return body;
   } catch (e) {
     console.error('syncViaWorker failed:', e);
     return { synced: false, error: e.message };

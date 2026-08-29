@@ -131,7 +131,17 @@ function CalendarPageInner() {
     const res = await fetch(`/api/calendar/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
     const data = await res.json();
     if (!res.ok) { setStatus('❌ บันทึกไม่สำเร็จ'); return; }
-    setStatus(data.syncResult?.synced === false ? '⚠️ บันทึกแล้ว แต่ sync ไป Google ไม่สำเร็จ' : '✅ บันทึกและ sync ไป Google แล้ว');
+    if (data.syncResult?.synced === false) {
+      // Show the ACTUAL reason instead of a generic message — same
+      // diagnostic approach that found the SUPABASE_URL/CHANNEL_ID
+      // issues earlier: "not_configured" means WORKER_URL/
+      // INTERNAL_API_SECRET are missing on the webapp side, an HTTP
+      // status number means the Worker rejected the request (secret
+      // mismatch → 401), anything else is Google's own error message.
+      setStatus(`⚠️ บันทึกแล้ว แต่ sync ไป Google ไม่สำเร็จ: ${data.syncResult?.error || 'unknown'}`);
+    } else {
+      setStatus('✅ บันทึกและ sync ไป Google แล้ว');
+    }
     setEditingId(null);
     load();
   }
