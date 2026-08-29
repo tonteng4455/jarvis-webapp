@@ -37,8 +37,16 @@ function LiffEntryPageInner() {
         // Load the LIFF SDK dynamically — only this page needs it, no
         // reason to ship it on every route.
         await loadLiffSdk();
-        const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-        if (!liffId) { setStatus('❌ ยังไม่ได้ตั้งค่า LIFF ID (NEXT_PUBLIC_LIFF_ID)'); return; }
+
+        // Fetched from the server at RUNTIME rather than read directly
+        // from process.env.NEXT_PUBLIC_LIFF_ID here — build-time
+        // inlining of NEXT_PUBLIC_ vars needs a separate Cloudflare
+        // "Build variables" config step that's easy to miss, whereas a
+        // plain server-side env var (read in /api/liff-config) works
+        // exactly like every other runtime var already does.
+        const configRes = await fetch('/api/liff-config');
+        const { liffId } = await configRes.json();
+        if (!liffId) { setStatus('❌ ยังไม่ได้ตั้งค่า LIFF ID บนเซิร์ฟเวอร์ (LIFF_ID / NEXT_PUBLIC_LIFF_ID)'); return; }
 
         await window.liff.init({ liffId });
         if (!window.liff.isLoggedIn()) {
