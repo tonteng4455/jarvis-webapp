@@ -12,6 +12,9 @@
   "observability": {
     "enabled": true
   },
+  "services": [
+    { "binding": "BOT_WORKER", "service": "line-bot-engine" }
+  ],
   "vars": {
     "SUPABASE_URL": "https://ujyvvykxakgtbpwdnsnd.supabase.co",
     "LINE_LOGIN_CHANNEL_ID": "2011286846",
