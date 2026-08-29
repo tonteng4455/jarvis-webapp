@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jarvis-webapp",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "SUPABASE_URL": "https://xxxxx.supabase.co",
+    "LINE_LOGIN_CHANNEL_ID": "PUT_YOUR_CHANNEL_ID_HERE",
+    "LINE_LOGIN_REDIRECT_URI": "https://jarvis-webapp.tonteng4455.workers.dev/api/auth/callback",
+    "R2_ACCOUNT_ID": "PUT_YOUR_ACCOUNT_ID_HERE",
+    "R2_ACCESS_KEY_ID": "PUT_YOUR_R2_ACCESS_KEY_ID_HERE",
+    "R2_BUCKET_NAME": "jarvis-line-bot-files",
+    "USER_CAP": "200",
+    "PREMIUM_CAP_BONUS_SLOTS": "5"
+  }
+}
