@@ -44,6 +44,10 @@ function EditPageInner() {
   const [time, setTime] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
+  const [expenseType, setExpenseType] = useState('expense');
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState('');
+  const [memo, setMemo] = useState('');
 
   useEffect(() => {
     if (!token) { setState({ loading: false, error: 'ไม่พบลิงก์ที่ถูกต้องครับ', itemType: null, item: null }); return; }
@@ -61,6 +65,11 @@ function EditPageInner() {
         if (data.itemType === 'note') {
           setTitle(data.item.title || '');
           setContent(data.item.content || '');
+        } else if (data.itemType === 'expense') {
+          setExpenseType(data.item.type || 'expense');
+          setAmount(String(data.item.amount ?? ''));
+          setCategory(data.item.category || '');
+          setMemo(data.item.memo || '');
         } else {
           setTitle(data.item.title || '');
           const dt = splitDateTime(data.item.start_time);
@@ -76,6 +85,8 @@ function EditPageInner() {
     setSaving(true);
     const payload = state.itemType === 'note'
       ? { title, content }
+      : state.itemType === 'expense'
+      ? { type: expenseType, amount: parseFloat(amount) || 0, category, memo: memo || null }
       : {
           title,
           start_time: date && time ? new Date(`${date}T${time}:00`).toISOString() : state.item.start_time,
@@ -110,21 +121,47 @@ function EditPageInner() {
   return (
     <main className="page" style={{ maxWidth: 480, margin: '0 auto' }}>
       <h1 className="page-title" style={{ fontSize: '1.1rem' }}>
-        {state.itemType === 'note' ? '📝 แก้ไขโน้ต' : '📅 แก้ไขนัดหมาย'}
+        {state.itemType === 'note' ? '📝 แก้ไขโน้ต' : state.itemType === 'expense' ? '💰 แก้ไขรายการเงิน' : '📅 แก้ไขนัดหมาย'}
       </h1>
       <div className="glass-panel">
-        <div style={{ marginBottom: '0.6rem' }}>
-          <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>
-            {state.itemType === 'note' ? 'หัวข้อ' : 'หัวเรื่อง'}
-          </label>
-          <input className="glass-input" value={title} onChange={e => setTitle(e.target.value)} />
-        </div>
+        {state.itemType !== 'expense' && (
+          <div style={{ marginBottom: '0.6rem' }}>
+            <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>
+              {state.itemType === 'note' ? 'หัวข้อ' : 'หัวเรื่อง'}
+            </label>
+            <input className="glass-input" value={title} onChange={e => setTitle(e.target.value)} />
+          </div>
+        )}
 
         {state.itemType === 'note' ? (
           <div style={{ marginBottom: '0.6rem' }}>
             <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>เนื้อหา</label>
             <textarea className="glass-input" rows={8} value={content} onChange={e => setContent(e.target.value)} style={{ resize: 'vertical' }} />
           </div>
+        ) : state.itemType === 'expense' ? (
+          <>
+            <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem' }}>
+              {[['expense', '💸 รายจ่าย'], ['income', '💵 รายรับ']].map(([val, label]) => (
+                <button key={val} type="button"
+                  onClick={() => setExpenseType(val)}
+                  style={{ flex: 1, padding: '0.5rem', borderRadius: 8, border: expenseType === val ? '2px solid #1DB4A6' : '1px solid rgba(0,0,0,0.15)', background: expenseType === val ? '#1DB4A622' : 'rgba(0,0,0,0.05)', color: '#333', fontWeight: expenseType === val ? 'bold' : 'normal' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ marginBottom: '0.6rem' }}>
+              <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>จำนวนเงิน (บาท)</label>
+              <input type="number" inputMode="decimal" className="glass-input" value={amount} onChange={e => setAmount(e.target.value)} />
+            </div>
+            <div style={{ marginBottom: '0.6rem' }}>
+              <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>หมวดหมู่</label>
+              <input className="glass-input" value={category} onChange={e => setCategory(e.target.value)} placeholder="เช่น food, transport, other" />
+            </div>
+            <div style={{ marginBottom: '0.6rem' }}>
+              <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>รายละเอียด</label>
+              <input className="glass-input" value={memo} onChange={e => setMemo(e.target.value)} placeholder="ไม่บังคับ" />
+            </div>
+          </>
         ) : (
           <>
             <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '0.6rem', flexWrap: 'wrap' }}>

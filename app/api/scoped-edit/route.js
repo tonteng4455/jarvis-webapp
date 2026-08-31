@@ -13,13 +13,15 @@ import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 import { verifyScopedToken } from '../../../lib/scopedToken';
 import { callBotInternal } from '../../../lib/botWorker';
 
+const TABLE_BY_TYPE = { note: 'notes', calendar: 'calendar_events', expense: 'expenses' };
+
 export async function GET(request) {
   const token = new URL(request.url).searchParams.get('token');
   const payload = await verifyScopedToken(token);
   if (!payload) return NextResponse.json({ error: 'invalid_or_expired_token' }, { status: 401 });
 
   const supabase = supabaseAdmin();
-  const table = payload.t === 'note' ? 'notes' : 'calendar_events';
+  const table = TABLE_BY_TYPE[payload.t];
   const { data, error } = await supabase.from(table).select('*').eq('id', payload.id).eq('user_id', payload.sub).single();
   if (error || !data) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
@@ -39,6 +41,16 @@ export async function PATCH(request) {
     if ('title' in body) updates.title = body.title;
     if ('content' in body) updates.content = body.content;
     const { data, error } = await supabase.from('notes').update(updates).eq('id', payload.id).eq('user_id', payload.sub).select().single();
+    if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+    return NextResponse.json({ item: data });
+  }
+
+  if (payload.t === 'expense') {
+    const updates = {};
+    for (const key of ['type', 'amount', 'category', 'memo']) {
+      if (key in body) updates[key] = body[key];
+    }
+    const { data, error } = await supabase.from('expenses').update(updates).eq('id', payload.id).eq('user_id', payload.sub).select().single();
     if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
     return NextResponse.json({ item: data });
   }
