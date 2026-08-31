@@ -35,7 +35,7 @@ function ExpenseEditor({ expense, onSave, onCancel, onDelete }) {
         <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem' }}>
           {[['expense', '💸 รายจ่าย'], ['income', '💵 รายรับ']].map(([val, label]) => (
             <button key={val} type="button" onClick={() => setType(val)}
-              style={{ flex: 1, padding: '0.4rem', borderRadius: 8, border: type === val ? '2px solid #1DB4A6' : '1px solid rgba(0,0,0,0.15)', background: type === val ? '#1DB4A622' : 'rgba(0,0,0,0.05)', color: '#333', fontSize: '0.8rem', fontWeight: type === val ? 'bold' : 'normal' }}>
+              style={{ flex: 1, padding: '0.4rem', borderRadius: 8, border: type === val ? '2px solid var(--accent)' : '1px solid var(--border-strong)', background: type === val ? 'var(--accent-soft)' : 'var(--surface-muted)', color: 'var(--text-primary)', fontSize: '0.8rem', fontWeight: type === val ? 'bold' : 'normal' }}>
               {label}
             </button>
           ))}
@@ -50,7 +50,7 @@ function ExpenseEditor({ expense, onSave, onCancel, onDelete }) {
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between' }}>
           <button className="note-icon-btn" onClick={() => { if (confirm('ลบรายการนี้ใช่ไหม?')) onDelete(expense.id); }}>🗑️ ลบ</button>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button className="glass-btn-outline" onClick={onCancel} style={{ color: '#333', background: 'rgba(0,0,0,0.05)', borderColor: 'rgba(0,0,0,0.15)' }}>ยกเลิก</button>
+            <button className="glass-btn-outline" onClick={onCancel} style={{ color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' }}>ยกเลิก</button>
             <button className="glass-btn" onClick={save} disabled={saving}>{saving ? 'กำลังบันทึก...' : '✅ บันทึก'}</button>
           </div>
         </div>
@@ -109,7 +109,7 @@ function ExpensesPageInner() {
         <>
           <div className="glass-panel" style={{ textAlign: 'center', marginBottom: '1rem' }}>
             <div className="muted">ยอดสุทธิ</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: net >= 0 ? '#2ECC71' : '#E74C3C' }}>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: net >= 0 ? 'var(--success)' : 'var(--danger)' }}>
               {net.toLocaleString()} บาท
             </div>
           </div>
@@ -119,7 +119,7 @@ function ExpensesPageInner() {
             <div className="glass-panel" style={{ padding: 0, overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(0,0,0,0.12)' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border-strong)' }}>
                     <th style={thStyle}>วันที่</th>
                     <th style={thStyle}>รายการ</th>
                     <th style={{ ...thStyle, textAlign: 'center' }}>หมวดหมู่</th>
@@ -130,14 +130,14 @@ function ExpensesPageInner() {
                   {expenses.map((e, i) => editingId === String(e.id) ? (
                     <ExpenseEditor key={e.id} expense={e} onSave={saveExpense} onCancel={() => setEditingId(null)} onDelete={deleteExpense} />
                   ) : (
-                    <tr key={e.id} style={{ borderBottom: i < expenses.length - 1 ? '1px solid rgba(0,0,0,0.06)' : 'none', cursor: 'pointer' }}
+                    <tr key={e.id} style={{ borderBottom: i < expenses.length - 1 ? '1px solid var(--surface-muted)' : 'none', cursor: 'pointer' }}
                       onClick={() => setEditingId(String(e.id))}>
                       <td style={tdStyle}><span className="muted">{formatDate(e.created_at)}</span></td>
                       <td style={{ ...tdStyle, fontSize: '0.85rem' }}>{e.memo || '-'}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <span className="muted">{e.type === 'income' ? '💵' : '💸'} {e.category}</span>
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: e.type === 'income' ? '#2ECC71' : '#E74C3C', whiteSpace: 'nowrap' }}>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: e.type === 'income' ? 'var(--success)' : 'var(--danger)', whiteSpace: 'nowrap' }}>
                         {e.type === 'income' ? '+' : '-'}{parseFloat(e.amount).toLocaleString()}
                       </td>
                     </tr>
@@ -152,5 +152,5 @@ function ExpensesPageInner() {
   );
 }
 
-const thStyle = { textAlign: 'left', padding: '0.7rem 0.9rem', fontSize: '0.75rem', color: '#5a5d6d', fontWeight: 600 };
-const tdStyle = { padding: '0.6rem 0.9rem', fontSize: '0.85rem', color: '#2c2f3d', verticalAlign: 'top' };
+const thStyle = { textAlign: 'left', padding: '0.7rem 0.9rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 };
+const tdStyle = { padding: '0.6rem 0.9rem', fontSize: '0.85rem', color: 'var(--text-primary)', verticalAlign: 'top' };

@@ -1,19 +1,129 @@
 /* app/globals.css
-   Glassmorphism theme shared by every page. Mobile-first: base styles
-   target small screens, breakpoints widen things on larger viewports.
+   Apple's current "Liquid Glass" language (WWDC 2025+): translucent,
+   light-refracting surfaces over a soft, low-saturation backdrop — NOT
+   the old loud rainbow-gradient/heavy-blur glassmorphism this app
+   started with. The difference is restraint: one quiet color family
+   behind the glass (not purple→pink→orange), a believable frosted
+   blur (not opaque), a thin bright top edge suggesting light catching
+   the glass, and everything still fully working in light AND dark via
+   [data-theme] on <html> (see ThemeToggle in _components.jsx).
 */
 
 * { box-sizing: border-box; }
+
+:root {
+  /* Light (default) — a barely-there cool-to-warm wash for the glass
+     to actually refract; a flat solid behind glass reads as "nothing",
+     glass needs something with gentle depth to look like glass. */
+  --bg: linear-gradient(160deg, #EEF3F7 0%, #F5F1F5 45%, #F6F1EC 100%);
+  --bg-solid: #F2F1F3; /* same page, no gradient — used where a flat fallback is needed (e.g. under a backdrop-filter that needs a non-transparent ancestor) */
+
+  --surface: rgba(255, 255, 255, 0.62);
+  --surface-raised: rgba(255, 255, 255, 0.78);
+  --surface-muted: rgba(255, 255, 255, 0.38);
+  --glass-blur: 22px;
+  --glass-edge: rgba(255, 255, 255, 0.9); /* the thin bright top highlight real glass catches */
+
+  --border: rgba(20, 20, 24, 0.08);
+  --border-strong: rgba(20, 20, 24, 0.14);
+  --text-primary: #1D1D1F;
+  --text-secondary: #6E6E73;
+  --text-on-accent: #FFFFFF;
+
+  --accent: #0F9C8F;
+  --accent-soft: rgba(15, 156, 143, 0.14);
+  --success: #1FA34D;
+  --success-soft: rgba(31, 163, 77, 0.14);
+  --danger: #E0362A;
+  --danger-soft: rgba(224, 54, 42, 0.12);
+  --warning: #C9820A;
+  --warning-soft: rgba(201, 130, 10, 0.14);
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 3px rgba(20, 20, 30, 0.06), 0 1px 1px rgba(20, 20, 30, 0.04);
+  --shadow-md: 0 6px 20px rgba(20, 20, 30, 0.08), 0 1px 4px rgba(20, 20, 30, 0.05);
+  --shadow-lg: 0 14px 40px rgba(20, 20, 30, 0.12), 0 2px 8px rgba(20, 20, 30, 0.06);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: linear-gradient(160deg, #0B0C10 0%, #121018 45%, #0E1210 100%);
+  --bg-solid: #0C0C0E;
+
+  --surface: rgba(30, 30, 34, 0.58);
+  --surface-raised: rgba(38, 38, 44, 0.72);
+  --surface-muted: rgba(255, 255, 255, 0.06);
+  --glass-edge: rgba(255, 255, 255, 0.14);
+
+  --border: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --text-primary: #F5F5F7;
+  --text-secondary: #98989D;
+  --text-on-accent: #00110F;
+
+  --accent: #35C6B6;
+  --accent-soft: rgba(53, 198, 182, 0.18);
+  --success: #34D058;
+  --success-soft: rgba(52, 208, 88, 0.18);
+  --danger: #FF453A;
+  --danger-soft: rgba(255, 69, 58, 0.18);
+  --warning: #F0A63A;
+  --warning-soft: rgba(240, 166, 58, 0.18);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 14px 40px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
+/* System preference on first visit, before ThemeToggle has ever set an
+   explicit choice — see the comment on the light-mode block above for
+   why every value is repeated here (custom properties can't @extend). */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) {
+    --bg: linear-gradient(160deg, #0B0C10 0%, #121018 45%, #0E1210 100%);
+    --bg-solid: #0C0C0E;
+    --surface: rgba(30, 30, 34, 0.58);
+    --surface-raised: rgba(38, 38, 44, 0.72);
+    --surface-muted: rgba(255, 255, 255, 0.06);
+    --glass-edge: rgba(255, 255, 255, 0.14);
+    --border: rgba(255, 255, 255, 0.10);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --text-primary: #F5F5F7;
+    --text-secondary: #98989D;
+    --text-on-accent: #00110F;
+    --accent: #35C6B6;
+    --accent-soft: rgba(53, 198, 182, 0.18);
+    --success: #34D058;
+    --success-soft: rgba(52, 208, 88, 0.18);
+    --danger: #FF453A;
+    --danger-soft: rgba(255, 69, 58, 0.18);
+    --warning: #F0A63A;
+    --warning-soft: rgba(240, 166, 58, 0.18);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 14px 40px rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+}
 
 html, body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sarabun", Roboto, sans-serif;
-  color: #1a1d29;
-  /* Soft animated-feeling gradient backdrop — the classic glassmorphism base */
-  background: linear-gradient(135deg, #6f7bf7 0%, #a06bf9 35%, #f97bc0 70%, #ffb199 100%);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Sarabun", Roboto, sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-solid);
+  background-image: var(--bg);
   background-attachment: fixed;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-font-smoothing: antialiased;
 }
 
 a { color: inherit; }
@@ -30,116 +140,128 @@ a { color: inherit; }
 .page-wide { max-width: 960px; }
 
 .page-title {
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   margin: 0 0 1rem;
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  color: var(--text-primary);
 }
 
-/* ---------- Glass primitives ---------- */
-.glass {
-  background: rgba(255, 255, 255, 0.22);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.15);
+/* ---------- Glass surfaces ---------- */
+.glass, .glass-card, .glass-panel, .note-composer, .dash-nav-item.active {
+  background: var(--surface);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  border: 1px solid var(--border);
+  border-top-color: var(--glass-edge); /* thin bright edge = light catching the top of the glass */
 }
-
-.glass-card {
-  background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 14px;
-  box-shadow: 0 4px 24px rgba(31, 38, 135, 0.08);
-  padding: 1rem;
-}
-
-.glass-panel {
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 18px;
-  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.12);
-  padding: 1.25rem;
-}
+.glass { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+.glass-card { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 1rem; }
+.glass-panel { border-radius: var(--radius-lg); box-shadow: var(--shadow-md); padding: 1.25rem; }
 @media (min-width: 640px) {
   .glass-panel { padding: 1.75rem; }
 }
 
-/* ---------- Nav ---------- */
+/* ---------- Nav — frosted toolbar, a hallmark Liquid Glass use case ---------- */
 .dash-nav {
   display: flex;
+  align-items: center;
   gap: 0.4rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 0.5rem;
+  padding: 0.5rem 0.6rem;
   margin-bottom: 1.25rem;
   scrollbar-width: none;
+  background: var(--surface-muted);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  position: sticky;
+  top: 0.5rem;
+  z-index: 10;
 }
 .dash-nav::-webkit-scrollbar { display: none; }
 .dash-nav-item {
   flex: 0 0 auto;
   padding: 0.5rem 0.9rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.82rem;
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  transition: background 0.15s ease;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .dash-nav-item.active {
-  background: rgba(255, 255, 255, 0.85);
-  color: #4b3fd6;
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.theme-toggle-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text-secondary);
 }
 
 /* ---------- Forms / buttons ---------- */
 .glass-input {
   width: 100%;
   padding: 0.6rem 0.8rem;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(8px);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   font-size: 0.9rem;
-  color: #1a1d29;
+  color: var(--text-primary);
+  font-family: inherit;
 }
-.glass-input::placeholder { color: #6b6f85; }
+.glass-input::placeholder { color: var(--text-secondary); }
+.glass-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 .glass-btn {
   padding: 0.55rem 1.1rem;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   border: none;
-  background: linear-gradient(135deg, #6f7bf7, #a06bf9);
-  color: #fff;
+  background: var(--accent);
+  color: var(--text-on-accent);
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(111, 123, 247, 0.35);
+  box-shadow: var(--shadow-sm);
+  transition: opacity 0.15s ease;
 }
-.glass-btn:disabled { opacity: 0.6; cursor: default; }
+.glass-btn:hover { opacity: 0.88; }
+.glass-btn:disabled { opacity: 0.5; cursor: default; }
 .glass-btn-outline {
   padding: 0.5rem 1rem;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.25);
-  color: #fff;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-muted);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  color: var(--text-primary);
   font-weight: 600;
   font-size: 0.82rem;
   cursor: pointer;
 }
 .glass-btn-danger {
   padding: 0.5rem 1rem;
-  border-radius: 10px;
-  border: 1px solid rgba(231, 76, 60, 0.4);
-  background: rgba(231, 76, 60, 0.15);
-  color: #c0392b;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--danger-soft);
+  background: var(--danger-soft);
+  color: var(--danger);
   font-weight: 600;
   font-size: 0.8rem;
   cursor: pointer;
@@ -160,21 +282,32 @@ a { color: inherit; }
 
 .list-stack { display: flex; flex-direction: column; gap: 0.6rem; }
 
-.muted { color: #6b6f85; font-size: 0.78rem; }
-.text-white-muted { color: rgba(255,255,255,0.85); font-size: 0.8rem; }
+.muted { color: var(--text-secondary); font-size: 0.78rem; }
+.text-white-muted { color: var(--text-secondary); font-size: 0.8rem; }
 
 /* ---------- Notes (Keep-style) ---------- */
 :root {
-  --note-default: rgba(255,255,255,0.55);
-  --note-red: rgba(255,138,128,0.45);
-  --note-orange: rgba(255,183,94,0.45);
-  --note-yellow: rgba(255,224,102,0.45);
-  --note-green: rgba(149,224,153,0.45);
-  --note-teal: rgba(120,224,214,0.45);
-  --note-blue: rgba(130,177,255,0.45);
-  --note-purple: rgba(200,163,255,0.45);
-  --note-pink: rgba(255,158,204,0.45);
-  --note-gray: rgba(190,196,209,0.45);
+  --note-default: transparent;
+  --note-red: rgba(224, 54, 42, 0.12);
+  --note-orange: rgba(201, 130, 10, 0.14);
+  --note-yellow: rgba(201, 176, 10, 0.14);
+  --note-green: rgba(31, 163, 77, 0.12);
+  --note-teal: rgba(15, 156, 143, 0.12);
+  --note-blue: rgba(10, 132, 201, 0.12);
+  --note-purple: rgba(140, 82, 201, 0.12);
+  --note-pink: rgba(201, 82, 156, 0.12);
+  --note-gray: rgba(120, 120, 128, 0.14);
+}
+[data-theme="dark"] {
+  --note-red: rgba(255, 69, 58, 0.16);
+  --note-orange: rgba(240, 166, 58, 0.16);
+  --note-yellow: rgba(240, 214, 58, 0.16);
+  --note-green: rgba(52, 208, 88, 0.16);
+  --note-teal: rgba(53, 198, 182, 0.16);
+  --note-blue: rgba(64, 160, 230, 0.16);
+  --note-purple: rgba(170, 120, 230, 0.16);
+  --note-pink: rgba(230, 120, 190, 0.16);
+  --note-gray: rgba(150, 150, 158, 0.18);
 }
 .note-masonry {
   column-count: 1;
@@ -186,67 +319,66 @@ a { color: inherit; }
 .note-card {
   break-inside: avoid;
   margin-bottom: 0.85rem;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 4px 20px rgba(31,38,135,0.08);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   padding: 0.85rem 0.9rem 0.5rem;
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
   position: relative;
+  /* Color tint is applied inline per-note (background: colorBg(...) in
+     notes/page.jsx) — backdrop-filter still blurs correctly through it
+     since those tint colors carry their own alpha transparency, so a
+     colored note still reads as tinted GLASS, not a flat swatch. */
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  border: 1px solid var(--border);
+  border-top-color: var(--glass-edge);
 }
-.note-card:hover { box-shadow: 0 8px 28px rgba(31,38,135,0.16); }
-.note-composer {
-  break-inside: avoid;
-  margin-bottom: 1.25rem;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.7);
-  background: rgba(255,255,255,0.6);
-  backdrop-filter: blur(20px);
-  padding: 0.85rem 0.9rem;
-  box-shadow: 0 4px 20px rgba(31,38,135,0.1);
-}
+.note-card:hover { box-shadow: var(--shadow-md); }
 .note-title-input {
   width: 100%; border: none; background: transparent; outline: none;
-  font-weight: 700; font-size: 0.95rem; margin-bottom: 0.35rem; color: #1a1d29;
+  font-weight: 600; font-size: 0.95rem; margin-bottom: 0.35rem; color: var(--text-primary);
+  font-family: inherit;
 }
 .note-content-textarea {
   width: 100%; border: none; background: transparent; outline: none; resize: none;
-  font-size: 0.85rem; color: #2c2f3d; font-family: inherit; line-height: 1.5;
+  font-size: 0.85rem; color: var(--text-primary); font-family: inherit; line-height: 1.5;
 }
 .note-toolbar {
   display: flex; align-items: center; gap: 0.35rem; margin-top: 0.5rem;
-  opacity: 0.85;
 }
 .note-icon-btn {
   border: none; background: transparent; cursor: pointer; font-size: 0.95rem;
-  padding: 0.25rem 0.4rem; border-radius: 8px; line-height: 1;
+  padding: 0.25rem 0.4rem; border-radius: 8px; line-height: 1; color: var(--text-secondary);
 }
-.note-icon-btn:hover { background: rgba(0,0,0,0.06); }
+.note-icon-btn:hover { background: var(--surface-muted); }
 .note-swatch {
   width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
-  border: 1.5px solid rgba(0,0,0,0.15); display: inline-block;
+  border: 1.5px solid var(--border-strong); display: inline-block;
 }
-.note-swatch.active { border: 2px solid #4b3fd6; }
+.note-swatch.active { border: 2px solid var(--accent); }
 .note-swatch-row { display: flex; gap: 0.4rem; flex-wrap: wrap; padding: 0.5rem 0.2rem; }
 
 /* ---------- Table (admin) — collapses to stacked cards on mobile ---------- */
 .glass-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-.glass-table th { text-align: left; padding: 0.5rem; color: rgba(255,255,255,0.9); font-weight: 600; }
-.glass-table td { padding: 0.5rem; border-top: 1px solid rgba(255,255,255,0.3); }
+.glass-table th { text-align: left; padding: 0.5rem; color: var(--text-secondary); font-weight: 600; }
+.glass-table td { padding: 0.5rem; border-top: 1px solid var(--border); }
 
 @media (max-width: 640px) {
   .glass-table thead { display: none; }
   .glass-table, .glass-table tbody, .glass-table tr, .glass-table td { display: block; width: 100%; }
-  .glass-table tr { margin-bottom: 0.75rem; border-radius: 12px; overflow: hidden; }
-  .glass-table td { border-top: none; border-bottom: 1px solid rgba(255,255,255,0.25); }
+  .glass-table tr {
+    margin-bottom: 0.75rem; border-radius: var(--radius-md); overflow: hidden;
+    background: var(--surface); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--border);
+  }
+  .glass-table td { border-top: none; border-bottom: 1px solid var(--border); }
   .glass-table td:last-child { border-bottom: none; }
   .glass-table td[data-label]::before {
     content: attr(data-label);
     display: block;
     font-size: 0.7rem;
-    font-weight: 700;
-    color: #6b6f85;
+    font-weight: 600;
+    color: var(--text-secondary);
     margin-bottom: 0.2rem;
   }
 }

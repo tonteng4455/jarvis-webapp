@@ -1,7 +1,42 @@
 'use client';
 // app/dashboard/_components.jsx
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+// Reads the saved theme (or falls back to system preference) and
+// applies it to <html data-theme="...">. Called both from the
+// FOUC-prevention inline script in layout.jsx (before hydration, so
+// there's never a flash of the wrong theme) and from ThemeToggle below
+// when someone taps it.
+export function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('jarvis-theme', theme); } catch (e) { /* ignore — private browsing etc */ }
+}
+
+export function ThemeToggle() {
+  const [theme, setTheme] = useState(null); // null until mounted, to avoid a hydration mismatch
+
+  useEffect(() => {
+    const current = document.documentElement.getAttribute('data-theme')
+      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    setTheme(current);
+  }, []);
+
+  function toggle() {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    setTheme(next);
+  }
+
+  if (!theme) return <span className="theme-toggle-btn" style={{ visibility: 'hidden' }} />;
+  return (
+    <button type="button" className="theme-toggle-btn" onClick={toggle}
+      title={theme === 'dark' ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'}
+      aria-label="สลับโหมดมืด/สว่าง">
+      {theme === 'dark' ? '☀️' : '🌙'}
+    </button>
+  );
+}
 
 export function DashNav({ current }) {
   const tabs = [
@@ -18,6 +53,7 @@ export function DashNav({ current }) {
           {t.label}
         </a>
       ))}
+      <ThemeToggle />
     </nav>
   );
 }
@@ -79,7 +115,7 @@ export function CategorySelect({ options, value, onChange }) {
           placeholder="พิมพ์ชื่อหมวดหมู่ใหม่" style={{ flex: 1 }} autoFocus />
         <button type="button" className="glass-btn-outline"
           onClick={() => { setCustomMode(false); onChange(options[0]?.key || ''); }}
-          style={{ color: '#333', background: 'rgba(0,0,0,0.05)', borderColor: 'rgba(0,0,0,0.15)', whiteSpace: 'nowrap' }}>
+          style={{ color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)', whiteSpace: 'nowrap' }}>
           ยกเลิก
         </button>
       </div>

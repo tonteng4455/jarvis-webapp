@@ -88,7 +88,7 @@ function Composer({ onCreate, onEditingChange }) {
           {categoryLabel(category)} ▾
         </button>
         {catOpen && (
-          <div className="note-swatch-row" style={{ position: 'absolute', top: '100%', left: 0, background: 'rgba(255,255,255,0.95)', borderRadius: 10, zIndex: 5, flexDirection: 'column', alignItems: 'stretch' }}>
+          <div className="note-swatch-row" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', borderRadius: 10, zIndex: 5, flexDirection: 'column', alignItems: 'stretch' }}>
             {NOTE_CATEGORIES.map(c => (
               <span key={c.key} onClick={() => { setCategory(c.key); setCatOpen(false); }}
                 style={{ padding: '0.35rem 0.7rem', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{c.label}</span>
@@ -162,7 +162,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
       ) : (
         <div onClick={() => setEditing(true)} style={{ cursor: 'text', minHeight: 30 }}>
           {note.title && <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.3rem' }}>{note.title}</div>}
-          <div style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap', color: '#2c2f3d' }}>{note.content || <span className="muted">โน้ตว่างเปล่า</span>}</div>
+          <div style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap', color: 'var(--text-primary)' }}>{note.content || <span className="muted">โน้ตว่างเปล่า</span>}</div>
         </div>
       )}
 

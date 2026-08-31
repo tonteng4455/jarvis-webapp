@@ -153,7 +153,7 @@ function EditPageInner() {
               {[['expense', '💸 รายจ่าย'], ['income', '💵 รายรับ']].map(([val, label]) => (
                 <button key={val} type="button"
                   onClick={() => setExpenseType(val)}
-                  style={{ flex: 1, padding: '0.5rem', borderRadius: 8, border: expenseType === val ? '2px solid #1DB4A6' : '1px solid rgba(0,0,0,0.15)', background: expenseType === val ? '#1DB4A622' : 'rgba(0,0,0,0.05)', color: '#333', fontWeight: expenseType === val ? 'bold' : 'normal' }}>
+                  style={{ flex: 1, padding: '0.5rem', borderRadius: 8, border: expenseType === val ? '2px solid var(--accent)' : '1px solid var(--border-strong)', background: expenseType === val ? 'var(--accent-soft)' : 'var(--surface-muted)', color: 'var(--text-primary)', fontWeight: expenseType === val ? 'bold' : 'normal' }}>
                   {label}
                 </button>
               ))}

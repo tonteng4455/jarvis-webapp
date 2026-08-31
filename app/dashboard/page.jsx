@@ -71,7 +71,7 @@ export default function DashboardPage() {
         {me.pictureUrl && <img src={me.pictureUrl} alt="" style={{ width: 56, height: 56, borderRadius: '50%', flexShrink: 0 }} />}
         <div>
           <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{me.displayName || 'ผู้ใช้'}</div>
-          <div style={{ fontSize: '0.85rem', color: me.isPremium ? '#2ECC71' : '#888' }}>
+          <div style={{ fontSize: '0.85rem', color: me.isPremium ? 'var(--success)' : 'var(--text-secondary)' }}>
             {me.isPremium ? `✨ Premium ถึง ${new Date(me.premiumUntil).toLocaleDateString('th-TH')}` : 'Free'}
           </div>
         </div>
@@ -79,8 +79,8 @@ export default function DashboardPage() {
 
       <div className="glass-card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>พื้นที่จัดเก็บ</h2>
-        <div style={{ background: 'rgba(0,0,0,0.08)', borderRadius: 8, overflow: 'hidden', height: 10 }}>
-          <div style={{ width: `${usagePct}%`, background: 'linear-gradient(90deg, #6f7bf7, #a06bf9)', height: '100%' }} />
+        <div style={{ background: 'var(--border)', borderRadius: 8, overflow: 'hidden', height: 10 }}>
+          <div style={{ width: `${usagePct}%`, background: 'linear-gradient(90deg, var(--accent), var(--accent))', height: '100%' }} />
         </div>
         <div className="muted" style={{ marginTop: '0.4rem' }}>{formatBytes(me.usedBytes)} / {formatBytes(me.quotaBytes)}</div>
       </div>
@@ -102,7 +102,7 @@ export default function DashboardPage() {
         {files.length === 0 && <p className="muted">ยังไม่มีไฟล์ครับ</p>}
         <div className="list-stack">
           {files.map(f => (
-            <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.6rem', background: 'rgba(255,255,255,0.4)', borderRadius: 10 }}>
+            <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.6rem', background: 'var(--surface)', borderRadius: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 'bold', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.file_name}</div>
                 <div className="muted">{formatBytes(f.size_bytes)} · {new Date(f.created_at).toLocaleDateString('th-TH')}</div>

@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, PremiumUpsell } from '../_components';
 
-const PRIORITY_COLOR = { high: '#E74C3C', medium: '#FFB84D', low: '#2ECC71' };
+const PRIORITY_COLOR = { high: 'var(--danger)', medium: 'var(--warning)', low: 'var(--success)' };
 const PRIORITY_LABEL = { high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' };
 const RECURRENCE_LABEL = { daily: '🔁 ทุกวัน', weekly: '🔁 ทุกสัปดาห์', monthly: '🔁 ทุกเดือน' };
 
@@ -42,7 +42,7 @@ function Composer({ onCreate }) {
       <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
         {Object.entries(PRIORITY_LABEL).map(([key, label]) => (
           <button key={key} className="glass-btn-outline" onMouseDown={e => e.stopPropagation()}
-            style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem', color: '#333', background: priority === key ? PRIORITY_COLOR[key] + '33' : 'rgba(0,0,0,0.05)', borderColor: priority === key ? PRIORITY_COLOR[key] : 'rgba(0,0,0,0.15)' }}
+            style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem', color: 'var(--text-primary)', background: priority === key ? PRIORITY_COLOR[key] + '33' : 'var(--surface-muted)', borderColor: priority === key ? PRIORITY_COLOR[key] : 'var(--border-strong)' }}
             onClick={() => setPriority(key)}>{label}</button>
         ))}
       </div>
@@ -70,7 +70,7 @@ function RoutinePicker({ task, onUpdate, onClose }) {
       <div style={{ fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>🔁 งานทำซ้ำ</div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
         {[['', 'ไม่ทำซ้ำ'], ['daily', 'ทุกวัน'], ['weekly', 'ทุกสัปดาห์'], ['monthly', 'ทุกเดือน']].map(([val, label]) => (
-          <button key={val} className="glass-btn-outline" style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem', color: '#333', background: recurrence === val ? '#1DB4A633' : 'rgba(0,0,0,0.05)', borderColor: recurrence === val ? '#1DB4A6' : 'rgba(0,0,0,0.15)' }}
+          <button key={val} className="glass-btn-outline" style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem', color: 'var(--text-primary)', background: recurrence === val ? 'var(--accent-soft)' : 'var(--surface-muted)', borderColor: recurrence === val ? 'var(--accent)' : 'var(--border-strong)' }}
             onClick={() => setRecurrence(val)}>{label}</button>
         ))}
       </div>
@@ -81,7 +81,7 @@ function RoutinePicker({ task, onUpdate, onClose }) {
         </div>
       )}
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-        <button className="glass-btn-outline" onClick={onClose} style={{ color: '#333', background: 'rgba(0,0,0,0.05)', borderColor: 'rgba(0,0,0,0.15)' }}>ยกเลิก</button>
+        <button className="glass-btn-outline" onClick={onClose} style={{ color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' }}>ยกเลิก</button>
         <button className="glass-btn" onClick={save} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
       </div>
     </div>
@@ -123,7 +123,7 @@ function TaskRow({ task, onUpdate, onDelete, autoEditId }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         <input type="checkbox" checked={!!task.is_done} onChange={() => onUpdate(task.id, { is_done: !task.is_done })}
           style={{ width: 20, height: 20, flexShrink: 0, cursor: 'pointer' }} />
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: PRIORITY_COLOR[task.priority] || '#888', flexShrink: 0 }} />
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: PRIORITY_COLOR[task.priority] || 'var(--text-secondary)', flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           {editing ? (
             <input className="note-title-input" value={name} onChange={e => setName(e.target.value)} autoFocus style={{ fontSize: '0.9rem' }} />

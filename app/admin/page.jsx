@@ -137,12 +137,12 @@ export default function AdminPage() {
                 <td data-label="เบอร์โทร">{u.phone_number || '-'}</td>
                 <td data-label="สถานะ">
                   {u.is_premium && u.premium_until && new Date(u.premium_until) > new Date()
-                    ? <span style={{ color: '#2ECC71' }}>Premium ถึง {new Date(u.premium_until).toLocaleDateString('th-TH')}</span>
+                    ? <span style={{ color: 'var(--success)' }}>Premium ถึง {new Date(u.premium_until).toLocaleDateString('th-TH')}</span>
                     : <span className="muted">Free</span>}
                 </td>
                 <td data-label="พื้นที่">{formatBytes(u.used_storage_bytes)} / {formatBytes(u.storage_quota_bytes)}</td>
                 <td data-label="จัดการ" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  <button onClick={() => grantPremium(u.line_user_id)} className="glass-btn-outline" style={{ color: '#333', background: 'rgba(0,0,0,0.05)', borderColor: 'rgba(0,0,0,0.15)' }}>Grant/Extend</button>
+                  <button onClick={() => grantPremium(u.line_user_id)} className="glass-btn-outline" style={{ color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' }}>Grant/Extend</button>
                   <button onClick={() => revokePremium(u.line_user_id)} className="glass-btn-danger">Revoke</button>
                 </td>
               </tr>

@@ -87,7 +87,7 @@ function EventEditor({ event, onSave, onCancel }) {
         <textarea className="glass-input" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="ไม่บังคับ" style={{ resize: 'vertical' }} />
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-        <button className="glass-btn-outline" onClick={onCancel} style={{ color: '#333', background: 'rgba(0,0,0,0.05)', borderColor: 'rgba(0,0,0,0.15)' }}>ยกเลิก</button>
+        <button className="glass-btn-outline" onClick={onCancel} style={{ color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' }}>ยกเลิก</button>
         <button className="glass-btn" onClick={save} disabled={saving}>{saving ? 'กำลังบันทึก...' : '✅ บันทึก'}</button>
       </div>
     </div>
@@ -178,7 +178,7 @@ function CalendarPageInner() {
             <div key={e.id} className="glass-card" style={{ opacity: e.status === 'pending' ? 0.7 : 1, cursor: 'pointer' }}
               onClick={() => setEditingId(e.id)}>
               <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{e.title}</div>
-              <div style={{ fontSize: '0.8rem', color: '#3a3d4d', marginTop: '0.2rem' }}>{formatDate(e.start_time)}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', marginTop: '0.2rem' }}>{formatDate(e.start_time)}</div>
               {e.location && <div className="muted">📍 {e.location}</div>}
               {e.description && <div className="muted" style={{ whiteSpace: 'pre-wrap' }}>{e.description}</div>}
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
