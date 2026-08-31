@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { DashNav, PremiumUpsell } from '../_components';
+import { DashNav, PremiumUpsell, CategorySelect, NOTE_CATEGORIES } from '../_components';
 
 const COLORS = [
   { key: 'default', label: 'ค่าเริ่มต้น' },
@@ -22,16 +22,8 @@ const COLORS = [
   { key: 'gray', label: 'เทา' },
 ];
 
-const CATEGORIES = [
-  { key: 'general', label: '📄 ทั่วไป' },
-  { key: 'work', label: '💼 งาน' },
-  { key: 'personal', label: '🙋 ส่วนตัว' },
-  { key: 'idea', label: '💡 ไอเดีย' },
-  { key: 'shopping', label: '🛒 ช้อปปิ้ง' },
-];
-
 function categoryLabel(key) {
-  return CATEGORIES.find(c => c.key === key)?.label || key || 'ทั่วไป';
+  return NOTE_CATEGORIES.find(c => c.key === key)?.label || key || 'ทั่วไป';
 }
 
 function colorBg(key) {
@@ -97,7 +89,7 @@ function Composer({ onCreate, onEditingChange }) {
         </button>
         {catOpen && (
           <div className="note-swatch-row" style={{ position: 'absolute', top: '100%', left: 0, background: 'rgba(255,255,255,0.95)', borderRadius: 10, zIndex: 5, flexDirection: 'column', alignItems: 'stretch' }}>
-            {CATEGORIES.map(c => (
+            {NOTE_CATEGORIES.map(c => (
               <span key={c.key} onClick={() => { setCategory(c.key); setCatOpen(false); }}
                 style={{ padding: '0.35rem 0.7rem', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{c.label}</span>
             ))}
@@ -116,6 +108,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
+  const [category, setCategory] = useState(note.category || 'general');
   const [pickerOpen, setPickerOpen] = useState(false);
   const ref = useRef(null);
 
@@ -130,12 +123,14 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEditId]);
 
-  useEffect(() => { if (!editing) { setTitle(note.title); setContent(note.content); } }, [note.title, note.content, editing]);
+  useEffect(() => { if (!editing) { setTitle(note.title); setContent(note.content); setCategory(note.category || 'general'); } }, [note.title, note.content, note.category, editing]);
   useEffect(() => { onEditingChange(note.id, editing); }, [editing, note.id, onEditingChange]);
 
   function saveEdit() {
     setEditing(false);
-    if (title !== note.title || content !== note.content) onUpdate(note.id, { title, content });
+    if (title !== note.title || content !== note.content || category !== note.category) {
+      onUpdate(note.id, { title, content, category });
+    }
   }
 
   useEffect(() => {
@@ -146,7 +141,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, title, content]);
+  }, [editing, title, content, category]);
 
   const isArchived = note.archived;
 
@@ -157,6 +152,9 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
         <>
           <input className="note-title-input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
           <AutoGrowTextarea className="note-content-textarea" value={content} onChange={e => setContent(e.target.value)} />
+          <div style={{ marginTop: '0.4rem' }} onMouseDown={e => e.stopPropagation()}>
+            <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
+          </div>
           <div style={{ textAlign: 'right', marginTop: '0.4rem' }}>
             <button onClick={saveEdit} className="glass-btn" style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
           </div>

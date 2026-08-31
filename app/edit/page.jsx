@@ -11,6 +11,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { CategorySelect, NOTE_CATEGORIES, EXPENSE_CATEGORIES } from '../dashboard/_components';
 
 export default function EditPage() {
   return (
@@ -48,6 +49,7 @@ function EditPageInner() {
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [memo, setMemo] = useState('');
+  const [noteCategory, setNoteCategory] = useState('general');
 
   useEffect(() => {
     if (!token) { setState({ loading: false, error: 'ไม่พบลิงก์ที่ถูกต้องครับ', itemType: null, item: null }); return; }
@@ -65,6 +67,7 @@ function EditPageInner() {
         if (data.itemType === 'note') {
           setTitle(data.item.title || '');
           setContent(data.item.content || '');
+          setNoteCategory(data.item.category || 'general');
         } else if (data.itemType === 'expense') {
           setExpenseType(data.item.type || 'expense');
           setAmount(String(data.item.amount ?? ''));
@@ -84,7 +87,7 @@ function EditPageInner() {
   async function save() {
     setSaving(true);
     const payload = state.itemType === 'note'
-      ? { title, content }
+      ? { title, content, category: noteCategory }
       : state.itemType === 'expense'
       ? { type: expenseType, amount: parseFloat(amount) || 0, category, memo: memo || null }
       : {
@@ -134,10 +137,16 @@ function EditPageInner() {
         )}
 
         {state.itemType === 'note' ? (
-          <div style={{ marginBottom: '0.6rem' }}>
-            <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>เนื้อหา</label>
-            <textarea className="glass-input" rows={8} value={content} onChange={e => setContent(e.target.value)} style={{ resize: 'vertical' }} />
-          </div>
+          <>
+            <div style={{ marginBottom: '0.6rem' }}>
+              <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>เนื้อหา</label>
+              <textarea className="glass-input" rows={8} value={content} onChange={e => setContent(e.target.value)} style={{ resize: 'vertical' }} />
+            </div>
+            <div style={{ marginBottom: '0.6rem' }}>
+              <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>หมวดหมู่</label>
+              <CategorySelect options={NOTE_CATEGORIES} value={noteCategory} onChange={setNoteCategory} />
+            </div>
+          </>
         ) : state.itemType === 'expense' ? (
           <>
             <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem' }}>
@@ -155,7 +164,7 @@ function EditPageInner() {
             </div>
             <div style={{ marginBottom: '0.6rem' }}>
               <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>หมวดหมู่</label>
-              <input className="glass-input" value={category} onChange={e => setCategory(e.target.value)} placeholder="เช่น food, transport, other" />
+              <CategorySelect options={EXPENSE_CATEGORIES} value={category} onChange={setCategory} />
             </div>
             <div style={{ marginBottom: '0.6rem' }}>
               <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>รายละเอียด</label>

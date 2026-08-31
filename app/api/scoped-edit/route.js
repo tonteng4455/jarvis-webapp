@@ -40,6 +40,7 @@ export async function PATCH(request) {
     const updates = {};
     if ('title' in body) updates.title = body.title;
     if ('content' in body) updates.content = body.content;
+    if ('category' in body) updates.category = body.category;
     const { data, error } = await supabase.from('notes').update(updates).eq('id', payload.id).eq('user_id', payload.sub).select().single();
     if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
     return NextResponse.json({ item: data });

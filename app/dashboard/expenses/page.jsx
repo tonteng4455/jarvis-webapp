@@ -6,7 +6,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { DashNav, PremiumUpsell, formatDate } from '../_components';
+import { DashNav, PremiumUpsell, formatDate, CategorySelect, EXPENSE_CATEGORIES } from '../_components';
 
 export default function ExpensesPage() {
   return (
@@ -42,7 +42,9 @@ function ExpenseEditor({ expense, onSave, onCancel, onDelete }) {
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
           <input type="number" inputMode="decimal" className="glass-input" value={amount} onChange={e => setAmount(e.target.value)} placeholder="จำนวนเงิน" style={{ flex: 1, minWidth: 100 }} />
-          <input className="glass-input" value={category} onChange={e => setCategory(e.target.value)} placeholder="หมวดหมู่" style={{ flex: 1, minWidth: 100 }} />
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <CategorySelect options={EXPENSE_CATEGORIES} value={category} onChange={setCategory} />
+          </div>
         </div>
         <input className="glass-input" value={memo} onChange={e => setMemo(e.target.value)} placeholder="รายละเอียด (ไม่บังคับ)" style={{ width: '100%', marginBottom: '0.6rem' }} />
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between' }}>
