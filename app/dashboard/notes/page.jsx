@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { DashNav, PremiumUpsell, CategorySelect, NOTE_CATEGORIES } from '../_components';
+import { DashNav, CategorySelect, NOTE_CATEGORIES } from '../_components';
 
 const COLORS = [
   { key: 'default', label: 'ค่าเริ่มต้น' },
@@ -49,7 +49,6 @@ function Composer({ onCreate, onEditingChange }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('general');
-  const [catOpen, setCatOpen] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => { onEditingChange(open); }, [open, onEditingChange]);
@@ -83,19 +82,11 @@ function Composer({ onCreate, onEditingChange }) {
         onChange={e => setTitle(e.target.value)} autoFocus />
       <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content}
         onChange={e => setContent(e.target.value)} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', position: 'relative' }}>
-        <button className="note-icon-btn" onClick={() => setCatOpen(v => !v)} onMouseDown={e => e.stopPropagation()}>
-          {categoryLabel(category)} ▾
-        </button>
-        {catOpen && (
-          <div className="note-swatch-row" style={{ position: 'absolute', top: '100%', left: 0, background: 'var(--surface)', borderRadius: 10, zIndex: 5, flexDirection: 'column', alignItems: 'stretch' }}>
-            {NOTE_CATEGORIES.map(c => (
-              <span key={c.key} onClick={() => { setCategory(c.key); setCatOpen(false); }}
-                style={{ padding: '0.35rem 0.7rem', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{c.label}</span>
-            ))}
-          </div>
-        )}
-        <button onClick={commit} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem' }}>เสร็จสิ้น</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', gap: '0.5rem' }}>
+        <div style={{ flex: 1, maxWidth: 180 }} onMouseDown={e => e.stopPropagation()}>
+          <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
+        </div>
+        <button onClick={commit} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem', flex: '0 0 auto' }}>เสร็จสิ้น</button>
       </div>
     </div>
   );
@@ -215,13 +206,21 @@ function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorde
   const containerRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
   const dragState = useRef(null); // { fromIndex, pointerId }
+  // React state updates are async/batched — during a fast drag, several
+  // pointermove events can fire before a re-render lands, so reading
+  // the `notes` PROP directly risked handlePointerUp saving a stale
+  // array (the reorder shown on screen and the reorder actually saved
+  // could silently diverge). A ref updated synchronously on every move
+  // sidesteps that entirely — always reads/writes the true latest order.
+  const notesRef = useRef(notes);
+  useEffect(() => { notesRef.current = notes; }, [notes]);
 
   function handlePointerDown(e, index) {
     e.preventDefault();
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
     dragState.current = { fromIndex: index, pointerId: e.pointerId };
-    setDraggingId(notes[index].id);
+    setDraggingId(notesRef.current[index].id);
     onDragStateChange(true);
   }
 
@@ -242,17 +241,15 @@ function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorde
   function handlePointerMove(e) {
     if (!dragState.current || e.pointerId !== dragState.current.pointerId) return;
     e.preventDefault();
-    // Live-reorder as the finger/cursor moves over a different card's
-    // position — gives immediate visual feedback instead of only
-    // updating once on release.
     const targetIndex = findTargetIndex(e.clientY);
     const fromIndex = dragState.current.fromIndex;
     if (targetIndex === null || targetIndex === fromIndex) return;
-    const reordered = [...notes];
+    const reordered = [...notesRef.current];
     const [moved] = reordered.splice(fromIndex, 1);
     reordered.splice(targetIndex, 0, moved);
     dragState.current.fromIndex = targetIndex;
-    onReorder(reordered, { silent: true }); // update local order live without a network call yet
+    notesRef.current = reordered; // update immediately — don't wait for the prop round-trip
+    onReorder(reordered, { silent: true });
   }
 
   function handlePointerUp(e) {
@@ -260,7 +257,7 @@ function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorde
     dragState.current = null;
     setDraggingId(null);
     onDragStateChange(false);
-    onReorder(notes, { silent: false }); // persist final order to the server once
+    onReorder(notesRef.current, { silent: false }); // always the latest order, never stale
   }
 
   return (
@@ -292,11 +289,11 @@ export default function NotesPage() {
 
 function NotesPageInner() {
   const [notes, setNotes] = useState(null);
-  const [locked, setLocked] = useState(false);
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [viewMode, setViewMode] = useState('all'); // 'all' | 'grouped'
   const [composerEditing, setComposerEditing] = useState(false);
+  const [status, setStatus] = useState(null);
   const editingIds = useRef(new Set());
   const draggingRef = useRef(false);
   const searchParams = useSearchParams();
@@ -305,7 +302,6 @@ function NotesPageInner() {
   const load = useCallback(async (archived = showArchived) => {
     const res = await fetch(`/api/notes?archived=${archived}`);
     if (res.status === 401) { window.location.href = '/login'; return; }
-    if (res.status === 403) { setLocked(true); return; }
     const data = await res.json();
     setNotes(data.notes);
   }, [showArchived]);
@@ -313,17 +309,16 @@ function NotesPageInner() {
   useEffect(() => { load(); }, [load]);
 
   // Auto-refresh — a note added via the LINE bot shows up here without
-  // a manual reload. Paused while: locked (nothing to refresh), the
-  // composer or any card is being edited, or a drag is in progress —
-  // a poll mid-drag or mid-typing would clobber unsaved local state.
+  // a manual reload. Paused while the composer or any card is being
+  // edited, or a drag is in progress — a poll mid-drag or mid-typing
+  // would clobber unsaved local state.
   useEffect(() => {
-    if (locked) return;
     const timer = setInterval(() => {
       if (composerEditing || editingIds.current.size > 0 || draggingRef.current) return;
       load();
     }, 8000);
     return () => clearInterval(timer);
-  }, [load, composerEditing, locked]);
+  }, [load, composerEditing]);
 
   const setCardEditing = useCallback((id, isEditing) => {
     if (isEditing) editingIds.current.add(id); else editingIds.current.delete(id);
@@ -334,7 +329,13 @@ function NotesPageInner() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, content, category }),
     });
-    if (res.ok) load();
+    if (res.ok) { load(); return; }
+    const data = await res.json().catch(() => ({}));
+    if (data.error === 'quota_reached') {
+      setStatus(`📝 คุณมีโน้ตครบ ${data.limit} รายการแล้วครับ (สูงสุดสำหรับ Free) ลองลบโน้ตเก่าที่ไม่ใช้แล้ว หรืออัปเกรด Premium เพื่อจดได้ไม่จำกัด`);
+    } else {
+      setStatus('❌ บันทึกไม่สำเร็จ');
+    }
   }
 
   async function updateNote(id, patch) {
@@ -380,10 +381,9 @@ function NotesPageInner() {
     <main className="page page-wide">
       <DashNav current="notes" />
       <h1 className="page-title">📝 โน้ตของฉัน</h1>
-      {locked && <PremiumUpsell />}
+      {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
 
-      {!locked && (
-        <>
+      <>
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
             <input className="glass-input" placeholder="🔍 ค้นหาโน้ต..." value={search}
               onChange={e => setSearch(e.target.value)} style={{ flex: 1, minWidth: 180 }} />
@@ -429,7 +429,6 @@ function NotesPageInner() {
             </div>
           ))}
         </>
-      )}
     </main>
   );
 }

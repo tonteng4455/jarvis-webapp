@@ -1,17 +1,22 @@
 // app/api/notes/route.js
 //
 // GET  — list notes (Keep-style: pinned first, archived hidden by default)
-// POST — create a new note
+// POST — create a new note. Free tier is capped at NOTES_LIMIT_FREE
+// (matches the SAME limit the bot enforces — see requireNoteQuota in
+// jarvis-line-bot.js) — this used to be moot since only Premium could
+// reach this route at all; now that the whole dashboard is open to
+// everyone, the cap has to be enforced here too, not just bot-side.
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../lib/premium';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 
+const NOTES_LIMIT_FREE = 50; // keep in sync with NOTES_LIMIT_FREE on the bot's Worker
+
 export async function GET(request) {
-  const { session, isPremium } = await getPremiumSession(await cookies());
+  const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!isPremium) return NextResponse.json({ error: 'premium_required' }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const showArchived = searchParams.get('archived') === 'true';
@@ -34,7 +39,6 @@ export async function GET(request) {
 export async function POST(request) {
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!isPremium) return NextResponse.json({ error: 'premium_required' }, { status: 403 });
 
   const { title, content, category, color } = await request.json();
   if (!title?.trim() && !content?.trim()) {
@@ -42,6 +46,17 @@ export async function POST(request) {
   }
 
   const supabase = supabaseAdmin();
+
+  if (!isPremium) {
+    const { count } = await supabase
+      .from('notes')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', session.lineUserId);
+    if ((count || 0) >= NOTES_LIMIT_FREE) {
+      return NextResponse.json({ error: 'quota_reached', limit: NOTES_LIMIT_FREE }, { status: 403 });
+    }
+  }
+
   const { data, error } = await supabase
     .from('notes')
     .insert({

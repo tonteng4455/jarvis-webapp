@@ -6,7 +6,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { DashNav, PremiumUpsell, formatDate, CategorySelect, EXPENSE_CATEGORIES } from '../_components';
+import { DashNav, formatDate, CategorySelect, EXPENSE_CATEGORIES } from '../_components';
 
 export default function ExpensesPage() {
   return (
@@ -62,7 +62,6 @@ function ExpenseEditor({ expense, onSave, onCancel, onDelete }) {
 function ExpensesPageInner() {
   const [expenses, setExpenses] = useState(null);
   const [net, setNet] = useState(0);
-  const [locked, setLocked] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [status, setStatus] = useState(null);
   const searchParams = useSearchParams();
@@ -75,7 +74,6 @@ function ExpensesPageInner() {
   function load() {
     fetch('/api/expenses').then(async res => {
       if (res.status === 401) { window.location.href = '/login'; return; }
-      if (res.status === 403) { setLocked(true); return; }
       const data = await res.json();
       setExpenses(data.expenses);
       setNet(data.net);
@@ -103,9 +101,8 @@ function ExpensesPageInner() {
     <main className="page">
       <DashNav current="expenses" />
       <h1 className="page-title">💰 บัญชีรายรับ-รายจ่าย</h1>
-      {locked && <PremiumUpsell />}
-      {!locked && expenses === null && <p className="text-white-muted">กำลังโหลด...</p>}
-      {!locked && expenses && (
+      {expenses === null && <p className="text-white-muted">กำลังโหลด...</p>}
+      {expenses && (
         <>
           <div className="glass-panel" style={{ textAlign: 'center', marginBottom: '1rem' }}>
             <div className="muted">ยอดสุทธิ</div>

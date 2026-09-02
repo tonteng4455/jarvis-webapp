@@ -7,7 +7,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { DashNav, PremiumUpsell, formatDate } from '../_components';
+import { DashNav, formatDate } from '../_components';
 
 const REMINDER_OPTIONS = [
   { value: '', label: '⚙️ ค่าเริ่มต้นของปฏิทิน' },
@@ -104,7 +104,6 @@ export default function CalendarPage() {
 
 function CalendarPageInner() {
   const [events, setEvents] = useState(null);
-  const [locked, setLocked] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [status, setStatus] = useState(null);
   const searchParams = useSearchParams();
@@ -120,7 +119,6 @@ function CalendarPageInner() {
   async function load() {
     const res = await fetch('/api/calendar');
     if (res.status === 401) { window.location.href = '/login'; return; }
-    if (res.status === 403) { setLocked(true); return; }
     const data = await res.json();
     setEvents(data.events);
   }
@@ -166,11 +164,10 @@ function CalendarPageInner() {
     <main className="page">
       <DashNav current="calendar" />
       <h1 className="page-title">📅 นัดหมายของฉัน</h1>
-      {locked && <PremiumUpsell />}
-      {!locked && events === null && <p className="text-white-muted">กำลังโหลด...</p>}
-      {!locked && events?.length === 0 && <div className="glass-card"><p className="muted">ไม่มีนัดหมายครับ</p></div>}
+      {events === null && <p className="text-white-muted">กำลังโหลด...</p>}
+      {events?.length === 0 && <div className="glass-card"><p className="muted">ไม่มีนัดหมายครับ</p></div>}
       {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
-      {!locked && events?.length > 0 && (
+      {events?.length > 0 && (
         <div className="list-stack">
           {events.map(e => editingId === e.id ? (
             <EventEditor key={e.id} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} />

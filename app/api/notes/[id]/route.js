@@ -22,7 +22,6 @@ const CONTENT_FIELDS = ['title', 'content', 'category', 'color'];
 export async function PATCH(request, { params }) {
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!isPremium) return NextResponse.json({ error: 'premium_required' }, { status: 403 });
 
   const body = await request.json();
   const updates = {};
@@ -52,7 +51,6 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!isPremium) return NextResponse.json({ error: 'premium_required' }, { status: 403 });
 
   const supabase = supabaseAdmin();
   const { error } = await supabase

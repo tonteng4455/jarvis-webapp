@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { DashNav, PremiumUpsell } from '../_components';
+import { DashNav } from '../_components';
 
 const PRIORITY_COLOR = { high: 'var(--danger)', medium: 'var(--warning)', low: 'var(--success)' };
 const PRIORITY_LABEL = { high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' };
@@ -160,15 +160,14 @@ export default function TasksPage() {
 
 function TasksPageInner() {
   const [tasks, setTasks] = useState(null);
-  const [locked, setLocked] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [status, setStatus] = useState(null);
   const searchParams = useSearchParams();
   const autoEditId = searchParams.get('id');
 
   async function load(archived = showArchived) {
     const res = await fetch(`/api/tasks?archived=${archived}`);
     if (res.status === 401) { window.location.href = '/login'; return; }
-    if (res.status === 403) { setLocked(true); return; }
     const data = await res.json();
     setTasks(data.tasks);
   }
@@ -177,7 +176,13 @@ function TasksPageInner() {
 
   async function createTask(payload) {
     const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (res.ok) load();
+    if (res.ok) { load(); return; }
+    const data = await res.json().catch(() => ({}));
+    if (data.error === 'quota_reached') {
+      setStatus(`✅ คุณมีงานครบ ${data.limit} รายการแล้วครับ (สูงสุดสำหรับ Free) ลองลบงานเก่าที่ไม่ใช้แล้ว หรืออัปเกรด Premium เพื่อเพิ่มได้ไม่จำกัด`);
+    } else {
+      setStatus('❌ เพิ่มงานไม่สำเร็จ');
+    }
   }
 
   async function updateTask(id, patch) {
@@ -201,17 +206,13 @@ function TasksPageInner() {
           {showArchived ? '⬅️ กลับไปงานปกติ' : '🗄️ ดูคลังเก็บ'}
         </button>
       </div>
-      {locked && <PremiumUpsell />}
-      {!locked && (
-        <>
-          {!showArchived && <Composer onCreate={createTask} />}
-          {tasks === null && <p className="text-white-muted">กำลังโหลด...</p>}
-          {tasks?.length === 0 && <div className="glass-card"><p className="muted">{showArchived ? 'ยังไม่มีงานในคลังเก็บ' : 'ไม่มีงานค้างครับ 🎉'}</p></div>}
-          <div className="list-stack">
-            {tasks?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} autoEditId={autoEditId} />)}
-          </div>
-        </>
-      )}
+      {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
+      {!showArchived && <Composer onCreate={createTask} />}
+      {tasks === null && <p className="text-white-muted">กำลังโหลด...</p>}
+      {tasks?.length === 0 && <div className="glass-card"><p className="muted">{showArchived ? 'ยังไม่มีงานในคลังเก็บ' : 'ไม่มีงานค้างครับ 🎉'}</p></div>}
+      <div className="list-stack">
+        {tasks?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} autoEditId={autoEditId} />)}
+      </div>
     </main>
   );
 }

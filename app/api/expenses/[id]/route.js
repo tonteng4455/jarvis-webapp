@@ -1,7 +1,7 @@
 // app/api/expenses/[id]/route.js
 //
 // PATCH/DELETE a single expense entry — Premium dashboard only (full
-// session + isPremium check, unlike /api/scoped-edit's token-based
+// session check (any logged-in user, capped by their tier's quota),
 // Free path). No Google/bot sync involved — expenses never touch
 // Google Calendar, so this is simpler than the calendar equivalent.
 
@@ -13,9 +13,8 @@ import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 const EDITABLE_FIELDS = ['type', 'amount', 'category', 'memo'];
 
 export async function PATCH(request, { params }) {
-  const { session, isPremium } = await getPremiumSession(await cookies());
+  const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!isPremium) return NextResponse.json({ error: 'premium_required' }, { status: 403 });
 
   const body = await request.json();
   const updates = {};
@@ -40,9 +39,8 @@ export async function PATCH(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const { session, isPremium } = await getPremiumSession(await cookies());
+  const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!isPremium) return NextResponse.json({ error: 'premium_required' }, { status: 403 });
 
   const supabase = supabaseAdmin();
   const { error } = await supabase.from('expenses').delete().eq('id', params.id).eq('user_id', session.lineUserId);

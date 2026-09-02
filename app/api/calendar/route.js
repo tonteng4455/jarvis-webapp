@@ -6,9 +6,8 @@ import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 
 
 export async function GET() {
-  const { session, isPremium } = await getPremiumSession(await cookies());
+  const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!isPremium) return NextResponse.json({ error: 'premium_required' }, { status: 403 });
 
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
