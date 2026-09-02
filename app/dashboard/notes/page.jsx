@@ -1,5 +1,5 @@
 'use client';
-// app/dashboard/notes/page.jsx — Google Keep-style notes (Premium only).
+// app/dashboard/notes/page.jsx — Google Keep-style notes.
 //
 // Everything auto-saves — no explicit "Save" required for most actions,
 // but title/content edits wait until you click "เสร็จสิ้น" or click
@@ -363,8 +363,22 @@ function NotesPageInner() {
   }
 
   async function reorderSection(reordered, sectionIds, opts = {}) {
-    const idToOrder = new Map(reordered.map((n, i) => [n.id, i]));
-    setNotes(prev => prev?.map(n => sectionIds.has(n.id) ? { ...n, sort_order: idToOrder.get(n.id) } : n));
+    // `reordered` is the new order for just the items in ONE section
+    // (pinned-only, or one category group) — rebuild the notes array
+    // with those items sitting in the SAME slots they originally
+    // occupied, but filled in in their new relative order; anything
+    // outside this section stays exactly where it was.
+    //
+    // This used to only tag each note with its new `sort_order` VALUE
+    // without ever touching the array's actual element order — so
+    // every derived view (`pinned`/`others`/`grouped`, all plain
+    // .filter() calls that preserve whatever order the source array
+    // is already in) kept rendering the OLD order every time, making
+    // the drag look like it had no effect at all, live or after
+    // release, even though the field value itself was being updated
+    // correctly under the hood.
+    const reorderedIter = reordered[Symbol.iterator]();
+    setNotes(prev => prev?.map(n => sectionIds.has(n.id) ? reorderedIter.next().value : n));
     if (opts.silent) return; // live drag feedback only — don't hit the network on every pixel of movement
     await Promise.all(reordered.map((n, i) =>
       fetch(`/api/notes/${n.id}`, {
