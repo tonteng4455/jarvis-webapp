@@ -92,9 +92,12 @@ function Composer({ onCreate, onEditingChange }) {
   );
 }
 
-// --- One note card: click content to edit inline (auto-grows). Saves
-// on "เสร็จสิ้น" or clicking away. Drag handle is its own small element
-// so dragging never swallows clicks on the toolbar buttons. ---
+// --- One note: collapsed = a compact horizontal row (same idea as a
+// calendar-list card) with a color accent bar and a drag handle.
+// Clicking it EXPANDS into the same prominent "note-composer" look
+// used for creating a new note — big title input, auto-grow textarea,
+// category select, full toolbar — instead of editing cramped inside
+// the small row. Saves on "เสร็จสิ้น" or clicking away. ---
 function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDown, isDragging, autoEditId }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note.title);
@@ -105,7 +108,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
 
   // Coming from a LIFF link (bot card's "✏️ แก้ไข" button) with
   // ?id=... — jump straight into editing this one note, scrolled into
-  // view, instead of making someone find it in the grid first.
+  // view, instead of making someone find it in the list first.
   useEffect(() => {
     if (autoEditId && String(note.id) === String(autoEditId)) {
       setEditing(true);
@@ -136,72 +139,78 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
 
   const isArchived = note.archived;
 
-  return (
-    <div className="note-card" ref={ref} data-note-id={note.id}
-      style={{ background: colorBg(note.color), opacity: isDragging ? 0.4 : 1 }}>
-      {editing ? (
-        <>
-          <input className="note-title-input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
-          <AutoGrowTextarea className="note-content-textarea" value={content} onChange={e => setContent(e.target.value)} />
-          <div style={{ marginTop: '0.4rem' }} onMouseDown={e => e.stopPropagation()}>
-            <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
-          </div>
-          <div style={{ textAlign: 'right', marginTop: '0.4rem' }}>
-            <button onClick={saveEdit} className="glass-btn" style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
-          </div>
-        </>
-      ) : (
-        <div onClick={() => setEditing(true)} style={{ cursor: 'text', minHeight: 30 }}>
-          {note.title && <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.3rem' }}>{note.title}</div>}
-          <div style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap', color: 'var(--text-primary)' }}>{note.content || <span className="muted">โน้ตว่างเปล่า</span>}</div>
+  if (editing) {
+    return (
+      <div className="note-composer" ref={ref} data-note-id={note.id}>
+        <input className="note-title-input" placeholder="หัวข้อ" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
+        <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content} onChange={e => setContent(e.target.value)} />
+        <div style={{ marginTop: '0.5rem', maxWidth: 220 }} onMouseDown={e => e.stopPropagation()}>
+          <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
         </div>
-      )}
 
-      <div className="note-toolbar">
-        <span className="note-icon-btn" title="ลากเพื่อสลับตำแหน่ง"
-          onPointerDown={onHandlePointerDown}
-          style={{ cursor: 'grab', touchAction: 'none' }}>⠿</span>
-        <button className="note-icon-btn" title="ปักหมุด" onMouseDown={e => e.stopPropagation()}
-          onClick={() => onUpdate(note.id, { pinned: !note.pinned })}>
-          {note.pinned ? '📌' : '📍'}
-        </button>
-        <button className="note-icon-btn" title="สี" onMouseDown={e => e.stopPropagation()}
-          onClick={() => setPickerOpen(v => !v)}>🎨</button>
-        {isArchived ? (
-          <button className="note-icon-btn" title="ย้ายกลับไปโน้ตปกติ" onMouseDown={e => e.stopPropagation()}
-            onClick={() => onUpdate(note.id, { archived: false })}>↩️</button>
-        ) : (
-          <button className="note-icon-btn" title="เก็บเข้าคลัง" onMouseDown={e => e.stopPropagation()}
-            onClick={() => onUpdate(note.id, { archived: true })}>🗄️</button>
+        <div className="note-toolbar">
+          <button className="note-icon-btn" title="ปักหมุด" onMouseDown={e => e.stopPropagation()}
+            onClick={() => onUpdate(note.id, { pinned: !note.pinned })}>
+            {note.pinned ? '📌' : '📍'}
+          </button>
+          <button className="note-icon-btn" title="สี" onMouseDown={e => e.stopPropagation()}
+            onClick={() => setPickerOpen(v => !v)}>🎨</button>
+          {isArchived ? (
+            <button className="note-icon-btn" title="ย้ายกลับไปโน้ตปกติ" onMouseDown={e => e.stopPropagation()}
+              onClick={() => onUpdate(note.id, { archived: false })}>↩️</button>
+          ) : (
+            <button className="note-icon-btn" title="เก็บเข้าคลัง" onMouseDown={e => e.stopPropagation()}
+              onClick={() => onUpdate(note.id, { archived: true })}>🗄️</button>
+          )}
+          <button className="note-icon-btn" title="ลบ" onMouseDown={e => e.stopPropagation()}
+            onClick={() => { if (confirm('ลบโน้ตนี้ใช่ไหม?')) onDelete(note.id); }}>🗑️</button>
+          <button onClick={saveEdit} className="glass-btn" style={{ marginLeft: 'auto', padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
+        </div>
+
+        {pickerOpen && (
+          <div className="note-swatch-row">
+            {COLORS.map(c => (
+              <span key={c.key} title={c.label}
+                className={`note-swatch${note.color === c.key ? ' active' : ''}`}
+                style={{ background: colorBg(c.key) }}
+                onMouseDown={e => e.stopPropagation()}
+                onClick={() => { onUpdate(note.id, { color: c.key }); setPickerOpen(false); }} />
+            ))}
+          </div>
         )}
-        <button className="note-icon-btn" title="ลบ" onMouseDown={e => e.stopPropagation()}
-          onClick={() => { if (confirm('ลบโน้ตนี้ใช่ไหม?')) onDelete(note.id); }}>🗑️</button>
-        <span className="muted" style={{ marginLeft: 'auto', fontSize: '0.65rem' }}>{categoryLabel(note.category)}</span>
       </div>
+    );
+  }
 
-      {pickerOpen && (
-        <div className="note-swatch-row">
-          {COLORS.map(c => (
-            <span key={c.key} title={c.label}
-              className={`note-swatch${note.color === c.key ? ' active' : ''}`}
-              style={{ background: colorBg(c.key) }}
-              onMouseDown={e => e.stopPropagation()}
-              onClick={() => { onUpdate(note.id, { color: c.key }); setPickerOpen(false); }} />
-          ))}
+  return (
+    <div className="note-row" ref={ref} data-note-id={note.id}
+      onClick={() => setEditing(true)} style={{ opacity: isDragging ? 0.4 : 1 }}>
+      <span className="note-drag-handle" title="ลากเพื่อสลับตำแหน่ง"
+        onPointerDown={onHandlePointerDown} onClick={e => e.stopPropagation()}>⠿</span>
+      <div className="note-row-accent" style={{ background: colorBg(note.color) === 'var(--note-default)' ? 'var(--border-strong)' : colorBg(note.color) }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {note.title && <div style={{ fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note.title}</div>}
+        <div className="muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {note.content || 'โน้ตว่างเปล่า'}
         </div>
-      )}
+      </div>
+      {note.pinned && <span title="ปักหมุด">📌</span>}
+      <span className="muted" style={{ fontSize: '0.65rem', flex: '0 0 auto' }}>{categoryLabel(note.category)}</span>
     </div>
   );
 }
 
-// A masonry section whose cards can be dragged to reorder among each
+// A vertical list whose rows can be dragged to reorder among each
 // other. Built on POINTER EVENTS (not native HTML5 drag-and-drop) —
 // the old implementation used draggable/dragstart/dragover/drop, which
 // is a MOUSE-ONLY spec that most mobile browsers don't fire at all for
 // touch gestures. That's why dragging on a phone just snapped back to
 // the original position: the drop event never fired, so nothing ever
 // actually reordered. Pointer Events (pointerdown/pointermove/pointerup)
-// unify mouse AND touch, so the same code now works on both.
+// unify mouse AND touch, so the same code now works on both. A single
+// vertical stack (rather than the earlier masonry grid) also makes
+// target-index detection unambiguous — no column-jumping to reason
+// about, just "which row am I closest to vertically".
 function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorder, onDragStateChange, autoEditId }) {
   const containerRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
@@ -261,7 +270,7 @@ function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorde
   }
 
   return (
-    <div className="note-masonry" ref={containerRef}
+    <div className="list-stack" ref={containerRef}
       onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}>
       {notes.map((n, i) => (
         <NoteCard

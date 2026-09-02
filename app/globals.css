@@ -333,6 +333,42 @@ a { color: inherit; }
   border: 1px solid var(--border);
   border-top-color: var(--glass-edge);
 }
+
+/* Horizontal row card — same idea as the calendar list's cards, used
+   for the COLLAPSED note view. A single vertical stack instead of a
+   masonry grid makes drag-to-reorder unambiguous on mobile (no column
+   jumping to reason about) and is what "การ์ดแนวนอนแบบกิจกรรมใน
+   ปฏิทิน" asked for directly. */
+.note-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  border: 1px solid var(--border);
+  border-top-color: var(--glass-edge);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+.note-row:hover { box-shadow: var(--shadow-md); }
+.note-row-accent {
+  align-self: stretch;
+  width: 4px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.note-drag-handle {
+  flex: 0 0 auto;
+  cursor: grab;
+  touch-action: none;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  padding: 0.2rem 0.3rem;
+}
 .note-card:hover { box-shadow: var(--shadow-md); }
 .note-title-input {
   width: 100%; border: none; background: transparent; outline: none;
