@@ -45,6 +45,7 @@ export function DashNav({ current }) {
     { key: 'tasks', label: '✅ งาน', href: '/dashboard/tasks' },
     { key: 'calendar', label: '📅 นัดหมาย', href: '/dashboard/calendar' },
     { key: 'expenses', label: '💰 เงิน', href: '/dashboard/expenses' },
+    { key: 'files', label: '📁 ไฟล์', href: '/dashboard/files' },
   ];
   return (
     <nav className="dash-nav">
