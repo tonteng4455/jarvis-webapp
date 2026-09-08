@@ -57,6 +57,21 @@ export async function POST(request) {
     }
   }
 
+  // New notes always land at the very top of the list — one less than
+  // whatever the current lowest sort_order is (GET orders sort_order
+  // ASC, nulls last) — until the user drags something else above it or
+  // moves this one elsewhere themselves. Mirrors the bot's own
+  // getTopSortOrder() in jarvis-line-bot.js so a note jotted via LINE
+  // and one created here behave identically.
+  const { data: topRow } = await supabase
+    .from('notes')
+    .select('sort_order')
+    .eq('user_id', session.lineUserId)
+    .order('sort_order', { ascending: true, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  const sortOrder = typeof topRow?.sort_order === 'number' ? topRow.sort_order - 1 : 0;
+
   const { data, error } = await supabase
     .from('notes')
     .insert({
@@ -65,6 +80,7 @@ export async function POST(request) {
       content: content?.trim() || '',
       category: category || 'general',
       color: color || 'default',
+      sort_order: sortOrder,
     })
     .select()
     .single();

@@ -77,16 +77,18 @@ function Composer({ onCreate, onEditingChange }) {
     );
   }
   return (
-    <div className="note-composer" ref={ref}>
-      <input className="note-title-input" placeholder="หัวข้อ" value={title}
-        onChange={e => setTitle(e.target.value)} autoFocus />
-      <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content}
-        onChange={e => setContent(e.target.value)} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', gap: '0.5rem' }}>
-        <div style={{ flex: 1, maxWidth: 180 }} onMouseDown={e => e.stopPropagation()}>
-          <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
+    <div className="note-editor-overlay">
+      <div className="note-editor-modal note-composer" ref={ref}>
+        <input className="note-title-input" placeholder="หัวข้อ" value={title}
+          onChange={e => setTitle(e.target.value)} autoFocus />
+        <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content}
+          onChange={e => setContent(e.target.value)} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', gap: '0.5rem' }}>
+          <div style={{ flex: 1, maxWidth: 180 }} onMouseDown={e => e.stopPropagation()}>
+            <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
+          </div>
+          <button onClick={commit} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem', flex: '0 0 auto' }}>เสร็จสิ้น</button>
         </div>
-        <button onClick={commit} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem', flex: '0 0 auto' }}>เสร็จสิ้น</button>
       </div>
     </div>
   );
@@ -141,43 +143,45 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
 
   if (editing) {
     return (
-      <div className="note-composer" ref={ref} data-note-id={note.id}>
-        <input className="note-title-input" placeholder="หัวข้อ" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
-        <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content} onChange={e => setContent(e.target.value)} />
-        <div style={{ marginTop: '0.5rem', maxWidth: 220 }} onMouseDown={e => e.stopPropagation()}>
-          <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
-        </div>
-
-        <div className="note-toolbar">
-          <button className="note-icon-btn" title="ปักหมุด" onMouseDown={e => e.stopPropagation()}
-            onClick={() => onUpdate(note.id, { pinned: !note.pinned })}>
-            {note.pinned ? '📌' : '📍'}
-          </button>
-          <button className="note-icon-btn" title="สี" onMouseDown={e => e.stopPropagation()}
-            onClick={() => setPickerOpen(v => !v)}>🎨</button>
-          {isArchived ? (
-            <button className="note-icon-btn" title="ย้ายกลับไปโน้ตปกติ" onMouseDown={e => e.stopPropagation()}
-              onClick={() => onUpdate(note.id, { archived: false })}>↩️</button>
-          ) : (
-            <button className="note-icon-btn" title="เก็บเข้าคลัง" onMouseDown={e => e.stopPropagation()}
-              onClick={() => onUpdate(note.id, { archived: true })}>🗄️</button>
-          )}
-          <button className="note-icon-btn" title="ลบ" onMouseDown={e => e.stopPropagation()}
-            onClick={() => { if (confirm('ลบโน้ตนี้ใช่ไหม?')) onDelete(note.id); }}>🗑️</button>
-          <button onClick={saveEdit} className="glass-btn" style={{ marginLeft: 'auto', padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
-        </div>
-
-        {pickerOpen && (
-          <div className="note-swatch-row">
-            {COLORS.map(c => (
-              <span key={c.key} title={c.label}
-                className={`note-swatch${note.color === c.key ? ' active' : ''}`}
-                style={{ background: colorBg(c.key) }}
-                onMouseDown={e => e.stopPropagation()}
-                onClick={() => { onUpdate(note.id, { color: c.key }); setPickerOpen(false); }} />
-            ))}
+      <div className="note-editor-overlay">
+        <div className="note-editor-modal note-composer" ref={ref} data-note-id={note.id}>
+          <input className="note-title-input" placeholder="หัวข้อ" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
+          <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content} onChange={e => setContent(e.target.value)} />
+          <div style={{ marginTop: '0.5rem', maxWidth: 220 }} onMouseDown={e => e.stopPropagation()}>
+            <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
           </div>
-        )}
+
+          <div className="note-toolbar">
+            <button className="note-icon-btn" title="ปักหมุด" onMouseDown={e => e.stopPropagation()}
+              onClick={() => onUpdate(note.id, { pinned: !note.pinned })}>
+              {note.pinned ? '📌' : '📍'}
+            </button>
+            <button className="note-icon-btn" title="สี" onMouseDown={e => e.stopPropagation()}
+              onClick={() => setPickerOpen(v => !v)}>🎨</button>
+            {isArchived ? (
+              <button className="note-icon-btn" title="ย้ายกลับไปโน้ตปกติ" onMouseDown={e => e.stopPropagation()}
+                onClick={() => onUpdate(note.id, { archived: false })}>↩️</button>
+            ) : (
+              <button className="note-icon-btn" title="เก็บเข้าคลัง" onMouseDown={e => e.stopPropagation()}
+                onClick={() => onUpdate(note.id, { archived: true })}>🗄️</button>
+            )}
+            <button className="note-icon-btn" title="ลบ" onMouseDown={e => e.stopPropagation()}
+              onClick={() => { if (confirm('ลบโน้ตนี้ใช่ไหม?')) onDelete(note.id); }}>🗑️</button>
+            <button onClick={saveEdit} className="glass-btn" style={{ marginLeft: 'auto', padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
+          </div>
+
+          {pickerOpen && (
+            <div className="note-swatch-row">
+              {COLORS.map(c => (
+                <span key={c.key} title={c.label}
+                  className={`note-swatch${note.color === c.key ? ' active' : ''}`}
+                  style={{ background: colorBg(c.key) }}
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={() => { onUpdate(note.id, { color: c.key }); setPickerOpen(false); }} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }

@@ -394,6 +394,39 @@ a { color: inherit; }
 .note-swatch.active { border: 2px solid var(--accent); }
 .note-swatch-row { display: flex; gap: 0.4rem; flex-wrap: wrap; padding: 0.5rem 0.2rem; }
 
+/* ---------- Note editor — full-screen while open ---------- */
+/* Editing (new note composer OR an existing note's expanded card) used
+   to happen inline in the list, in a box only as tall as its content —
+   fine for a couple lines, cramped for anything longer. This takes over
+   the whole viewport instead (a dimmed backdrop + a near-fullscreen
+   panel), same idea as a modal, so there's room to actually write.
+   Clicking the dimmed backdrop still counts as "outside" the panel for
+   the existing click-away-to-save logic in page.jsx — no JS changes
+   needed there, this is purely the visual/layout side of it. */
+.note-editor-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem;
+}
+.note-editor-modal.note-composer {
+  width: min(720px, 100%);
+  height: min(88vh, 900px);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  /* Generous edge padding — the earlier inline version had none at
+     all, so the first character sat flush against the box border. */
+  padding: 1.5rem 1.75rem;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow-y: auto;
+}
+.note-editor-modal .note-content-textarea {
+  flex: 1;
+  min-height: 200px;
+}
+
 /* ---------- Table (admin) — collapses to stacked cards on mobile ---------- */
 .glass-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .glass-table th { text-align: left; padding: 0.5rem; color: var(--text-secondary); font-weight: 600; }
