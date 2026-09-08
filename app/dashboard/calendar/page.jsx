@@ -106,6 +106,7 @@ function CalendarPageInner() {
   const [events, setEvents] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [status, setStatus] = useState(null);
+  const [showPast, setShowPast] = useState(false);
   const searchParams = useSearchParams();
 
   // Coming from a LIFF link (bot card's "✏️ แก้ไข" button) with
@@ -116,8 +117,8 @@ function CalendarPageInner() {
     if (id) setEditingId(id);
   }, [searchParams]);
 
-  async function load() {
-    const res = await fetch('/api/calendar');
+  async function load(past = showPast) {
+    const res = await fetch(`/api/calendar?past=${past}`);
     if (res.status === 401) { window.location.href = '/login'; return; }
     const data = await res.json();
     setEvents(data.events);
@@ -163,9 +164,14 @@ function CalendarPageInner() {
   return (
     <main className="page">
       <DashNav current="calendar" />
-      <h1 className="page-title">📅 นัดหมายของฉัน</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <h1 className="page-title">📅 {showPast ? 'นัดหมายที่ผ่านมาแล้ว' : 'นัดหมายของฉัน'}</h1>
+        <button className="glass-btn-outline" onClick={() => { const v = !showPast; setShowPast(v); setEditingId(null); load(v); }}>
+          {showPast ? '⬅️ กลับไปที่จะถึง' : '🗄️ ผ่านมาแล้ว'}
+        </button>
+      </div>
       {events === null && <p className="text-white-muted">กำลังโหลด...</p>}
-      {events?.length === 0 && <div className="glass-card"><p className="muted">ไม่มีนัดหมายครับ</p></div>}
+      {events?.length === 0 && <div className="glass-card"><p className="muted">{showPast ? 'ยังไม่มีนัดหมายที่ผ่านมาแล้วครับ' : 'ไม่มีนัดหมายครับ'}</p></div>}
       {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
       {events?.length > 0 && (
         <div className="list-stack">
