@@ -71,8 +71,13 @@ export default function DashboardPage() {
         {me.pictureUrl && <img src={me.pictureUrl} alt="" style={{ width: 56, height: 56, borderRadius: '50%', flexShrink: 0 }} />}
         <div>
           <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{me.displayName || 'ผู้ใช้'}</div>
-          <div style={{ fontSize: '0.85rem', color: me.isPremium ? 'var(--success)' : 'var(--text-secondary)' }}>
-            {me.isPremium ? `✨ Premium ถึง ${new Date(me.premiumUntil).toLocaleDateString('th-TH')}` : 'Free'}
+          {/* Premium was cut from the whole system — always free/full
+              access now, so this is just a plain confirmation instead
+              of a "Premium until <date>" badge (premiumUntil is null
+              for virtually everyone now, which would've rendered as
+              "Invalid Date"). */}
+          <div style={{ fontSize: '0.85rem', color: 'var(--success)' }}>
+            ✨ ใช้งานได้เต็มรูปแบบ ไม่มีค่าใช้จ่าย
           </div>
         </div>
       </div>

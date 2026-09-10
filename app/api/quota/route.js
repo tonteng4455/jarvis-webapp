@@ -18,7 +18,9 @@ export async function GET() {
   return NextResponse.json({
     usedBytes: user?.used_storage_bytes ?? 0,
     quotaBytes: quotaBytes ?? 1073741824,
-    isPremium: user?.is_premium ?? false,
+    // Premium was cut from the whole system — always true now (see
+    // lib/premium.js's getPremiumSession).
+    isPremium: true,
     premiumUntil: user?.premium_until ?? null,
   });
 }

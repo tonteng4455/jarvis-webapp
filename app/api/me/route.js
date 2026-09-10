@@ -20,7 +20,10 @@ export async function GET() {
     displayName: user?.display_name ?? session.displayName,
     pictureUrl: user?.picture_url ?? session.pictureUrl,
     phoneNumber: user?.phone_number ?? null,
-    isPremium: user?.is_premium ?? false,
+    // Premium was cut from the whole system — always true now (see
+    // lib/premium.js's getPremiumSession, the single source of truth
+    // this used to bypass by reading is_premium straight from the DB).
+    isPremium: true,
     premiumUntil: user?.premium_until ?? null,
     usedBytes: user?.used_storage_bytes ?? 0,
     quotaBytes: quotaBytes ?? 1073741824,
