@@ -81,6 +81,7 @@ function VoiceAssistant() {
   const [error, setError] = useState(null);
   const recognitionRef = useRef(null);
   const turnStartRef = useRef(null); // Date.now() when listening began — used to measure this turn's duration for the time-based quota
+  const audioRef = useRef(null); // currently-playing Chirp3 Audio() element, if any — so the "tap to stop speaking" path can stop either playback method
   const voicePrefRef = useRef(null); // { voiceName, voiceLang } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
 
   useEffect(() => {
@@ -157,8 +158,35 @@ function VoiceAssistant() {
     }
   }
 
-  function speak(text) {
+  // Tries Chirp 3 HD first (natural/emotional voice, but capped by the
+  // monthly $-cost quota — see tts_usage) — falls back to the
+  // browser's own free SpeechSynthesis whenever the server says
+  // allowed:false (quota used up this month, no API key configured,
+  // or synthesis failed for any reason) or the fetch itself fails
+  // (offline, etc.). The fallback is silent — no error shown, no
+  // difference in the UI flow, just a lower-quality voice.
+  async function speak(text) {
     setState('speaking');
+    try {
+      const res = await fetch('/api/assistant/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.allowed && data.audioContent) {
+        const audio = new Audio(`data:audio/mp3;base64,${data.audioContent}`);
+        audioRef.current = audio;
+        audio.onended = () => { audioRef.current = null; finishTurn(); setState('idle'); };
+        audio.onerror = () => { audioRef.current = null; finishTurn(); speakBrowser(text); }; // audio itself failed to play (e.g. corrupt data) — still fall back rather than going silent
+        await audio.play();
+        return;
+      }
+    } catch (e) { /* fetch/network failure — fall through to browser TTS below */ }
+    speakBrowser(text);
+  }
+
+  function speakBrowser(text) {
     window.speechSynthesis.cancel(); // don't stack multiple replies if tapped again quickly
     const utterance = new SpeechSynthesisUtterance(text);
     // Match the saved voice by exact name first (works when this is
@@ -197,6 +225,7 @@ function VoiceAssistant() {
       return;
     }
     if (state === 'speaking') {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       window.speechSynthesis.cancel();
       finishTurn();
       setState('idle');
