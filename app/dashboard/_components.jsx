@@ -1,7 +1,7 @@
 'use client';
 // app/dashboard/_components.jsx
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // Reads the saved theme (or falls back to system preference) and
 // applies it to <html data-theme="...">. Called both from the
@@ -46,6 +46,7 @@ export function DashNav({ current }) {
     { key: 'calendar', label: '📅 นัดหมาย', href: '/dashboard/calendar' },
     { key: 'expenses', label: '💰 เงิน', href: '/dashboard/expenses' },
     { key: 'files', label: '📁 ไฟล์', href: '/dashboard/files' },
+    { key: 'settings', label: '⚙️ ตั้งค่าเสียง', href: '/dashboard/settings' },
   ];
   return (
     <nav className="dash-nav">
@@ -55,9 +56,208 @@ export function DashNav({ current }) {
         </a>
       ))}
       <ThemeToggle />
+      <VoiceAssistant />
     </nav>
   );
 }
+
+// §Voice assistant — mic button, speech-to-text and text-to-speech both
+// done by the BROWSER itself (Web Speech API: SpeechRecognition +
+// SpeechSynthesis) — completely free, no audio ever leaves the device
+// as audio. Only the transcribed TEXT goes to the server (POST
+// /api/assistant), which bridges to the bot Worker's routeVoiceText()
+// — the exact same task-execution chain LINE uses (จด/นัด/รายจ่าย/
+// ปรึกษาหารือ all work identically to typing them in LINE).
+//
+// Browser support: SpeechRecognition works well in Chrome/Edge, is NOT
+// supported in Firefox, and is inconsistent in Safari — this feature-
+// detects at mount and simply doesn't render the button if the
+// browser can't do it, rather than showing something broken.
+function VoiceAssistant() {
+  const [supported, setSupported] = useState(true);
+  const [state, setState] = useState('idle'); // idle | listening | thinking | speaking
+  const [transcript, setTranscript] = useState('');
+  const [reply, setReply] = useState('');
+  const [error, setError] = useState(null);
+  const recognitionRef = useRef(null);
+  const turnStartRef = useRef(null); // Date.now() when listening began — used to measure this turn's duration for the time-based quota
+  const voicePrefRef = useRef(null); // { voiceName, voiceLang } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
+
+  useEffect(() => {
+    fetch('/api/assistant/preferences').then(r => r.json()).then(data => {
+      voicePrefRef.current = { voiceName: data.voiceName, voiceLang: data.voiceLang };
+    }).catch(() => { voicePrefRef.current = { voiceName: null, voiceLang: null }; });
+  }, []);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition || !window.speechSynthesis) {
+      setSupported(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'th-TH';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const text = event.results[0][0].transcript;
+      setTranscript(text);
+      sendToAssistant(text);
+    };
+    recognition.onerror = (event) => {
+      finishTurn();
+      setState('idle');
+      setError(event.error === 'not-allowed' ? 'ไม่ได้รับอนุญาตให้ใช้ไมโครโฟนครับ' : 'ฟังไม่ชัดครับ ลองอีกครั้ง');
+    };
+    recognition.onend = () => {
+      setState(prev => (prev === 'listening' ? 'idle' : prev));
+    };
+    recognitionRef.current = recognition;
+
+    return () => { try { recognition.abort(); } catch (e) { /* already stopped */ } };
+  }, []);
+
+  // Reports this turn's elapsed time (from tapping the mic to the
+  // reply finishing — listening + thinking + speaking, the whole
+  // "using voice" duration) to the time-based daily quota. Called on
+  // every path a turn can end: normal completion, recognition error,
+  // or a fetch failure — so partial/failed turns still count toward
+  // the cap rather than being a free way around it.
+  function finishTurn() {
+    if (turnStartRef.current === null) return;
+    const elapsedSeconds = Math.round((Date.now() - turnStartRef.current) / 1000);
+    turnStartRef.current = null;
+    if (elapsedSeconds > 0) {
+      fetch('/api/assistant/voice-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add', seconds: elapsedSeconds }),
+      }).catch(() => { /* best-effort — a failed report shouldn't break the UI */ });
+    }
+  }
+
+  async function sendToAssistant(text) {
+    setState('thinking');
+    setError(null);
+    try {
+      const res = await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'assistant_error');
+      setReply(data.reply);
+      speak(data.reply);
+    } catch (e) {
+      finishTurn();
+      setState('idle');
+      setError('ขอโทษครับ ตอนนี้ผู้ช่วยเสียงมีปัญหา ลองอีกครั้งครับ');
+    }
+  }
+
+  function speak(text) {
+    setState('speaking');
+    window.speechSynthesis.cancel(); // don't stack multiple replies if tapped again quickly
+    const utterance = new SpeechSynthesisUtterance(text);
+    // Match the saved voice by exact name first (works when this is
+    // the same device/browser it was picked on); if not found (e.g. a
+    // different device — see settings page's own note on why this
+    // happens), fall back to any voice matching the saved language,
+    // then finally the browser's own default for 'th-TH'.
+    const pref = voicePrefRef.current;
+    const available = window.speechSynthesis.getVoices();
+    const matched = pref?.voiceName && available.find(v => v.name === pref.voiceName);
+    const langMatch = !matched && pref?.voiceLang && available.find(v => v.lang === pref.voiceLang);
+    if (matched) utterance.voice = matched;
+    else if (langMatch) utterance.voice = langMatch;
+    utterance.lang = 'th-TH';
+    utterance.onend = () => { finishTurn(); setState('idle'); };
+    utterance.onerror = () => { finishTurn(); setState('idle'); };
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async function handleReset() {
+    setTranscript('');
+    setReply('');
+    setError(null);
+    try {
+      await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset: true }),
+      });
+    } catch (e) { /* best-effort — the server just keeps whatever history it had if this fails, no local state to roll back */ }
+  }
+
+  async function handleTap() {
+    if (state === 'listening') {
+      recognitionRef.current?.stop();
+      return;
+    }
+    if (state === 'speaking') {
+      window.speechSynthesis.cancel();
+      finishTurn();
+      setState('idle');
+      return;
+    }
+    if (state === 'thinking') return; // ignore taps while waiting for a reply
+
+    setTranscript('');
+    setReply('');
+    setError(null);
+
+    // Time-based daily cap (15 min default) — checked BEFORE starting
+    // to listen, not after, so a turn already in progress when the cap
+    // is hit is never cut off mid-sentence (see finishTurn/the bot
+    // Worker's handleVoiceUsageRequest for the "check before, add
+    // after" split).
+    try {
+      const res = await fetch('/api/assistant/voice-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'check' }),
+      });
+      const data = await res.json();
+      if (data.allowed === false) {
+        const usedMin = Math.round((data.usedSeconds || 0) / 60);
+        const limitMin = Math.round((data.limitSeconds || 900) / 60);
+        setError(`ใช้เสียงครบ ${limitMin} นาทีของวันนี้แล้วครับ (${usedMin} นาที) พรุ่งนี้กลับมาใหม่นะครับ`);
+        return;
+      }
+    } catch (e) { /* quota check failed — fail open, same as the server side */ }
+
+    turnStartRef.current = Date.now();
+    setState('listening');
+    try { recognitionRef.current?.start(); } catch (e) { turnStartRef.current = null; setState('idle'); } // start() throws if already running — harmless, just ignore
+  }
+
+  if (!supported) return null;
+
+  const icon = { idle: '🎤', listening: '🔴', thinking: '⏳', speaking: '🔊' }[state];
+  const label = { idle: 'คุยกับ Jarvis', listening: 'กำลังฟัง... แตะเพื่อหยุด', thinking: 'กำลังคิด...', speaking: 'แตะเพื่อหยุดพูด' }[state];
+
+  return (
+    <div className="voice-assistant">
+      <button type="button" className={`voice-assistant-btn voice-assistant-btn--${state}`}
+        onClick={handleTap} title={label} aria-label={label}>
+        {icon}
+      </button>
+      {(transcript || reply || error) && (
+        <div className="voice-assistant-transcript">
+          {transcript && <p className="voice-assistant-you">🗣️ {transcript}</p>}
+          {reply && <p className="voice-assistant-reply">🤖 {reply}</p>}
+          {error && <p className="voice-assistant-error">⚠️ {error}</p>}
+          <button type="button" className="voice-assistant-reset" onClick={handleReset} title="ล้างความจำบทสนทนา เริ่มคุยใหม่">
+            🔄 เริ่มคุยใหม่
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export function PremiumUpsell() {
   return (
