@@ -269,10 +269,6 @@ function VoiceAssistant() {
 
   return (
     <div className="voice-assistant">
-      <button type="button" className={`voice-assistant-btn voice-assistant-btn--${state}`}
-        onClick={handleTap} title={label} aria-label={label}>
-        {icon}
-      </button>
       {(transcript || reply || error) && (
         <div className="voice-assistant-transcript">
           {transcript && <p className="voice-assistant-you">🗣️ {transcript}</p>}
@@ -283,6 +279,10 @@ function VoiceAssistant() {
           </button>
         </div>
       )}
+      <button type="button" className={`voice-assistant-btn voice-assistant-btn--${state}`}
+        onClick={handleTap} title={label} aria-label={label}>
+        <span className="voice-assistant-icon">{icon}</span>
+      </button>
     </div>
   );
 }

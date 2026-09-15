@@ -21,6 +21,8 @@ export default function SettingsPage() {
   const [voices, setVoices] = useState([]);
   const [selectedVoice, setSelectedVoice] = useState('');
   const [personality, setPersonality] = useState('');
+  const [assistantName, setAssistantName] = useState('');
+  const [assistantGender, setAssistantGender] = useState('male');
   const [status, setStatus] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -46,6 +48,8 @@ export default function SettingsPage() {
       .then(data => {
         setSelectedVoice(data.voiceName || '');
         setPersonality(data.personality || '');
+        setAssistantName(data.assistantName || '');
+        setAssistantGender(data.assistantGender || 'male');
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -58,7 +62,10 @@ export default function SettingsPage() {
       const res = await fetch('/api/assistant/preferences', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voiceName: selectedVoice || null, voiceLang: voice?.lang || null, personality }),
+        body: JSON.stringify({
+          voiceName: selectedVoice || null, voiceLang: voice?.lang || null, personality,
+          assistantName: assistantName.trim() || null, assistantGender,
+        }),
       });
       if (!res.ok) throw new Error();
       setStatus('saved');
@@ -70,7 +77,10 @@ export default function SettingsPage() {
 
   function playSample() {
     if (!window.speechSynthesis) return;
-    const utterance = new SpeechSynthesisUtterance('สวัสดีครับ ผมคือ Jarvis ผู้ช่วยของคุณ');
+    const name = assistantName.trim() || 'Jarvis';
+    const particle = assistantGender === 'female' ? 'ค่ะ' : 'ครับ';
+    const self = assistantGender === 'female' ? 'ฉัน' : 'ผม';
+    const utterance = new SpeechSynthesisUtterance(`สวัสดี${particle} ${self}คือ ${name} ผู้ช่วยของคุณ${particle}`);
     const voice = voices.find(v => v.name === selectedVoice);
     if (voice) utterance.voice = voice;
     utterance.lang = voice?.lang || 'th-TH';
@@ -82,6 +92,24 @@ export default function SettingsPage() {
     <main className="page">
       <DashNav current="settings" />
       <h1 className="page-title">⚙️ ตั้งค่าผู้ช่วยเสียง</h1>
+
+      <div className="glass-card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>🏷️ ชื่อเรียก + เพศของเลขา</h2>
+        <input type="text" value={assistantName} onChange={e => setAssistantName(e.target.value)}
+          placeholder="Jarvis (ค่าเริ่มต้น)" maxLength={40}
+          style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', marginBottom: '0.6rem', fontSize: '0.85rem' }} />
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.4rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.85rem' }}>
+            <input type="radio" name="gender" checked={assistantGender === 'male'} onChange={() => setAssistantGender('male')} /> ชาย (ครับ)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.85rem' }}>
+            <input type="radio" name="gender" checked={assistantGender === 'female'} onChange={() => setAssistantGender('female')} /> หญิง (ค่ะ)
+          </label>
+        </div>
+        <p className="muted" style={{ fontSize: '0.75rem' }}>
+          ใช้ได้เฉพาะในหน้าเว็บ/ผู้ช่วยเสียงนี้เท่านั้นครับ — ฝั่ง LINE ชื่อบัญชียังเป็น "Jarvis" เสมอ (เป็นข้อจำกัดของ LINE เอง เปลี่ยนต่อผู้ใช้แต่ละคนไม่ได้)
+        </p>
+      </div>
 
       <div className="glass-card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>🔊 เสียงพูด</h2>
