@@ -10,6 +10,11 @@ export const viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
+  // Required for env(safe-area-inset-*) to resolve to anything other
+  // than 0 on iOS — without this, the voice button's safe-area
+  // adjustment (globals.css) is a silent no-op and it can end up
+  // sitting under the home-indicator bar on notched iPhones.
+  viewportFit: 'cover',
 };
 
 // Runs synchronously before the page paints — sets [data-theme] on

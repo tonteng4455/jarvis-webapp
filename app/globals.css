@@ -190,8 +190,18 @@ a { color: inherit; }
 .voice-assistant {
   position: fixed;
   right: 1.1rem;
-  bottom: 1.1rem;
-  z-index: 60;
+  /* env(safe-area-inset-bottom) accounts for the iOS home-indicator
+     bar / Android gesture area, which otherwise sits right on top of
+     a plain "bottom: 1.1rem" and can visually cover or crowd the
+     button on phones with that inset (0 on devices without one, so
+     this is a no-op elsewhere). */
+  bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
+  /* Was 60 — too low relative to other fixed-position overlays added
+     since (e.g. .note-editor-overlay at 200), which would sit ON TOP
+     of the button whenever one was open. Set higher than anything
+     else in this file so the voice button is never covered by a
+     future overlay either. */
+  z-index: 9999;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
