@@ -55,8 +55,11 @@ export default function SettingsPage() {
       .catch(() => setLoaded(true));
   }, []);
 
+  const [saveErrorDetail, setSaveErrorDetail] = useState(null);
+
   async function save() {
     setStatus('saving');
+    setSaveErrorDetail(null);
     const voice = voices.find(v => v.name === selectedVoice);
     try {
       const res = await fetch('/api/assistant/preferences', {
@@ -67,7 +70,8 @@ export default function SettingsPage() {
           assistantName: assistantName.trim() || null, assistantGender,
         }),
       });
-      if (!res.ok) throw new Error();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setSaveErrorDetail(data.detail || data.error || null); throw new Error(); }
       setStatus('saved');
       setTimeout(() => setStatus(null), 2000);
     } catch (e) {
@@ -157,6 +161,9 @@ export default function SettingsPage() {
       <button type="button" className="glass-btn" onClick={save} disabled={status === 'saving'}>
         {status === 'saving' ? 'กำลังบันทึก...' : status === 'saved' ? '✅ บันทึกแล้ว' : status === 'error' ? '⚠️ บันทึกไม่สำเร็จ ลองอีกครั้ง' : '💾 บันทึก'}
       </button>
+      {saveErrorDetail && (
+        <p className="muted" style={{ fontSize: '0.72rem', marginTop: '0.4rem' }}>🔧 debug: {saveErrorDetail}</p>
+      )}
     </main>
   );
 }

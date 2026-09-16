@@ -84,6 +84,67 @@ function VoiceAssistant() {
   const audioRef = useRef(null); // currently-playing Chirp3 Audio() element, if any — so the "tap to stop speaking" path can stop either playback method
   const voicePrefRef = useRef(null); // { voiceName, voiceLang } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
 
+  // §Draggable, edge-snapping FAB (like iOS AssistiveTouch). dragPos
+  // is null until the button is dragged for the first time — before
+  // that, plain CSS handles the default bottom-right position (see
+  // .voice-assistant in globals.css). Once dragged, position switches
+  // to explicit left/top pixels and snaps to whichever screen edge is
+  // nearer on release, persisted in localStorage so it stays put
+  // across reloads (this is purely a placement preference, not
+  // account data, so localStorage — not the Supabase-backed
+  // preferences — is the right place for it).
+  const [dragPos, setDragPos] = useState(null); // { x, y } in px
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStateRef = useRef({ startX: 0, startY: 0, offsetX: 0, offsetY: 0, moved: false });
+  const BTN_SIZE = 58, EDGE_MARGIN = 10;
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('jarvis-voice-btn-pos');
+      if (saved) setDragPos(JSON.parse(saved));
+    } catch (e) { /* corrupt/missing — just use the default position */ }
+  }, []);
+
+  function handlePointerDown(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    dragStateRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top,
+      moved: false,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId); // keeps move/up events firing on this element even once the pointer leaves it — standard drag pattern, no window-level listeners needed
+  }
+
+  function handlePointerMove(e) {
+    if (e.buttons === 0) return; // pointer capture can occasionally deliver a stray move with no button held
+    const { startX, startY, offsetX, offsetY } = dragStateRef.current;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (!dragStateRef.current.moved && Math.hypot(dx, dy) < 6) return; // small threshold — anything under this is a tap, not a drag
+    dragStateRef.current.moved = true;
+    setIsDragging(true);
+    const x = Math.max(EDGE_MARGIN, Math.min(window.innerWidth - BTN_SIZE - EDGE_MARGIN, e.clientX - offsetX));
+    const y = Math.max(EDGE_MARGIN, Math.min(window.innerHeight - BTN_SIZE - EDGE_MARGIN, e.clientY - offsetY));
+    setDragPos({ x, y });
+  }
+
+  function handlePointerUp() {
+    if (!dragStateRef.current.moved) {
+      // Never actually dragged — this was a plain tap.
+      handleTap();
+      return;
+    }
+    setIsDragging(false);
+    setDragPos(prev => {
+      if (!prev) return prev;
+      // Snap to whichever edge (left/right) the button's CENTER is
+      // closer to — the AssistiveTouch-style "flies to the edge" feel.
+      const snappedX = (prev.x + BTN_SIZE / 2) < window.innerWidth / 2 ? EDGE_MARGIN : window.innerWidth - BTN_SIZE - EDGE_MARGIN;
+      const next = { x: snappedX, y: prev.y };
+      try { localStorage.setItem('jarvis-voice-btn-pos', JSON.stringify(next)); } catch (e) { /* storage full/disabled — position just won't persist, not fatal */ }
+      return next;
+    });
+  }
+
   useEffect(() => {
     fetch('/api/assistant/preferences').then(r => r.json()).then(data => {
       voicePrefRef.current = { voiceName: data.voiceName, voiceLang: data.voiceLang };
@@ -149,9 +210,16 @@ function VoiceAssistant() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'assistant_error');
-      setReply(data.reply);
-      speak(data.reply);
+      // Guard against an EMPTY reply — silently trying to speak ""
+      // produces no sound and no error, which looks identical to "the
+      // voice just doesn't work" from the outside. A real fallback
+      // message here at least gives the user something audible/visible
+      // instead of dead silence with no clue why.
+      const replyText = data.reply?.trim() || 'ขอโทษครับ ไม่เข้าใจคำสั่งนี้ ลองพูดอีกครั้งครับ';
+      setReply(replyText);
+      speak(replyText);
     } catch (e) {
+      console.error('assistant request failed:', e);
       finishTurn();
       setState('idle');
       setError('ขอโทษครับ ตอนนี้ผู้ช่วยเสียงมีปัญหา ลองอีกครั้งครับ');
@@ -178,16 +246,29 @@ function VoiceAssistant() {
         const audio = new Audio(`data:audio/mp3;base64,${data.audioContent}`);
         audioRef.current = audio;
         audio.onended = () => { audioRef.current = null; finishTurn(); setState('idle'); };
-        audio.onerror = () => { audioRef.current = null; finishTurn(); speakBrowser(text); }; // audio itself failed to play (e.g. corrupt data) — still fall back rather than going silent
+        audio.onerror = (ev) => { console.error('Chirp3 audio playback error:', ev); audioRef.current = null; finishTurn(); speakBrowser(text); }; // audio itself failed to play (e.g. corrupt data) — still fall back rather than going silent
         await audio.play();
         return;
       }
-    } catch (e) { /* fetch/network failure — fall through to browser TTS below */ }
+    } catch (e) {
+      // Includes a rejected audio.play() — e.g. the browser's autoplay
+      // policy blocking programmatic playback (can happen if too many
+      // async hops separate this from the original tap). Logged so
+      // it's actually diagnosable from devtools instead of just
+      // "nothing happened".
+      console.error('Chirp3 speak() failed, falling back to browser TTS:', e);
+    }
     speakBrowser(text);
   }
 
   function speakBrowser(text) {
+    if (!window.speechSynthesis) { finishTurn(); setState('idle'); setError('เบราว์เซอร์นี้ไม่รองรับการพูดตอบครับ (อ่านคำตอบจากข้อความด้านบนได้)'); return; }
     window.speechSynthesis.cancel(); // don't stack multiple replies if tapped again quickly
+    // Chrome has a long-standing bug where speechSynthesis can get
+    // stuck in a paused state (especially after tab visibility
+    // changes or several calls in a row) — resume() is a harmless
+    // no-op when not needed, and a known workaround when it is.
+    window.speechSynthesis.resume();
     const utterance = new SpeechSynthesisUtterance(text);
     // Match the saved voice by exact name first (works when this is
     // the same device/browser it was picked on); if not found (e.g. a
@@ -202,7 +283,7 @@ function VoiceAssistant() {
     else if (langMatch) utterance.voice = langMatch;
     utterance.lang = 'th-TH';
     utterance.onend = () => { finishTurn(); setState('idle'); };
-    utterance.onerror = () => { finishTurn(); setState('idle'); };
+    utterance.onerror = (ev) => { console.error('speechSynthesis error:', ev.error); finishTurn(); setState('idle'); };
     window.speechSynthesis.speak(utterance);
   }
 
@@ -268,7 +349,8 @@ function VoiceAssistant() {
   const label = { idle: 'คุยกับ Jarvis', listening: 'กำลังฟัง... แตะเพื่อหยุด', thinking: 'กำลังคิด...', speaking: 'แตะเพื่อหยุดพูด' }[state];
 
   return (
-    <div className="voice-assistant">
+    <div className="voice-assistant"
+      style={dragPos ? { left: dragPos.x, top: dragPos.y, right: 'auto', bottom: 'auto', transition: isDragging ? 'none' : 'left 0.3s ease, top 0.3s ease' } : undefined}>
       {(transcript || reply || error) && (
         <div className="voice-assistant-transcript">
           {transcript && <p className="voice-assistant-you">🗣️ {transcript}</p>}
@@ -279,8 +361,12 @@ function VoiceAssistant() {
           </button>
         </div>
       )}
+      {/* Drag-to-move, tap-to-talk — handlePointerUp calls handleTap
+          itself when no drag was detected, so there's no onClick here
+          (would double-fire alongside the pointer handlers). */}
       <button type="button" className={`voice-assistant-btn voice-assistant-btn--${state}`}
-        onClick={handleTap} title={label} aria-label={label}>
+        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}
+        title={label} aria-label={label} style={{ touchAction: 'none' }}>
         <span className="voice-assistant-icon">{icon}</span>
       </button>
     </div>

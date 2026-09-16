@@ -33,5 +33,8 @@ export async function POST(request) {
     action: 'set',
     voiceName, voiceLang, personality, assistantName, assistantGender,
   });
-  return NextResponse.json(result?.ok ? result : { error: result?.error || 'save_failed' }, { status: result?.ok ? 200 : 502 });
+  return NextResponse.json(
+    result?.ok ? result : { error: result?.error || 'save_failed', detail: result?.detail },
+    { status: result?.ok ? 200 : 502 }
+  );
 }
