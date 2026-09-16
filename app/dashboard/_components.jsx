@@ -49,15 +49,27 @@ export function DashNav({ current }) {
     { key: 'settings', label: '⚙️ ตั้งค่าเสียง', href: '/dashboard/settings' },
   ];
   return (
-    <nav className="dash-nav">
-      {tabs.map(t => (
-        <a key={t.key} href={t.href} className={`dash-nav-item${current === t.key ? ' active' : ''}`}>
-          {t.label}
-        </a>
-      ))}
-      <ThemeToggle />
+    <>
+      <nav className="dash-nav">
+        {tabs.map(t => (
+          <a key={t.key} href={t.href} className={`dash-nav-item${current === t.key ? ' active' : ''}`}>
+            {t.label}
+          </a>
+        ))}
+        <ThemeToggle />
+      </nav>
+      {/* Deliberately a SIBLING of <nav>, not a child of it — .dash-nav
+          has backdrop-filter + overflow-x:auto, and backdrop-filter
+          (like transform/filter) on an ancestor creates a new
+          containing block for position:fixed descendants. Nested
+          inside, the button was fixed to the NAV BAR's own box
+          instead of the viewport, and clipped by its overflow —
+          exactly the "trapped inside the menu bar, disappears once
+          dragged past its edge" bug. Rendering it here instead keeps
+          the "one <DashNav/> per page already includes it" convenience
+          without that containment problem. */}
       <VoiceAssistant />
-    </nav>
+    </>
   );
 }
 
@@ -97,11 +109,27 @@ function VoiceAssistant() {
   const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef({ startX: 0, startY: 0, offsetX: 0, offsetY: 0, moved: false });
   const BTN_SIZE = 58, EDGE_MARGIN = 10;
+  // The sticky top nav (.dash-nav) is roughly this tall including its
+  // own margin — the button must never be draggable into this band,
+  // or it ends up sitting right behind/under the nav bar (visually
+  // "disappears" even though z-index is fine — this was a POSITION
+  // bug, not a stacking one). Clamped both live while dragging AND
+  // retroactively when loading an old saved position below.
+  const TOP_SAFE_ZONE = 84;
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem('jarvis-voice-btn-pos');
-      if (saved) setDragPos(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Retroactively fix anything saved before TOP_SAFE_ZONE existed
+        // (e.g. from testing the drag feature itself) — without this,
+        // someone who dragged the button up once before this fix would
+        // have it reload hidden behind the nav bar forever, since the
+        // bad position just gets read back out of localStorage as-is.
+        const clampedY = Math.max(TOP_SAFE_ZONE, Math.min(window.innerHeight - BTN_SIZE - EDGE_MARGIN, parsed.y));
+        setDragPos({ ...parsed, y: clampedY });
+      }
     } catch (e) { /* corrupt/missing — just use the default position */ }
   }, []);
 
@@ -123,7 +151,7 @@ function VoiceAssistant() {
     dragStateRef.current.moved = true;
     setIsDragging(true);
     const x = Math.max(EDGE_MARGIN, Math.min(window.innerWidth - BTN_SIZE - EDGE_MARGIN, e.clientX - offsetX));
-    const y = Math.max(EDGE_MARGIN, Math.min(window.innerHeight - BTN_SIZE - EDGE_MARGIN, e.clientY - offsetY));
+    const y = Math.max(TOP_SAFE_ZONE, Math.min(window.innerHeight - BTN_SIZE - EDGE_MARGIN, e.clientY - offsetY));
     setDragPos({ x, y });
   }
 
