@@ -1,28 +1,26 @@
 // app/api/files/route.js
 //
-// GET — list this user's files plus their storage usage vs quota.
-// Files themselves live in R2 (owned by the bot's Worker) — this route
-// only reads the POINTER rows Supabase holds (file_name, size, r2_key,
-// etc.) and builds each file's public URL from WORKER_BASE_URL, the
-// same convention the bot's own fileServeUrl() uses. No R2 access is
-// needed here at all for listing, only for delete (see [id]/route.js).
+// GET — list this user's files. Storage is now Google Drive (the
+// user's own account, see the bot's uploadToDrive/Bot_file folder) —
+// R2 is only for files uploaded before that change existed. Each
+// file's `url` is built differently depending on which backend it
+// actually lives in (see `storage` on the row): Drive files already
+// carry their own public_url from upload time; only legacy R2 rows
+// still need building from WORKER_BASE_URL + r2_key.
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../lib/premium';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 
-const FILE_QUOTA_FREE = 1073741824;   // 1 GB — keep in sync with FILE_QUOTA_BYTES default on the bot
-const FILE_QUOTA_PREMIUM = 5368709120; // 5 GB
-
 export async function GET() {
-  const { session, isPremium } = await getPremiumSession(await cookies());
+  const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from('user_files')
-    .select('id, file_name, kind, mime_type, size_bytes, r2_key, created_at')
+    .select('id, file_name, kind, mime_type, size_bytes, storage, r2_key, public_url, created_at')
     .eq('user_id', session.lineUserId)
     .order('created_at', { ascending: false })
     .limit(500);
@@ -32,11 +30,10 @@ export async function GET() {
   const workerBase = (process.env.WORKER_URL || '').replace(/\/$/, '');
   const files = data.map(f => ({
     ...f,
-    url: workerBase ? `${workerBase}/${f.r2_key}` : null,
+    url: f.storage === 'drive'
+      ? (f.public_url || null)
+      : (workerBase && f.r2_key ? `${workerBase}/${f.r2_key}` : null),
   }));
 
-  const usedBytes = data.reduce((sum, f) => sum + (f.size_bytes || 0), 0);
-  const quotaBytes = isPremium ? FILE_QUOTA_PREMIUM : FILE_QUOTA_FREE;
-
-  return NextResponse.json({ files, usedBytes, quotaBytes, isPremium });
+  return NextResponse.json({ files });
 }

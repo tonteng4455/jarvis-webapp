@@ -1,9 +1,10 @@
 'use client';
 // app/dashboard/files/page.jsx — file manager. Files themselves are
-// uploaded from LINE chat (the bot stores them in R2); this page is
-// for browsing, opening, and deleting what's already there — no
-// upload button here, matching how notes/tasks/etc. are also created
-// via the bot and only edited/managed here.
+// uploaded from LINE chat (the bot stores them in the user's own
+// Google Drive, in a "Bot_file" folder — see the bot's uploadToDrive);
+// this page is for browsing, opening, and deleting what's already
+// there — no upload button here, matching how notes/calendar/etc. are
+// also created via the bot and only edited/managed here.
 
 import { useState, useEffect } from 'react';
 import { DashNav } from '../_components';
@@ -41,15 +42,11 @@ export default function FilesPage() {
     if (!confirm('ลบไฟล์นี้ถาวรใช่ไหมครับ? กู้คืนไม่ได้แล้ว')) return;
     const res = await fetch(`/api/files/${id}`, { method: 'DELETE' });
     if (!res.ok) { setStatus('❌ ลบไม่สำเร็จ'); return; }
-    setData(prev => {
-      const file = prev.files.find(f => f.id === id);
-      return { ...prev, files: prev.files.filter(f => f.id !== id), usedBytes: prev.usedBytes - (file?.size_bytes || 0) };
-    });
+    setData(prev => ({ ...prev, files: prev.files.filter(f => f.id !== id) }));
   }
 
   const files = data?.files || [];
   const shown = filterKind === 'all' ? files : files.filter(f => f.kind === filterKind);
-  const pct = data ? Math.min(100, Math.round((data.usedBytes / data.quotaBytes) * 100)) : 0;
   const kindCounts = files.reduce((acc, f) => { acc[f.kind] = (acc[f.kind] || 0) + 1; return acc; }, {});
 
   return (
@@ -61,21 +58,6 @@ export default function FilesPage() {
 
       {data && (
         <>
-          <div className="glass-panel" style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-              <span>ใช้ไป {formatBytes(data.usedBytes)} จาก {formatBytes(data.quotaBytes)}</span>
-              <span className="muted">{pct}%</span>
-            </div>
-            <div style={{ height: 8, borderRadius: 999, background: 'var(--surface-muted)', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${pct}%`, background: pct >= 90 ? 'var(--danger)' : 'var(--accent)', borderRadius: 999, transition: 'width 0.3s ease' }} />
-            </div>
-            {!data.isPremium && pct >= 80 && (
-              <p className="muted" style={{ marginTop: '0.6rem', fontSize: '0.75rem' }}>
-                พื้นที่ใกล้เต็มแล้วครับ — Premium ได้พื้นที่ 5GB (จากเดิม 1GB) ✨
-              </p>
-            )}
-          </div>
-
           {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
 
           <div className="dash-nav" style={{ margin: '0 0 1rem' }}>

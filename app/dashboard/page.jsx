@@ -61,8 +61,6 @@ export default function DashboardPage() {
   if (loading) return <main className="page"><p className="text-white-muted">กำลังโหลด...</p></main>;
   if (!me) return null;
 
-  const usagePct = Math.min(100, Math.round((me.usedBytes / me.quotaBytes) * 100));
-
   return (
     <main className="page">
       <DashNav current="dashboard" />
@@ -83,11 +81,14 @@ export default function DashboardPage() {
       </div>
 
       <div className="glass-card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>พื้นที่จัดเก็บ</h2>
-        <div style={{ background: 'var(--border)', borderRadius: 8, overflow: 'hidden', height: 10 }}>
-          <div style={{ width: `${usagePct}%`, background: 'linear-gradient(90deg, var(--accent), var(--accent))', height: '100%' }} />
-        </div>
-        <div className="muted" style={{ marginTop: '0.4rem' }}>{formatBytes(me.usedBytes)} / {formatBytes(me.quotaBytes)}</div>
+        <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>📁 พื้นที่จัดเก็บ</h2>
+        {/* No more "X / Y used" bar here — files go straight to the
+            user's own Google Drive (a "Bot_file" folder there, see the
+            bot's uploadToDrive) now, not anything the bot itself has a
+            quota over. */}
+        <p className="muted" style={{ fontSize: '0.85rem' }}>
+          ไฟล์ที่ส่งเข้าบอทจะถูกเก็บไว้ใน Google Drive ของคุณเอง (โฟลเดอร์ "Bot_file") ไม่มีการจำกัดพื้นที่จากฝั่งบอทเลยครับ
+        </p>
       </div>
 
       <div className="glass-card" style={{ marginBottom: '1rem' }}>
