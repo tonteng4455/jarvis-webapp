@@ -44,7 +44,7 @@ function AutoGrowTextarea({ value, onChange, placeholder, autoFocus, className }
 
 // --- New-note composer: click to expand, auto-grows, has a category
 // picker, and only saves when you click "เสร็จสิ้น" or click away. ---
-function Composer({ onCreate, onEditingChange }) {
+function Composer({ onCreate, onEditingChange, categories }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -85,7 +85,7 @@ function Composer({ onCreate, onEditingChange }) {
           onChange={e => setContent(e.target.value)} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', gap: '0.5rem' }}>
           <div style={{ flex: 1, maxWidth: 180 }} onMouseDown={e => e.stopPropagation()}>
-            <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
+            <CategorySelect options={categories} value={category} onChange={setCategory} />
           </div>
           <button onClick={commit} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem', flex: '0 0 auto' }}>เสร็จสิ้น</button>
         </div>
@@ -100,7 +100,7 @@ function Composer({ onCreate, onEditingChange }) {
 // used for creating a new note — big title input, auto-grow textarea,
 // category select, full toolbar — instead of editing cramped inside
 // the small row. Saves on "เสร็จสิ้น" or clicking away. ---
-function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDown, isDragging, autoEditId }) {
+function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDown, isDragging, autoEditId, categories }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
@@ -148,7 +148,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
           <input className="note-title-input" placeholder="หัวข้อ" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
           <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content} onChange={e => setContent(e.target.value)} />
           <div style={{ marginTop: '0.5rem', maxWidth: 220 }} onMouseDown={e => e.stopPropagation()}>
-            <CategorySelect options={NOTE_CATEGORIES} value={category} onChange={setCategory} />
+            <CategorySelect options={categories} value={category} onChange={setCategory} />
           </div>
 
           <div className="note-toolbar">
@@ -215,7 +215,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
 // vertical stack (rather than the earlier masonry grid) also makes
 // target-index detection unambiguous — no column-jumping to reason
 // about, just "which row am I closest to vertically".
-function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorder, onDragStateChange, autoEditId }) {
+function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorder, onDragStateChange, autoEditId, categories }) {
   const containerRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
   const dragState = useRef(null); // { fromIndex, pointerId }
@@ -285,6 +285,7 @@ function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorde
           onEditingChange={onEditingChange}
           isDragging={draggingId === n.id}
           autoEditId={autoEditId}
+          categories={categories}
           onHandlePointerDown={(e) => handlePointerDown(e, i)}
         />
       ))}
@@ -311,6 +312,18 @@ function NotesPageInner() {
   const draggingRef = useRef(false);
   const searchParams = useSearchParams();
   const autoEditId = searchParams.get('id');
+
+  // NOTE_CATEGORIES is a fixed default list, not read from the
+  // database — same underlying gap as expenses' EXPENSE_CATEGORIES
+  // (see that page's comment on this exact bug). Deriving the actual
+  // dropdown options from the defaults plus whatever categories this
+  // user has already used on a note fixes it without a new API call.
+  const categoryOptions = (() => {
+    const defaults = new Set(NOTE_CATEGORIES.map(c => c.key));
+    const used = [...new Set((notes || []).map(n => n.category).filter(Boolean))]
+      .filter(cat => !defaults.has(cat));
+    return [...NOTE_CATEGORIES, ...used.map(cat => ({ key: cat, label: `🏷️ ${cat}` }))];
+  })();
 
   const load = useCallback(async (archived = showArchived) => {
     const res = await fetch(`/api/notes?archived=${archived}`);
@@ -423,7 +436,7 @@ function NotesPageInner() {
             </button>
           </div>
 
-          {!showArchived && <Composer onCreate={createNote} onEditingChange={setComposerEditing} />}
+          {!showArchived && <Composer onCreate={createNote} onEditingChange={setComposerEditing} categories={categoryOptions} />}
 
           {notes === null && <p className="text-white-muted">กำลังโหลด...</p>}
           {notes?.length === 0 && <p className="text-white-muted">{showArchived ? 'ยังไม่มีโน้ตในคลังเก็บ' : 'ยังไม่มีโน้ตครับ ลองจดดูได้เลย'}</p>}
@@ -433,13 +446,13 @@ function NotesPageInner() {
               {pinned.length > 0 && (
                 <>
                   <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>📌 ปักหมุด</div>
-                  <DraggableSection notes={pinned} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing} autoEditId={autoEditId}
+                  <DraggableSection notes={pinned} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                     onDragStateChange={(v) => { draggingRef.current = v; }}
                     onReorder={(r, opts) => reorderSection(r, new Set(pinned.map(n => n.id)), opts)} />
                   {others.length > 0 && <div className="text-white-muted" style={{ margin: '1rem 0 0.5rem', fontWeight: 600 }}>อื่นๆ</div>}
                 </>
               )}
-              <DraggableSection notes={others} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing} autoEditId={autoEditId}
+              <DraggableSection notes={others} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                 onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r, opts) => reorderSection(r, new Set(others.map(n => n.id)), opts)} />
             </>
@@ -450,7 +463,7 @@ function NotesPageInner() {
               <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>
                 🏷️ {categoryLabel(category)} <span style={{ opacity: 0.7 }}>({catNotes.length})</span>
               </div>
-              <DraggableSection notes={catNotes} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing} autoEditId={autoEditId}
+              <DraggableSection notes={catNotes} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                 onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r, opts) => reorderSection(r, new Set(catNotes.map(n => n.id)), opts)} />
             </div>

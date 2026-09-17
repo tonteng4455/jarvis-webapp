@@ -93,7 +93,7 @@ function VoiceAssistant() {
   const recognitionRef = useRef(null);
   const turnStartRef = useRef(null); // Date.now() when listening began — used to measure this turn's duration for the time-based quota
   const audioRef = useRef(null); // currently-playing Chirp3 Audio() element, if any — so the "tap to stop speaking" path can stop either playback method
-  const voicePrefRef = useRef(null); // { voiceName, voiceLang } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
+  const voicePrefRef = useRef(null); // { voiceName, voiceLang, voiceStyle } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
 
   // §Draggable, edge-snapping FAB (like iOS AssistiveTouch). dragPos
   // is null until the button is dragged for the first time — before
@@ -174,8 +174,8 @@ function VoiceAssistant() {
 
   useEffect(() => {
     fetch('/api/assistant/preferences').then(r => r.json()).then(data => {
-      voicePrefRef.current = { voiceName: data.voiceName, voiceLang: data.voiceLang };
-    }).catch(() => { voicePrefRef.current = { voiceName: null, voiceLang: null }; });
+      voicePrefRef.current = { voiceName: data.voiceName, voiceLang: data.voiceLang, voiceStyle: data.voiceStyle || 'human' };
+    }).catch(() => { voicePrefRef.current = { voiceName: null, voiceLang: null, voiceStyle: 'human' }; });
   }, []);
 
   useEffect(() => {
@@ -262,6 +262,14 @@ function VoiceAssistant() {
   // difference in the UI flow, just a lower-quality voice.
   async function speak(text) {
     setState('speaking');
+    // 'robot' style skips Chirp 3 HD entirely and goes straight to the
+    // free browser voice — an explicit user choice (settings page),
+    // distinct from the automatic fallback below which only kicks in
+    // when Chirp 3 HD itself fails/is unavailable/quota's used up.
+    if (voicePrefRef.current?.voiceStyle === 'robot') {
+      speakBrowser(text);
+      return;
+    }
     try {
       const res = await fetch('/api/assistant/speak', {
         method: 'POST',

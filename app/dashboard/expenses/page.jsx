@@ -16,7 +16,7 @@ export default function ExpensesPage() {
   );
 }
 
-function ExpenseEditor({ expense, onSave, onCancel, onDelete }) {
+function ExpenseEditor({ expense, categories, onSave, onCancel, onDelete }) {
   const [type, setType] = useState(expense.type || 'expense');
   const [amount, setAmount] = useState(String(expense.amount ?? ''));
   const [category, setCategory] = useState(expense.category || '');
@@ -43,7 +43,7 @@ function ExpenseEditor({ expense, onSave, onCancel, onDelete }) {
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
           <input type="number" inputMode="decimal" className="glass-input" value={amount} onChange={e => setAmount(e.target.value)} placeholder="จำนวนเงิน" style={{ flex: 1, minWidth: 100 }} />
           <div style={{ flex: 1, minWidth: 140 }}>
-            <CategorySelect options={EXPENSE_CATEGORIES} value={category} onChange={setCategory} />
+            <CategorySelect options={categories} value={category} onChange={setCategory} />
           </div>
         </div>
         <input className="glass-input" value={memo} onChange={e => setMemo(e.target.value)} placeholder="รายละเอียด (ไม่บังคับ)" style={{ width: '100%', marginBottom: '0.6rem' }} />
@@ -64,7 +64,31 @@ function ExpensesPageInner() {
   const [net, setNet] = useState(0);
   const [editingId, setEditingId] = useState(null);
   const [status, setStatus] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const searchParams = useSearchParams();
+
+  async function exportToSheet() {
+    setExporting(true);
+    setStatus(null);
+    try {
+      const res = await fetch('/api/expenses/export-sheet', { method: 'POST' });
+      const data = await res.json();
+      if (data.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+        setStatus(`✅ ส่งออก ${data.count} รายการไปที่ Google Sheets แล้วครับ`);
+      } else if (data.error === 'not_connected' && data.connectUrl) {
+        if (confirm('ต้องเชื่อมต่อ Google ก่อนถึงจะส่งออกได้ครับ ไปเชื่อมต่อตอนนี้เลยไหม?')) {
+          window.location.href = data.connectUrl;
+        }
+      } else {
+        setStatus('❌ ส่งออกไม่สำเร็จ ลองอีกครั้งครับ');
+      }
+    } catch (e) {
+      setStatus('❌ ส่งออกไม่สำเร็จ ลองอีกครั้งครับ');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     const id = searchParams.get('id');
@@ -81,6 +105,21 @@ function ExpensesPageInner() {
   }
 
   useEffect(() => { load(); }, []);
+
+  // EXPENSE_CATEGORIES is a fixed default list, not read from the
+  // database — typing a custom category via CategorySelect's "เพิ่ม
+  // หมวดหมู่ใหม่..." mode saves fine to that ONE expense, but had no
+  // way to become a selectable option again afterward (you'd have to
+  // retype it as free text every single time). Deriving the dropdown
+  // options from the defaults PLUS whatever distinct categories this
+  // user has actually already used fixes that with no new API call —
+  // the full expense list is already loaded here anyway.
+  const categoryOptions = (() => {
+    const defaults = new Set(EXPENSE_CATEGORIES.map(c => c.key));
+    const used = [...new Set((expenses || []).map(e => e.category).filter(Boolean))]
+      .filter(cat => !defaults.has(cat));
+    return [...EXPENSE_CATEGORIES, ...used.map(cat => ({ key: cat, label: `🏷️ ${cat}` }))];
+  })();
 
   async function saveExpense(id, patch) {
     const res = await fetch(`/api/expenses/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
@@ -110,6 +149,10 @@ function ExpensesPageInner() {
               {net.toLocaleString()} บาท
             </div>
           </div>
+          <button type="button" className="glass-btn-outline" onClick={exportToSheet} disabled={exporting}
+            style={{ marginBottom: '1rem', color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' }}>
+            {exporting ? 'กำลังส่งออก...' : '📊 ส่งออกไป Google Sheets'}
+          </button>
           {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
           {expenses.length === 0 && <div className="glass-card"><p className="muted">ยังไม่มีรายการครับ</p></div>}
           {expenses.length > 0 && (
@@ -125,7 +168,7 @@ function ExpensesPageInner() {
                 </thead>
                 <tbody>
                   {expenses.map((e, i) => editingId === String(e.id) ? (
-                    <ExpenseEditor key={e.id} expense={e} onSave={saveExpense} onCancel={() => setEditingId(null)} onDelete={deleteExpense} />
+                    <ExpenseEditor key={e.id} expense={e} categories={categoryOptions} onSave={saveExpense} onCancel={() => setEditingId(null)} onDelete={deleteExpense} />
                   ) : (
                     <tr key={e.id} style={{ borderBottom: i < expenses.length - 1 ? '1px solid var(--surface-muted)' : 'none', cursor: 'pointer' }}
                       onClick={() => setEditingId(String(e.id))}>
