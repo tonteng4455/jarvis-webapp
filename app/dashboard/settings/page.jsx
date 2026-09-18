@@ -26,6 +26,13 @@ export default function SettingsPage() {
   const [voiceStyle, setVoiceStyle] = useState('human');
   const [status, setStatus] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [quota, setQuota] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/assistant/quota').then(r => r.json()).then(data => {
+      if (data.ai) setQuota(data);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     function loadVoices() {
@@ -98,6 +105,18 @@ export default function SettingsPage() {
     <main className="page">
       <DashNav current="settings" />
       <h1 className="page-title">⚙️ ตั้งค่าผู้ช่วยเสียง</h1>
+
+      {quota && (
+        <div className="glass-card" style={{ marginBottom: '1rem' }}>
+          <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>📊 โควต้าการใช้งาน</h2>
+          <QuotaBar label="🤖 AI สั่งงาน (วันนี้, นับเฉพาะฝั่ง LINE — เสียงไม่หักโควต้านี้)" used={quota.ai.used} limit={quota.ai.limit} unit="ครั้ง" />
+          <QuotaBar label="🎙️ เวลาคุยด้วยเสียง (วันนี้)" used={Math.round(quota.voiceSeconds.used / 60 * 10) / 10} limit={Math.round(quota.voiceSeconds.limit / 60)} unit="นาที" />
+          <QuotaBar label="✨ เสียง Chirp 3 HD (เดือนนี้)" used={quota.ttsChars.used} limit={quota.ttsChars.limit} unit="ตัวอักษร" />
+          <p className="muted" style={{ fontSize: '0.72rem', marginTop: '0.4rem' }}>
+            เกินโควต้า Chirp 3 HD แล้วจะสลับไปใช้เสียงหุ่นยนต์ฟรีให้อัตโนมัติ ไม่ใช่หยุดพูดครับ
+          </p>
+        </div>
+      )}
 
       <div className="glass-card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>🏷️ ชื่อเรียก + เพศของเลขา</h2>
@@ -188,5 +207,20 @@ export default function SettingsPage() {
         <p className="muted" style={{ fontSize: '0.72rem', marginTop: '0.4rem' }}>🔧 debug: {saveErrorDetail}</p>
       )}
     </main>
+  );
+}
+
+function QuotaBar({ label, used, limit, unit }) {
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  return (
+    <div style={{ marginBottom: '0.6rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.2rem' }}>
+        <span className="muted">{label}</span>
+        <span>{used} / {limit} {unit}</span>
+      </div>
+      <div style={{ height: 6, borderRadius: 999, background: 'var(--surface-muted)', overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: pct >= 90 ? 'var(--danger)' : 'var(--accent)', borderRadius: 999 }} />
+      </div>
+    </div>
   );
 }

@@ -289,6 +289,14 @@ a { color: inherit; }
 
 .voice-assistant-transcript {
   max-width: min(320px, calc(100vw - 2.2rem));
+  /* Caps at roughly 5 lines of text — without this, a long back-and-
+     forth grows the box unbounded, which can push the mic button
+     itself off the bottom of the viewport (especially with the
+     on-screen keyboard open on mobile). overflow-y:auto lets older
+     lines still be reached by scrolling instead of just being cut
+     off. */
+  max-height: 8em;
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
