@@ -27,11 +27,13 @@ export default function SettingsPage() {
   const [status, setStatus] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [quota, setQuota] = useState(null);
+  const [quotaError, setQuotaError] = useState(null);
 
   useEffect(() => {
     fetch('/api/assistant/quota').then(r => r.json()).then(data => {
       if (data.ai) setQuota(data);
-    }).catch(() => {});
+      else setQuotaError(data.error || 'unknown error');
+    }).catch(e => setQuotaError(e.message));
   }, []);
 
   useEffect(() => {
@@ -115,6 +117,11 @@ export default function SettingsPage() {
           <p className="muted" style={{ fontSize: '0.72rem', marginTop: '0.4rem' }}>
             เกินโควต้า Chirp 3 HD แล้วจะสลับไปใช้เสียงหุ่นยนต์ฟรีให้อัตโนมัติ ไม่ใช่หยุดพูดครับ
           </p>
+        </div>
+      )}
+      {quotaError && (
+        <div className="glass-card" style={{ marginBottom: '1rem' }}>
+          <p className="muted" style={{ fontSize: '0.78rem' }}>⚠️ โหลดข้อมูลโควต้าไม่สำเร็จ: {quotaError}</p>
         </div>
       )}
 

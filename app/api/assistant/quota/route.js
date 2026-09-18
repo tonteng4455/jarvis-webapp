@@ -15,6 +15,6 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const result = await callBotInternal('/internal/quota-status', { userId: session.lineUserId });
-  if (!result?.ai) return NextResponse.json({ error: 'failed' }, { status: 502 });
+  if (!result?.ai) return NextResponse.json({ error: result?.error || 'failed' }, { status: 502 });
   return NextResponse.json(result);
 }
