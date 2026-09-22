@@ -93,7 +93,6 @@ function VoiceAssistant() {
   const recognitionRef = useRef(null);
   const turnStartRef = useRef(null); // Date.now() when listening began — used to measure this turn's duration for the time-based quota
   const audioRef = useRef(null); // currently-playing Chirp3 Audio() element, if any — so the "tap to stop speaking" path can stop either playback method
-  const silenceTimerRef = useRef(null); // 5s no-speech watchdog for the auto-greet listening session only (see startAutoListen) — manual tap-to-talk has no timeout, since someone who deliberately tapped the mic is expected to need a moment to think
   const voicePrefRef = useRef(null); // { voiceName, voiceLang, voiceStyle } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
 
   // §Draggable, edge-snapping FAB (like iOS AssistiveTouch). dragPos
@@ -175,48 +174,9 @@ function VoiceAssistant() {
 
   useEffect(() => {
     fetch('/api/assistant/preferences').then(r => r.json()).then(data => {
-      voicePrefRef.current = {
-        voiceName: data.voiceName, voiceLang: data.voiceLang, voiceStyle: data.voiceStyle || 'human',
-        assistantName: data.assistantName || null, assistantGender: data.assistantGender || null,
-      };
-      maybeAutoGreet(data.autoGreet !== false);
-    }).catch(() => {
-      voicePrefRef.current = { voiceName: null, voiceLang: null, voiceStyle: 'human', assistantName: null, assistantGender: null };
-      // Preferences fetch failed — fail CLOSED here specifically (the
-      // voiceStyle default above fails open to 'human', but an unknown
-      // voice suddenly talking on launch if something's wrong
-      // server-side is worse than just opening silently like a normal
-      // web app that one time).
-    });
+      voicePrefRef.current = { voiceName: data.voiceName, voiceLang: data.voiceLang, voiceStyle: data.voiceStyle || 'human' };
+    }).catch(() => { voicePrefRef.current = { voiceName: null, voiceLang: null, voiceStyle: 'human' }; });
   }, []);
-
-  // §Auto-greet on home-screen launch ("call a secretary" UX). Only
-  // fires when: (1) the PWA was actually launched from its home-screen
-  // icon (display-mode: standalone / iOS's navigator.standalone) —
-  // never in a normal browser tab, where a voice suddenly talking on
-  // page load would just be startling and where autoplay is far more
-  // likely to be blocked anyway; (2) the user hasn't turned it off in
-  // Settings; (3) this is the first mount since the app was opened —
-  // VoiceAssistant remounts on every /dashboard/* navigation (no
-  // shared layout wraps the dashboard pages), so a plain component-
-  // level ref would re-greet on every tab switch. sessionStorage
-  // persists across those navigations but clears when the PWA window/
-  // tab is actually closed, which is exactly the boundary we want.
-  function maybeAutoGreet(autoGreetEnabled) {
-    if (!autoGreetEnabled) return;
-    if (typeof window === 'undefined') return;
-    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor || !window.speechSynthesis) return; // same feature-detection as the recognition-setup effect — checked directly here too since effect ordering shouldn't be relied on
-    const isStandalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator?.standalone === true;
-    if (!isStandalone) return;
-    try {
-      if (sessionStorage.getItem('jarvis-auto-greeted')) return;
-      sessionStorage.setItem('jarvis-auto-greeted', '1');
-    } catch (e) { return; } // storage disabled — skip rather than risk re-greeting on every page nav with no way to remember it already happened
-    const name = voicePrefRef.current?.assistantName || 'Jarvis';
-    const particle = voicePrefRef.current?.assistantGender === 'female' ? 'ค่ะ' : 'ครับ';
-    speak(`สวัสดี${particle} ${name} พร้อมรับคำสั่งแล้ว${particle} มีอะไรให้ช่วยไหม${particle}`, { thenListen: true });
-  }
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -230,19 +190,16 @@ function VoiceAssistant() {
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
-      clearSilenceTimer();
       const text = event.results[0][0].transcript;
       setTranscript(text);
       sendToAssistant(text);
     };
     recognition.onerror = (event) => {
-      clearSilenceTimer();
       finishTurn();
       setState('idle');
       setError(event.error === 'not-allowed' ? 'ไม่ได้รับอนุญาตให้ใช้ไมโครโฟนครับ' : 'ฟังไม่ชัดครับ ลองอีกครั้ง');
     };
     recognition.onend = () => {
-      clearSilenceTimer();
       setState(prev => (prev === 'listening' ? 'idle' : prev));
     };
     recognitionRef.current = recognition;
@@ -267,29 +224,6 @@ function VoiceAssistant() {
         body: JSON.stringify({ action: 'add', seconds: elapsedSeconds }),
       }).catch(() => { /* best-effort — a failed report shouldn't break the UI */ });
     }
-  }
-
-  function clearSilenceTimer() {
-    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
-  }
-
-  // Opens the mic the same way a tap does, but with a 5-second no-
-  // speech watchdog — used ONLY right after the auto-greet finishes
-  // speaking. If nothing is heard within 5s, recognition.stop() fires
-  // recognition.onend above, which (since no result ever came in)
-  // quietly drops state back to 'idle' — no error shown, same as a
-  // manual tap-to-stop. That's the whole "fall back to using the web
-  // app normally" behavior: nothing to build, the idle UI already IS
-  // the normal web app.
-  function startAutoListen() {
-    if (!recognitionRef.current) { setState('idle'); return; }
-    turnStartRef.current = Date.now();
-    setState('listening');
-    try { recognitionRef.current.start(); } catch (e) { turnStartRef.current = null; setState('idle'); return; }
-    clearSilenceTimer();
-    silenceTimerRef.current = setTimeout(() => {
-      try { recognitionRef.current?.stop(); } catch (e) { /* already stopped/ended — harmless */ }
-    }, 5000);
   }
 
   async function sendToAssistant(text) {
@@ -326,15 +260,14 @@ function VoiceAssistant() {
   // or synthesis failed for any reason) or the fetch itself fails
   // (offline, etc.). The fallback is silent — no error shown, no
   // difference in the UI flow, just a lower-quality voice.
-  async function speak(text, opts = {}) {
-    const { thenListen = false } = opts;
+  async function speak(text) {
     setState('speaking');
     // 'robot' style skips Chirp 3 HD entirely and goes straight to the
     // free browser voice — an explicit user choice (settings page),
     // distinct from the automatic fallback below which only kicks in
     // when Chirp 3 HD itself fails/is unavailable/quota's used up.
     if (voicePrefRef.current?.voiceStyle === 'robot') {
-      speakBrowser(text, opts);
+      speakBrowser(text);
       return;
     }
     try {
@@ -347,35 +280,24 @@ function VoiceAssistant() {
       if (data.allowed && data.audioContent) {
         const audio = new Audio(`data:audio/mp3;base64,${data.audioContent}`);
         audioRef.current = audio;
-        audio.onended = () => { audioRef.current = null; finishTurn(); if (thenListen) startAutoListen(); else setState('idle'); };
-        audio.onerror = (ev) => { console.error('Chirp3 audio playback error:', ev); audioRef.current = null; finishTurn(); speakBrowser(text, opts); }; // audio itself failed to play (e.g. corrupt data) — still fall back rather than going silent
+        audio.onended = () => { audioRef.current = null; finishTurn(); setState('idle'); };
+        audio.onerror = (ev) => { console.error('Chirp3 audio playback error:', ev); audioRef.current = null; finishTurn(); speakBrowser(text); }; // audio itself failed to play (e.g. corrupt data) — still fall back rather than going silent
         await audio.play();
         return;
       }
     } catch (e) {
       // Includes a rejected audio.play() — e.g. the browser's autoplay
       // policy blocking programmatic playback (can happen if too many
-      // async hops separate this from the original tap, or right after
-      // a home-screen launch before any user gesture). Logged so it's
-      // actually diagnosable from devtools instead of just "nothing
-      // happened".
+      // async hops separate this from the original tap). Logged so
+      // it's actually diagnosable from devtools instead of just
+      // "nothing happened".
       console.error('Chirp3 speak() failed, falling back to browser TTS:', e);
     }
-    speakBrowser(text, opts);
+    speakBrowser(text);
   }
 
-  function speakBrowser(text, opts = {}) {
-    const { thenListen = false } = opts;
-    if (!window.speechSynthesis) {
-      finishTurn();
-      // Auto-greet path: still try to listen even if speech synthesis
-      // itself isn't available — the mic can work independently of
-      // whether the greeting was actually heard, and silently landing
-      // on the normal app (no error) is the right fallback per the
-      // 5s-silence behavior either way.
-      if (thenListen) startAutoListen(); else { setState('idle'); setError('เบราว์เซอร์นี้ไม่รองรับการพูดตอบครับ (อ่านคำตอบจากข้อความด้านบนได้)'); }
-      return;
-    }
+  function speakBrowser(text) {
+    if (!window.speechSynthesis) { finishTurn(); setState('idle'); setError('เบราว์เซอร์นี้ไม่รองรับการพูดตอบครับ (อ่านคำตอบจากข้อความด้านบนได้)'); return; }
     window.speechSynthesis.cancel(); // don't stack multiple replies if tapped again quickly
     // Chrome has a long-standing bug where speechSynthesis can get
     // stuck in a paused state (especially after tab visibility
@@ -395,15 +317,8 @@ function VoiceAssistant() {
     if (matched) utterance.voice = matched;
     else if (langMatch) utterance.voice = langMatch;
     utterance.lang = 'th-TH';
-    utterance.onend = () => { finishTurn(); if (thenListen) startAutoListen(); else setState('idle'); };
-    utterance.onerror = (ev) => {
-      console.error('speechSynthesis error:', ev.error);
-      finishTurn();
-      // Same reasoning as the "not available" branch above — an
-      // auto-greet TTS glitch shouldn't also kill the mic-listening
-      // half of the flow.
-      if (thenListen) startAutoListen(); else setState('idle');
-    };
+    utterance.onend = () => { finishTurn(); setState('idle'); };
+    utterance.onerror = (ev) => { console.error('speechSynthesis error:', ev.error); finishTurn(); setState('idle'); };
     window.speechSynthesis.speak(utterance);
   }
 

@@ -20,18 +20,18 @@ export async function GET() {
   });
   return NextResponse.json(result?.voiceName !== undefined
     ? result
-    : { voiceName: null, voiceLang: null, personality: '', assistantName: null, assistantGender: null, voiceStyle: 'human', autoGreet: true });
+    : { voiceName: null, voiceLang: null, personality: '', assistantName: null, assistantGender: null, voiceStyle: 'human' });
 }
 
 export async function POST(request) {
   const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const { voiceName, voiceLang, personality, assistantName, assistantGender, voiceStyle, autoGreet } = await request.json().catch(() => ({}));
+  const { voiceName, voiceLang, personality, assistantName, assistantGender, voiceStyle } = await request.json().catch(() => ({}));
   const result = await callBotInternal('/internal/voice-preferences', {
     userId: session.lineUserId,
     action: 'set',
-    voiceName, voiceLang, personality, assistantName, assistantGender, voiceStyle, autoGreet,
+    voiceName, voiceLang, personality, assistantName, assistantGender, voiceStyle,
   });
   return NextResponse.json(
     result?.ok ? result : { error: result?.error || 'save_failed', detail: result?.detail },

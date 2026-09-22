@@ -1,0 +1,196 @@
+'use client';
+// app/dashboard/expenses/page.jsx — table view (Premium) with
+// click-to-edit inline, matching the same edit/delete pattern already
+// used for tasks/calendar. Supports ?id=... auto-open from a LIFF link
+// the same way the other dashboard pages do.
+
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { DashNav, formatDate, CategorySelect, EXPENSE_CATEGORIES } from '../_components';
+
+export default function ExpensesPage() {
+  return (
+    <Suspense fallback={<main className="page"><p className="text-white-muted">กำลังโหลด...</p></main>}>
+      <ExpensesPageInner />
+    </Suspense>
+  );
+}
+
+function ExpenseEditor({ expense, categories, onSave, onCancel, onDelete }) {
+  const [type, setType] = useState(expense.type || 'expense');
+  const [amount, setAmount] = useState(String(expense.amount ?? ''));
+  const [category, setCategory] = useState(expense.category || '');
+  const [memo, setMemo] = useState(expense.memo || '');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    await onSave(expense.id, { type, amount: parseFloat(amount) || 0, category, memo: memo || null });
+    setSaving(false);
+  }
+
+  return (
+    <tr>
+      <td colSpan={4} style={{ padding: '0.8rem 0.9rem' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem' }}>
+          {[['expense', '💸 รายจ่าย'], ['income', '💵 รายรับ']].map(([val, label]) => (
+            <button key={val} type="button" onClick={() => setType(val)}
+              style={{ flex: 1, padding: '0.4rem', borderRadius: 8, border: type === val ? '2px solid var(--accent)' : '1px solid var(--border-strong)', background: type === val ? 'var(--accent-soft)' : 'var(--surface-muted)', color: 'var(--text-primary)', fontSize: '0.8rem', fontWeight: type === val ? 'bold' : 'normal' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+          <input type="number" inputMode="decimal" className="glass-input" value={amount} onChange={e => setAmount(e.target.value)} placeholder="จำนวนเงิน" style={{ flex: 1, minWidth: 100 }} />
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <CategorySelect options={categories} value={category} onChange={setCategory} />
+          </div>
+        </div>
+        <input className="glass-input" value={memo} onChange={e => setMemo(e.target.value)} placeholder="รายละเอียด (ไม่บังคับ)" style={{ width: '100%', marginBottom: '0.6rem' }} />
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between' }}>
+          <button className="note-icon-btn" onClick={() => { if (confirm('ลบรายการนี้ใช่ไหม?')) onDelete(expense.id); }}>🗑️ ลบ</button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="glass-btn-outline" onClick={onCancel} style={{ color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' }}>ยกเลิก</button>
+            <button className="glass-btn" onClick={save} disabled={saving}>{saving ? 'กำลังบันทึก...' : '✅ บันทึก'}</button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function ExpensesPageInner() {
+  const [expenses, setExpenses] = useState(null);
+  const [net, setNet] = useState(0);
+  const [editingId, setEditingId] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const searchParams = useSearchParams();
+
+  async function exportToSheet() {
+    setExporting(true);
+    setStatus(null);
+    try {
+      const res = await fetch('/api/expenses/export-sheet', { method: 'POST' });
+      const data = await res.json();
+      if (data.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+        setStatus(`✅ ส่งออก ${data.count} รายการไปที่ Google Sheets แล้วครับ`);
+      } else if (data.error === 'not_connected' && data.connectUrl) {
+        if (confirm('ต้องเชื่อมต่อ Google ก่อนถึงจะส่งออกได้ครับ ไปเชื่อมต่อตอนนี้เลยไหม?')) {
+          window.location.href = data.connectUrl;
+        }
+      } else {
+        setStatus('❌ ส่งออกไม่สำเร็จ ลองอีกครั้งครับ');
+      }
+    } catch (e) {
+      setStatus('❌ ส่งออกไม่สำเร็จ ลองอีกครั้งครับ');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  useEffect(() => {
+    const id = searchParams.get('id');
+    if (id) setEditingId(id);
+  }, [searchParams]);
+
+  function load() {
+    fetch('/api/expenses').then(async res => {
+      if (res.status === 401) { window.location.href = '/login'; return; }
+      const data = await res.json();
+      setExpenses(data.expenses);
+      setNet(data.net);
+    });
+  }
+
+  useEffect(() => { load(); }, []);
+
+  // EXPENSE_CATEGORIES is a fixed default list, not read from the
+  // database — typing a custom category via CategorySelect's "เพิ่ม
+  // หมวดหมู่ใหม่..." mode saves fine to that ONE expense, but had no
+  // way to become a selectable option again afterward (you'd have to
+  // retype it as free text every single time). Deriving the dropdown
+  // options from the defaults PLUS whatever distinct categories this
+  // user has actually already used fixes that with no new API call —
+  // the full expense list is already loaded here anyway.
+  const categoryOptions = (() => {
+    const defaults = new Set(EXPENSE_CATEGORIES.map(c => c.key));
+    const used = [...new Set((expenses || []).map(e => e.category).filter(Boolean))]
+      .filter(cat => !defaults.has(cat));
+    return [...EXPENSE_CATEGORIES, ...used.map(cat => ({ key: cat, label: `🏷️ ${cat}` }))];
+  })();
+
+  async function saveExpense(id, patch) {
+    const res = await fetch(`/api/expenses/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    if (!res.ok) { setStatus('❌ บันทึกไม่สำเร็จ'); return; }
+    setStatus('✅ บันทึกเรียบร้อยแล้วครับ');
+    setEditingId(null);
+    load();
+  }
+
+  async function deleteExpense(id) {
+    const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+    if (!res.ok) { setStatus('❌ ลบไม่สำเร็จ'); return; }
+    setEditingId(null);
+    load();
+  }
+
+  return (
+    <main className="page">
+      <DashNav current="expenses" />
+      <h1 className="page-title">💰 บัญชีรายรับ-รายจ่าย</h1>
+      {expenses === null && <p className="text-white-muted">กำลังโหลด...</p>}
+      {expenses && (
+        <>
+          <div className="glass-panel" style={{ textAlign: 'center', marginBottom: '1rem' }}>
+            <div className="muted">ยอดสุทธิ</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: net >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+              {net.toLocaleString()} บาท
+            </div>
+          </div>
+          <button type="button" className="glass-btn-outline" onClick={exportToSheet} disabled={exporting}
+            style={{ marginBottom: '1rem', color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' }}>
+            {exporting ? 'กำลังส่งออก...' : '📊 ส่งออกไป Google Sheets'}
+          </button>
+          {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
+          {expenses.length === 0 && <div className="glass-card"><p className="muted">ยังไม่มีรายการครับ</p></div>}
+          {expenses.length > 0 && (
+            <div className="glass-panel" style={{ padding: 0, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-strong)' }}>
+                    <th style={thStyle}>วันที่</th>
+                    <th style={thStyle}>รายการ</th>
+                    <th style={{ ...thStyle, textAlign: 'center' }}>หมวดหมู่</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>จำนวนเงิน</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenses.map((e, i) => editingId === String(e.id) ? (
+                    <ExpenseEditor key={e.id} expense={e} categories={categoryOptions} onSave={saveExpense} onCancel={() => setEditingId(null)} onDelete={deleteExpense} />
+                  ) : (
+                    <tr key={e.id} style={{ borderBottom: i < expenses.length - 1 ? '1px solid var(--surface-muted)' : 'none', cursor: 'pointer' }}
+                      onClick={() => setEditingId(String(e.id))}>
+                      <td style={tdStyle}><span className="muted">{formatDate(e.created_at)}</span></td>
+                      <td style={{ ...tdStyle, fontSize: '0.85rem' }}>{e.memo || '-'}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>
+                        <span className="muted">{e.type === 'income' ? '💵' : '💸'} {e.category}</span>
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: e.type === 'income' ? 'var(--success)' : 'var(--danger)', whiteSpace: 'nowrap' }}>
+                        {e.type === 'income' ? '+' : '-'}{parseFloat(e.amount).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </main>
+  );
+}
+
+const thStyle = { textAlign: 'left', padding: '0.7rem 0.9rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 };
+const tdStyle = { padding: '0.6rem 0.9rem', fontSize: '0.85rem', color: 'var(--text-primary)', verticalAlign: 'top' };

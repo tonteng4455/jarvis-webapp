@@ -24,7 +24,6 @@ export default function SettingsPage() {
   const [assistantName, setAssistantName] = useState('');
   const [assistantGender, setAssistantGender] = useState('male');
   const [voiceStyle, setVoiceStyle] = useState('human');
-  const [autoGreet, setAutoGreet] = useState(true);
   const [status, setStatus] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [quota, setQuota] = useState(null);
@@ -62,7 +61,6 @@ export default function SettingsPage() {
         setAssistantName(data.assistantName || '');
         setAssistantGender(data.assistantGender || 'male');
         setVoiceStyle(data.voiceStyle || 'human');
-        setAutoGreet(data.autoGreet !== false);
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -80,7 +78,7 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           voiceName: selectedVoice || null, voiceLang: voice?.lang || null, personality,
-          assistantName: assistantName.trim() || null, assistantGender, voiceStyle, autoGreet,
+          assistantName: assistantName.trim() || null, assistantGender, voiceStyle,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -163,27 +161,6 @@ export default function SettingsPage() {
           {voiceStyle === 'human'
             ? 'ใช้เสียง Chirp 3 HD ที่เป็นธรรมชาติก่อนเสมอ (มีโควต้ารายเดือน — เกินแล้วจะสลับไปเสียงหุ่นยนต์ฟรีให้อัตโนมัติ)'
             : 'ใช้เสียงหุ่นยนต์ของเบราว์เซอร์เสมอ ไม่แตะโควต้า Chirp 3 HD เลย — เลือกไว้ถ้าอยากเก็บโควต้าไว้ใช้เท่าที่จำเป็น'}
-        </p>
-      </div>
-
-      <div className="glass-card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>📞 ทักทายอัตโนมัติเมื่อเปิดจากไอคอนหน้าโฮม</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
-          <button type="button" onClick={() => setAutoGreet(true)}
-            className={autoGreet ? 'glass-btn' : 'glass-btn-outline'}
-            style={{ flex: 1, ...(!autoGreet ? { color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' } : {}) }}>
-            📞 ทักทายเลย
-          </button>
-          <button type="button" onClick={() => setAutoGreet(false)}
-            className={!autoGreet ? 'glass-btn' : 'glass-btn-outline'}
-            style={{ flex: 1, ...(autoGreet ? { color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' } : {}) }}>
-            🔇 เงียบ ๆ
-          </button>
-        </div>
-        <p className="muted" style={{ fontSize: '0.75rem' }}>
-          {autoGreet
-            ? 'พอกดไอคอน Jarvis บนหน้าโฮม แอปจะทักด้วยเสียงทันทีแล้วฟังคำสั่งเลย เหมือนโทรหาเลขา — ถ้าไม่พูดอะไรภายใน 5 วินาที จะเงียบแล้วเข้าหน้าเว็บปกติให้เอง'
-            : 'เปิดแอปแบบเงียบ ๆ เข้าหน้าเว็บปกติทันที ไม่มีเสียงทัก — ยังกดปุ่ม 🎤 เพื่อคุยด้วยเสียงเองได้ตามปกติ'}
         </p>
       </div>
 
