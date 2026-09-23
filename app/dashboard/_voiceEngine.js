@@ -2,10 +2,12 @@
 // app/dashboard/_voiceEngine.js
 //
 // All the non-visual logic for the voice assistant — speech
-// recognition, TTS (Chirp 3 HD + browser fallback), the auto-greet-
-// on-PWA-launch flow, and quota reporting — factored out of the
-// floating FAB component so the new full-screen "Live" UI can share
-// the exact same behavior instead of a second, drifting copy of it.
+// recognition, TTS (browser SpeechSynthesis only — see speak() for
+// why the server-side Chirp3/PyThaiTTS path was removed), auto-greet
+// on open, continuous-conversation auto-listen, the screen wake lock,
+// and quota reporting — factored out of the floating FAB component so
+// the new full-screen "Live" UI can share the exact same behavior
+// instead of a second, drifting copy of it.
 // Each caller that mounts this hook gets its OWN SpeechRecognition
 // instance, so only ONE of (FAB, Live screen) should ever be mounted
 // at a time — app/dashboard/layout.jsx's mode switch guarantees that.
@@ -20,10 +22,9 @@ export function useVoiceEngine() {
   const [error, setError] = useState(null);
   const recognitionRef = useRef(null);
   const turnStartRef = useRef(null); // Date.now() when listening began — used to measure this turn's duration for the time-based quota
-  const audioRef = useRef(null); // currently-playing Chirp3 playback handle (a Web Audio AudioBufferSourceNode — see playChirp3Audio below), if any — so the "tap to stop speaking" path can stop it
-  const audioCtxRef = useRef(null); // lazily-created shared AudioContext for Chirp3 playback — see the iOS note on why this isn't a plain <audio> element
-  const silenceTimerRef = useRef(null); // 5s no-speech watchdog for the auto-greet listening session only — manual tap-to-talk has no timeout, since someone who deliberately tapped the mic is expected to need a moment to think
+  const silenceTimerRef = useRef(null); // 10s no-speech watchdog — see startAutoListen for when this applies
   const voicePrefRef = useRef(null); // { voiceName, voiceLang, voiceStyle, assistantName, assistantGender } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
+  const wakeLockRef = useRef(null); // current Screen Wake Lock, if any — see the effect below
 
   useEffect(() => {
     fetch('/api/assistant/preferences').then(r => r.json()).then(data => {
@@ -42,25 +43,74 @@ export function useVoiceEngine() {
     });
   }, []);
 
-  // §Auto-greet on home-screen launch ("call a secretary" UX). Only
-  // fires when: (1) the PWA was actually launched from its home-screen
-  // icon (display-mode: standalone / iOS's navigator.standalone) —
-  // never in a normal browser tab, where a voice suddenly talking on
-  // page load would just be startling and where autoplay is far more
-  // likely to be blocked anyway; (2) the user hasn't turned it off in
-  // Settings; (3) this is the first mount since the app was opened —
+  // §Screen Wake Lock — keep the phone screen from auto-dimming/
+  // locking while the assistant is listening, thinking, or speaking,
+  // so a hands-free conversation doesn't get cut off by the screen
+  // going dark mid-sentence. Released the moment state drops back to
+  // idle. Feature-detected (Screen Wake Lock API isn't universal —
+  // notably needs iOS 16.4+ on Safari) and fails silently if
+  // unsupported or if the browser refuses the request (e.g. low-power
+  // mode) — the voice flow itself works exactly the same either way,
+  // this is purely a convenience layered on top.
+  useEffect(() => {
+    if (!('wakeLock' in navigator)) return;
+    const isActive = state === 'listening' || state === 'thinking' || state === 'speaking';
+    if (!isActive) return;
+
+    let cancelled = false;
+    async function acquire() {
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        if (cancelled) { lock.release().catch(() => {}); return; }
+        wakeLockRef.current = lock;
+      } catch (e) {
+        console.error('wakeLock request failed:', e);
+      }
+    }
+    acquire();
+
+    // The OS/browser releases the lock automatically when the tab is
+    // backgrounded (spec behavior) — re-acquire once it's visible
+    // again if we're still in an active state, otherwise the screen
+    // could lock right as the user glances back mid-conversation.
+    function handleVisibility() {
+      if (document.visibilityState === 'visible' && !wakeLockRef.current) acquire();
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+    };
+  }, [state]);
+
+  // §Auto-greet on webapp open ("call a secretary" UX) — now fires on
+  // EVERY qualifying open, mobile or desktop, installed PWA or a
+  // plain browser tab alike (previously restricted to standalone/PWA
+  // launches only; that restriction is intentionally removed per this
+  // request). Still gated on: (1) the user hasn't turned it off in
+  // Settings; (2) this is the first mount since the app was opened —
   // whichever component holds this hook (FAB or Live screen) can
   // remount across navigation, so a plain in-memory ref would re-greet
-  // on every tab switch. sessionStorage persists across those
-  // navigations but clears when the PWA window/tab is actually closed,
-  // which is exactly the boundary we want.
+  // on every page switch. sessionStorage persists across those
+  // navigations but clears when the tab/window is actually closed,
+  // which is exactly the boundary we want. Dropping the standalone
+  // check does mean autoplay is more likely to be blocked in a
+  // plain browser tab than in an installed PWA on some
+  // browsers/devices — speak()'s existing fallback chain (Chirp3 →
+  // browser TTS) already tolerates that; a blocked greeting just means
+  // the mic still opens silently on the next step (startAutoListen is
+  // still reached from speakBrowser/playChirp3Audio's own error
+  // paths) rather than the whole flow breaking.
   function maybeAutoGreet(autoGreetEnabled) {
     if (!autoGreetEnabled) return;
     if (typeof window === 'undefined') return;
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor || !window.speechSynthesis) return; // same feature-detection as the recognition-setup effect — checked directly here too since effect ordering shouldn't be relied on
-    const isStandalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator?.standalone === true;
-    if (!isStandalone) return;
     try {
       if (sessionStorage.getItem('jarvis-auto-greeted')) return;
       sessionStorage.setItem('jarvis-auto-greeted', '1');
@@ -125,13 +175,15 @@ export function useVoiceEngine() {
     if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
   }
 
-  // Opens the mic the same way a tap does, but with a 5-second no-
-  // speech watchdog — used ONLY right after the auto-greet finishes
-  // speaking. If nothing is heard within 5s, recognition.stop() fires
-  // recognition.onend above, which (since no result ever came in)
-  // quietly drops state back to 'idle' — no error shown, same as a
-  // manual tap-to-stop. That's the whole "fall back to using the app
-  // normally" behavior: nothing to build, the idle UI already IS the
+  // Opens the mic the same way a tap does, but with a 10-second no-
+  // speech watchdog — used after the auto-greet AND after every
+  // spoken reply now (see sendToAssistant's speak() call below), so a
+  // conversation can continue turn after turn without re-tapping the
+  // mic each time. If nothing is heard within 10s, recognition.stop()
+  // fires recognition.onend above, which (since no result ever came
+  // in) quietly drops state back to 'idle' — no error shown, same as
+  // a manual tap-to-stop. That's the whole "stop listening and just
+  // sit idle" behavior: nothing to build, the idle UI already IS the
   // normal state (whichever screen — FAB or Live — is showing it).
   function startAutoListen() {
     if (!recognitionRef.current) { setState('idle'); return; }
@@ -141,7 +193,7 @@ export function useVoiceEngine() {
     clearSilenceTimer();
     silenceTimerRef.current = setTimeout(() => {
       try { recognitionRef.current?.stop(); } catch (e) { /* already stopped/ended — harmless */ }
-    }, 5000);
+    }, 10000);
   }
 
   async function sendToAssistant(text) {
@@ -162,7 +214,13 @@ export function useVoiceEngine() {
       // instead of dead silence with no clue why.
       const replyText = data.reply?.trim() || 'ขอโทษครับ ไม่เข้าใจคำสั่งนี้ ลองพูดอีกครั้งครับ';
       setReply(replyText);
-      speak(replyText);
+      // thenListen: true — continuous conversation. Every reply now
+      // re-opens the mic afterward (10s watchdog, same as the
+      // auto-greet flow) instead of dropping back to idle and waiting
+      // for another tap, so a back-and-forth exchange can keep going
+      // hands-free. Silence for 10s after any turn — including this
+      // one — just settles back to idle, same as tapping to stop.
+      speak(replyText, { thenListen: true });
     } catch (e) {
       console.error('assistant request failed:', e);
       finishTurn();
@@ -171,97 +229,19 @@ export function useVoiceEngine() {
     }
   }
 
-  // Tries Chirp 3 HD first (natural/emotional voice, but capped by the
-  // monthly $-cost quota — see tts_usage) — falls back to the
-  // browser's own free SpeechSynthesis whenever the server says
-  // allowed:false (quota used up this month, no API key configured,
-  // or synthesis failed for any reason) or the fetch itself fails
-  // (offline, etc.). The fallback is silent — no error shown, no
-  // difference in the UI flow, just a lower-quality voice.
+  // Robot (browser SpeechSynthesis) voice ONLY — Chirp 3 HD and the
+  // self-hosted PyThaiTTS path (both server round-trips) were pulled
+  // out entirely: neither was reliable enough on this hardware in
+  // practice (PyThaiTTS: single-speaker ONNX model on a shared 4-core
+  // box, several seconds to tens of seconds per reply; Chirp3: fine in
+  // isolation, but only ever reached as PyThaiTTS's fallback, so it
+  // inherited the same "wait, then maybe still get the wrong voice"
+  // UX). speakBrowser() is instant (no network round trip) and never
+  // silently fails into a worse voice, which is what actually matters
+  // for a "tap and hear a reply" assistant.
   async function speak(text, opts = {}) {
-    const { thenListen = false } = opts;
     setState('speaking');
-    // 'robot' style skips Chirp 3 HD entirely and goes straight to the
-    // free browser voice — an explicit user choice (settings page),
-    // distinct from the automatic fallback below which only kicks in
-    // when Chirp 3 HD itself fails/is unavailable/quota's used up.
-    if (voicePrefRef.current?.voiceStyle === 'robot') {
-      speakBrowser(text, opts);
-      return;
-    }
-    try {
-      const res = await fetch('/api/assistant/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
-      const data = await res.json();
-      if (data.allowed && data.audioContent) {
-        const played = await playChirp3Audio(data.audioContent, opts);
-        if (played) return;
-        // decodeAudioData or AudioContext itself failed — fall through
-        // to the browser voice below, same as any other Chirp3 failure.
-      }
-    } catch (e) {
-      console.error('Chirp3 speak() failed, falling back to browser TTS:', e);
-    }
     speakBrowser(text, opts);
-  }
-
-  function base64ToArrayBuffer(base64) {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes.buffer;
-  }
-
-  // Plays the Chirp3 mp3 via the Web Audio API (AudioContext +
-  // AudioBufferSourceNode) instead of a plain <audio> element.
-  //
-  // Why: iOS Safari (and every other iOS browser — they're all WebKit
-  // under the hood) has a well-documented WebKit bug where playing
-  // audio through an HTML5 <audio>/<video> element switches the native
-  // AVAudioSession into a playback category, and afterward WebKit
-  // often fails to hand the session back to a recording-capable
-  // category. The next SpeechRecognition.start() call then goes into
-  // a silent deadlock — no onresult, no onerror, no onend, it just
-  // hangs — which looks EXACTLY like "the mic stopped working" with
-  // no error anywhere to explain why. This hits every reply→listen
-  // transition (auto-greet's thenListen, and also just tapping the
-  // mic again after hearing a normal reply), so on iPhone specifically
-  // this was very likely going to surface constantly. The Web Audio
-  // API routes through a different internal path (AVAudioEngine) that
-  // doesn't fight the speech-recognition session the same way.
-  //
-  // Returns true if playback started successfully, false if it should
-  // fall back to the browser voice instead.
-  async function playChirp3Audio(base64, opts) {
-    const { thenListen = false } = opts;
-    try {
-      if (!audioCtxRef.current) {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) return false;
-        audioCtxRef.current = new Ctx();
-      }
-      const ctx = audioCtxRef.current;
-      // iOS suspends a freshly-created (or backgrounded) AudioContext
-      // until it's resumed — usually happens automatically on the next
-      // user gesture, but resume() here is a harmless no-op when not
-      // needed and a real fix when it is.
-      if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) { /* ignore — playback attempt below will just fail and fall back */ } }
-      const audioBuffer = await ctx.decodeAudioData(base64ToArrayBuffer(base64));
-      const source = ctx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(ctx.destination);
-      audioRef.current = source; // so handleTap's "speaking → stop" path can stop this
-      source.onended = () => { audioRef.current = null; finishTurn(); if (thenListen) startAutoListen(); else setState('idle'); };
-      source.start(0);
-      return true;
-    } catch (e) {
-      console.error('Chirp3 Web Audio playback failed:', e);
-      audioRef.current = null;
-      return false;
-    }
   }
 
   function speakBrowser(text, opts = {}) {
@@ -326,14 +306,6 @@ export function useVoiceEngine() {
       return;
     }
     if (state === 'speaking') {
-      if (audioRef.current) {
-        // AudioBufferSourceNode (Web Audio API — see playChirp3Audio)
-        // uses .stop(), not .pause(); it also throws if called on a
-        // node that already finished/was never started, hence the
-        // try/catch rather than checking readyState first.
-        try { audioRef.current.stop(); } catch (e) { /* already stopped/ended */ }
-        audioRef.current = null;
-      }
       window.speechSynthesis.cancel();
       finishTurn();
       setState('idle');
