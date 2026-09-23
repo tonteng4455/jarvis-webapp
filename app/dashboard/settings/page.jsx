@@ -23,7 +23,6 @@ export default function SettingsPage() {
   const [personality, setPersonality] = useState('');
   const [assistantName, setAssistantName] = useState('');
   const [assistantGender, setAssistantGender] = useState('male');
-  const [voiceStyle, setVoiceStyle] = useState('human');
   const [autoGreet, setAutoGreet] = useState(true);
   const [status, setStatus] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -61,7 +60,6 @@ export default function SettingsPage() {
         setPersonality(data.personality || '');
         setAssistantName(data.assistantName || '');
         setAssistantGender(data.assistantGender || 'male');
-        setVoiceStyle(data.voiceStyle || 'human');
         setAutoGreet(data.autoGreet !== false);
         setLoaded(true);
       })
@@ -80,7 +78,7 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           voiceName: selectedVoice || null, voiceLang: voice?.lang || null, personality,
-          assistantName: assistantName.trim() || null, assistantGender, voiceStyle, autoGreet,
+          assistantName: assistantName.trim() || null, assistantGender, autoGreet,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -115,10 +113,6 @@ export default function SettingsPage() {
           <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>📊 โควต้าการใช้งาน</h2>
           <QuotaBar label="🤖 AI สั่งงาน (วันนี้, นับเฉพาะฝั่ง LINE — เสียงไม่หักโควต้านี้)" used={quota.ai.used} limit={quota.ai.limit} unit="ครั้ง" />
           <QuotaBar label="🎙️ เวลาคุยด้วยเสียง (วันนี้)" used={Math.round(quota.voiceSeconds.used / 60 * 10) / 10} limit={Math.round(quota.voiceSeconds.limit / 60)} unit="นาที" />
-          <QuotaBar label="✨ เสียง Chirp 3 HD (เดือนนี้)" used={quota.ttsChars.used} limit={quota.ttsChars.limit} unit="ตัวอักษร" />
-          <p className="muted" style={{ fontSize: '0.72rem', marginTop: '0.4rem' }}>
-            เกินโควต้า Chirp 3 HD แล้วจะสลับไปใช้เสียงหุ่นยนต์ฟรีให้อัตโนมัติ ไม่ใช่หยุดพูดครับ
-          </p>
         </div>
       )}
       {quotaError && (
@@ -142,27 +136,6 @@ export default function SettingsPage() {
         </div>
         <p className="muted" style={{ fontSize: '0.75rem' }}>
           ใช้ได้เฉพาะในหน้าเว็บ/ผู้ช่วยเสียงนี้เท่านั้นครับ — ฝั่ง LINE ชื่อบัญชียังเป็น "Jarvis" เสมอ (เป็นข้อจำกัดของ LINE เอง เปลี่ยนต่อผู้ใช้แต่ละคนไม่ได้)
-        </p>
-      </div>
-
-      <div className="glass-card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>🎙️ สไตล์เสียง</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
-          <button type="button" onClick={() => setVoiceStyle('human')}
-            className={voiceStyle === 'human' ? 'glass-btn' : 'glass-btn-outline'}
-            style={{ flex: 1, ...(voiceStyle !== 'human' ? { color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' } : {}) }}>
-            🗣️ เหมือนคน
-          </button>
-          <button type="button" onClick={() => setVoiceStyle('robot')}
-            className={voiceStyle === 'robot' ? 'glass-btn' : 'glass-btn-outline'}
-            style={{ flex: 1, ...(voiceStyle !== 'robot' ? { color: 'var(--text-primary)', background: 'var(--surface-muted)', borderColor: 'var(--border-strong)' } : {}) }}>
-            🤖 หุ่นยนต์
-          </button>
-        </div>
-        <p className="muted" style={{ fontSize: '0.75rem' }}>
-          {voiceStyle === 'human'
-            ? 'ใช้เสียง Chirp 3 HD ที่เป็นธรรมชาติก่อนเสมอ (มีโควต้ารายเดือน — เกินแล้วจะสลับไปเสียงหุ่นยนต์ฟรีให้อัตโนมัติ)'
-            : 'ใช้เสียงหุ่นยนต์ของเบราว์เซอร์เสมอ ไม่แตะโควต้า Chirp 3 HD เลย — เลือกไว้ถ้าอยากเก็บโควต้าไว้ใช้เท่าที่จำเป็น'}
         </p>
       </div>
 
