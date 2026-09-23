@@ -319,6 +319,114 @@ a { color: inherit; }
   padding: 0;
 }
 
+/* ---------- Voice Live screen — full-screen mobile default ---------- */
+/* Gemini-Live-style takeover screen (see app/dashboard/layout.jsx) —
+   fixed full-viewport, so it sits on top of everything regardless of
+   what page it replaced. Safe-area insets keep the switch button and
+   reset link clear of the iOS status bar / home-indicator. */
+.voice-live-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+  background: var(--bg);
+  padding: calc(1.2rem + env(safe-area-inset-top, 0px)) 1.2rem calc(1.2rem + env(safe-area-inset-bottom, 0px));
+}
+.voice-live-switch {
+  position: absolute;
+  top: calc(1rem + env(safe-area-inset-top, 0px));
+  right: 1rem;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  border-radius: var(--radius-pill);
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.voice-live-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+.voice-live-orb {
+  width: 168px; height: 168px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent, #1DB4A6);
+  color: #fff;
+  font-size: 3.2rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-md);
+  transition: transform 0.15s ease, background 0.2s ease;
+  position: relative;
+}
+.voice-live-orb:active { transform: scale(0.96); }
+/* Same per-state palette/animation language as the floating FAB
+   (.voice-assistant-btn--*) — reused at a bigger scale so the two
+   entry points (Live screen, FAB) feel like the same assistant. */
+.voice-live-orb--idle { animation: voice-breathe 3s ease-in-out infinite; }
+.voice-live-orb--listening { background: #e74c3c; }
+.voice-live-orb--listening::before,
+.voice-live-orb--listening::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid #e74c3c;
+  animation: voice-ring 1.4s ease-out infinite;
+}
+.voice-live-orb--listening::after { animation-delay: 0.5s; }
+.voice-live-orb--thinking { background: var(--text-secondary); cursor: wait; }
+.voice-live-orb--thinking::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 4px solid transparent;
+  border-top-color: var(--accent, #1DB4A6);
+  animation: voice-spin 0.8s linear infinite;
+}
+.voice-live-orb--speaking { background: #4A90E2; }
+.voice-live-orb--speaking .voice-live-orb-icon { animation: voice-talk 0.5s ease-in-out infinite; }
+.voice-live-orb--speaking::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(74, 144, 226, 0.5);
+  animation: voice-glow 1.2s ease-in-out infinite;
+}
+.voice-live-orb-icon { display: inline-block; }
+.voice-live-label { color: var(--text-secondary); font-size: 0.95rem; }
+.voice-live-unsupported { color: var(--text-secondary); text-align: center; max-width: 320px; }
+.voice-live-transcript {
+  width: 100%;
+  max-width: 420px;
+  max-height: 30vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 0.9rem 1rem;
+  font-size: 0.88rem;
+}
+.voice-live-reset {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .dash-nav-item {
   flex: 0 0 auto;
   padding: 0.5rem 0.9rem;
@@ -330,6 +438,14 @@ a { color: inherit; }
   color: var(--text-secondary);
   border: 1px solid transparent;
   transition: background 0.15s ease, color 0.15s ease;
+}
+/* .dash-nav-item is normally an <a> — the 🎙️ Live switch-back button
+   (DashNav) reuses the same class on a <button> instead, so reset the
+   button-specific defaults that would otherwise show through. */
+button.dash-nav-item {
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
 }
 .dash-nav-item.active {
   border-radius: var(--radius-pill);
