@@ -11,6 +11,39 @@ function formatBytes(n) {
   return `${(n / 1024).toFixed(0)} KB`;
 }
 
+// Image files' public_url is already a direct-viewable Drive image
+// link (drive.google.com/uc?export=view&...) set at upload time — see
+// the bot's uploadToDrive — so it just works as a plain <img src> with
+// no extra backend work. Checks f.kind === 'image' (not mime_type),
+// matching the same convention the dedicated /dashboard/files page
+// already uses for its own thumbnails. onError falls back to a
+// generic icon rather than showing a broken-image glyph, since a
+// public Drive link can occasionally stop working later (e.g. if
+// sharing gets revoked directly in Drive, outside the bot).
+function FileThumb({ file }) {
+  const isImage = file.kind === 'image';
+  const [broken, setBroken] = useState(false);
+
+  if (isImage && file.url && !broken) {
+    return (
+      <a href={file.url} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
+        <img src={file.url} alt="" loading="lazy" onError={() => setBroken(true)}
+          style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', display: 'block', background: 'var(--surface-muted)' }} />
+      </a>
+    );
+  }
+  const icon = (file.mime_type || '').includes('pdf') ? '📕'
+    : (file.mime_type || '').match(/spreadsheet|excel/) ? '📊'
+    : (file.mime_type || '').match(/document|word|msword/) ? '📄'
+    : isImage ? '🖼️' // was an image, just failed to load
+    : '📁';
+  return (
+    <div style={{ width: 48, height: 48, borderRadius: 8, background: 'var(--surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', flexShrink: 0 }}>
+      {icon}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [me, setMe] = useState(null);
   const [files, setFiles] = useState([]);
@@ -109,6 +142,7 @@ export default function DashboardPage() {
         <div className="list-stack">
           {files.map(f => (
             <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.6rem', background: 'var(--surface)', borderRadius: 10 }}>
+              <FileThumb file={f} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 'bold', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.file_name}</div>
                 <div className="muted">{formatBytes(f.size_bytes)} · {new Date(f.created_at).toLocaleDateString('th-TH')}</div>

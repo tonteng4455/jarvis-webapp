@@ -2,8 +2,6 @@
 // app/dashboard/_components.jsx
 
 import { useState, useEffect, useRef } from 'react';
-import { useVoiceEngine } from './_voiceEngine';
-import { useVoiceMode } from './_voiceModeContext';
 
 // Reads the saved theme (or falls back to system preference) and
 // applies it to <html data-theme="...">. Called both from the
@@ -41,7 +39,6 @@ export function ThemeToggle() {
 }
 
 export function DashNav({ current }) {
-  const { isMobile, switchToVoice } = useVoiceMode();
   const tabs = [
     { key: 'dashboard', label: '🏠 หน้าแรก', href: '/dashboard' },
     { key: 'notes', label: '📝 โน้ต', href: '/dashboard/notes' },
@@ -58,16 +55,6 @@ export function DashNav({ current }) {
             {t.label}
           </a>
         ))}
-        {/* Only meaningful on mobile — layout.jsx never shows the Live
-            screen on desktop in the first place, so this stays hidden
-            there rather than offering a switch to something that isn't
-            part of the desktop experience. */}
-        {isMobile && (
-          <button type="button" className="dash-nav-item dash-nav-live-btn" onClick={switchToVoice}
-            title="กลับไปหน้าคุยด้วยเสียงแบบ Live" aria-label="กลับไปหน้าคุยด้วยเสียงแบบ Live">
-            🎙️ Live
-          </button>
-        )}
         <ThemeToggle />
       </nav>
       {/* Deliberately a SIBLING of <nav>, not a child of it — .dash-nav
@@ -98,7 +85,15 @@ export function DashNav({ current }) {
 // detects at mount and simply doesn't render the button if the
 // browser can't do it, rather than showing something broken.
 function VoiceAssistant() {
-  const { supported, state, transcript, reply, error, handleTap, handleReset } = useVoiceEngine();
+  const [supported, setSupported] = useState(true);
+  const [state, setState] = useState('idle'); // idle | listening | thinking | speaking
+  const [transcript, setTranscript] = useState('');
+  const [reply, setReply] = useState('');
+  const [error, setError] = useState(null);
+  const recognitionRef = useRef(null);
+  const turnStartRef = useRef(null); // Date.now() when listening began — used to measure this turn's duration for the time-based quota
+  const audioRef = useRef(null); // currently-playing Chirp3 Audio() element, if any — so the "tap to stop speaking" path can stop either playback method
+  const voicePrefRef = useRef(null); // { voiceName, voiceLang, voiceStyle } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
 
   // §Draggable, edge-snapping FAB (like iOS AssistiveTouch). dragPos
   // is null until the button is dragged for the first time — before
@@ -177,6 +172,212 @@ function VoiceAssistant() {
     });
   }
 
+  useEffect(() => {
+    fetch('/api/assistant/preferences').then(r => r.json()).then(data => {
+      voicePrefRef.current = { voiceName: data.voiceName, voiceLang: data.voiceLang, voiceStyle: data.voiceStyle || 'human' };
+    }).catch(() => { voicePrefRef.current = { voiceName: null, voiceLang: null, voiceStyle: 'human' }; });
+  }, []);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition || !window.speechSynthesis) {
+      setSupported(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'th-TH';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const text = event.results[0][0].transcript;
+      setTranscript(text);
+      sendToAssistant(text);
+    };
+    recognition.onerror = (event) => {
+      finishTurn();
+      setState('idle');
+      setError(event.error === 'not-allowed' ? 'ไม่ได้รับอนุญาตให้ใช้ไมโครโฟนครับ' : 'ฟังไม่ชัดครับ ลองอีกครั้ง');
+    };
+    recognition.onend = () => {
+      setState(prev => (prev === 'listening' ? 'idle' : prev));
+    };
+    recognitionRef.current = recognition;
+
+    return () => { try { recognition.abort(); } catch (e) { /* already stopped */ } };
+  }, []);
+
+  // Reports this turn's elapsed time (from tapping the mic to the
+  // reply finishing — listening + thinking + speaking, the whole
+  // "using voice" duration) to the time-based daily quota. Called on
+  // every path a turn can end: normal completion, recognition error,
+  // or a fetch failure — so partial/failed turns still count toward
+  // the cap rather than being a free way around it.
+  function finishTurn() {
+    if (turnStartRef.current === null) return;
+    const elapsedSeconds = Math.round((Date.now() - turnStartRef.current) / 1000);
+    turnStartRef.current = null;
+    if (elapsedSeconds > 0) {
+      fetch('/api/assistant/voice-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add', seconds: elapsedSeconds }),
+      }).catch(() => { /* best-effort — a failed report shouldn't break the UI */ });
+    }
+  }
+
+  async function sendToAssistant(text) {
+    setState('thinking');
+    setError(null);
+    try {
+      const res = await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'assistant_error');
+      // Guard against an EMPTY reply — silently trying to speak ""
+      // produces no sound and no error, which looks identical to "the
+      // voice just doesn't work" from the outside. A real fallback
+      // message here at least gives the user something audible/visible
+      // instead of dead silence with no clue why.
+      const replyText = data.reply?.trim() || 'ขอโทษครับ ไม่เข้าใจคำสั่งนี้ ลองพูดอีกครั้งครับ';
+      setReply(replyText);
+      speak(replyText);
+    } catch (e) {
+      console.error('assistant request failed:', e);
+      finishTurn();
+      setState('idle');
+      setError('ขอโทษครับ ตอนนี้ผู้ช่วยเสียงมีปัญหา ลองอีกครั้งครับ');
+    }
+  }
+
+  // Tries Chirp 3 HD first (natural/emotional voice, but capped by the
+  // monthly $-cost quota — see tts_usage) — falls back to the
+  // browser's own free SpeechSynthesis whenever the server says
+  // allowed:false (quota used up this month, no API key configured,
+  // or synthesis failed for any reason) or the fetch itself fails
+  // (offline, etc.). The fallback is silent — no error shown, no
+  // difference in the UI flow, just a lower-quality voice.
+  async function speak(text) {
+    setState('speaking');
+    // 'robot' style skips Chirp 3 HD entirely and goes straight to the
+    // free browser voice — an explicit user choice (settings page),
+    // distinct from the automatic fallback below which only kicks in
+    // when Chirp 3 HD itself fails/is unavailable/quota's used up.
+    if (voicePrefRef.current?.voiceStyle === 'robot') {
+      speakBrowser(text);
+      return;
+    }
+    try {
+      const res = await fetch('/api/assistant/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.allowed && data.audioContent) {
+        const audio = new Audio(`data:audio/mp3;base64,${data.audioContent}`);
+        audioRef.current = audio;
+        audio.onended = () => { audioRef.current = null; finishTurn(); setState('idle'); };
+        audio.onerror = (ev) => { console.error('Chirp3 audio playback error:', ev); audioRef.current = null; finishTurn(); speakBrowser(text); }; // audio itself failed to play (e.g. corrupt data) — still fall back rather than going silent
+        await audio.play();
+        return;
+      }
+    } catch (e) {
+      // Includes a rejected audio.play() — e.g. the browser's autoplay
+      // policy blocking programmatic playback (can happen if too many
+      // async hops separate this from the original tap). Logged so
+      // it's actually diagnosable from devtools instead of just
+      // "nothing happened".
+      console.error('Chirp3 speak() failed, falling back to browser TTS:', e);
+    }
+    speakBrowser(text);
+  }
+
+  function speakBrowser(text) {
+    if (!window.speechSynthesis) { finishTurn(); setState('idle'); setError('เบราว์เซอร์นี้ไม่รองรับการพูดตอบครับ (อ่านคำตอบจากข้อความด้านบนได้)'); return; }
+    window.speechSynthesis.cancel(); // don't stack multiple replies if tapped again quickly
+    // Chrome has a long-standing bug where speechSynthesis can get
+    // stuck in a paused state (especially after tab visibility
+    // changes or several calls in a row) — resume() is a harmless
+    // no-op when not needed, and a known workaround when it is.
+    window.speechSynthesis.resume();
+    const utterance = new SpeechSynthesisUtterance(text);
+    // Match the saved voice by exact name first (works when this is
+    // the same device/browser it was picked on); if not found (e.g. a
+    // different device — see settings page's own note on why this
+    // happens), fall back to any voice matching the saved language,
+    // then finally the browser's own default for 'th-TH'.
+    const pref = voicePrefRef.current;
+    const available = window.speechSynthesis.getVoices();
+    const matched = pref?.voiceName && available.find(v => v.name === pref.voiceName);
+    const langMatch = !matched && pref?.voiceLang && available.find(v => v.lang === pref.voiceLang);
+    if (matched) utterance.voice = matched;
+    else if (langMatch) utterance.voice = langMatch;
+    utterance.lang = 'th-TH';
+    utterance.onend = () => { finishTurn(); setState('idle'); };
+    utterance.onerror = (ev) => { console.error('speechSynthesis error:', ev.error); finishTurn(); setState('idle'); };
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async function handleReset() {
+    setTranscript('');
+    setReply('');
+    setError(null);
+    try {
+      await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset: true }),
+      });
+    } catch (e) { /* best-effort — the server just keeps whatever history it had if this fails, no local state to roll back */ }
+  }
+
+  async function handleTap() {
+    if (state === 'listening') {
+      recognitionRef.current?.stop();
+      return;
+    }
+    if (state === 'speaking') {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      window.speechSynthesis.cancel();
+      finishTurn();
+      setState('idle');
+      return;
+    }
+    if (state === 'thinking') return; // ignore taps while waiting for a reply
+
+    setTranscript('');
+    setReply('');
+    setError(null);
+
+    // Time-based daily cap (15 min default) — checked BEFORE starting
+    // to listen, not after, so a turn already in progress when the cap
+    // is hit is never cut off mid-sentence (see finishTurn/the bot
+    // Worker's handleVoiceUsageRequest for the "check before, add
+    // after" split).
+    try {
+      const res = await fetch('/api/assistant/voice-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'check' }),
+      });
+      const data = await res.json();
+      if (data.allowed === false) {
+        const usedMin = Math.round((data.usedSeconds || 0) / 60);
+        const limitMin = Math.round((data.limitSeconds || 900) / 60);
+        setError(`ใช้เสียงครบ ${limitMin} นาทีของวันนี้แล้วครับ (${usedMin} นาที) พรุ่งนี้กลับมาใหม่นะครับ`);
+        return;
+      }
+    } catch (e) { /* quota check failed — fail open, same as the server side */ }
+
+    turnStartRef.current = Date.now();
+    setState('listening');
+    try { recognitionRef.current?.start(); } catch (e) { turnStartRef.current = null; setState('idle'); } // start() throws if already running — harmless, just ignore
+  }
+
   if (!supported) return null;
 
   const icon = { idle: '🎤', listening: '🔴', thinking: '⏳', speaking: '🔊' }[state];
@@ -207,61 +408,6 @@ function VoiceAssistant() {
   );
 }
 
-
-// §Full-screen "Live" voice UI — the Gemini-Live-style default screen
-// on mobile (see app/dashboard/layout.jsx for the mode switch that
-// decides when this shows instead of the normal dashboard pages).
-// Shares 100% of its behavior with the floating FAB via useVoiceEngine
-// — this component is purely presentational, a different shape around
-// the exact same tap-to-talk/auto-greet/quota logic.
-export function VoiceLiveScreen({ onSwitchToApp }) {
-  const { supported, state, transcript, reply, error, handleTap, handleReset } = useVoiceEngine();
-
-  if (!supported) {
-    // No SpeechRecognition/SpeechSynthesis in this browser — a screen
-    // built entirely around talking can't work here. layout.jsx should
-    // already route straight to app mode in this case, but this stays
-    // as a harmless fallback rather than an unreachable dead end.
-    return (
-      <div className="voice-live-screen">
-        <p className="voice-live-unsupported">เบราว์เซอร์นี้ไม่รองรับผู้ช่วยเสียงครับ ใช้งานผ่านเว็บแอปปกติแทนได้เลย</p>
-        <button type="button" className="glass-btn" onClick={onSwitchToApp}>🖥️ ใช้งานแบบเว็บแอป</button>
-      </div>
-    );
-  }
-
-  const icon = { idle: '🎤', listening: '🔴', thinking: '⏳', speaking: '🔊' }[state];
-  const label = { idle: 'แตะเพื่อคุยกับ Jarvis', listening: 'กำลังฟัง... แตะเพื่อหยุด', thinking: 'กำลังคิด...', speaking: 'กำลังพูด... แตะเพื่อหยุด' }[state];
-
-  return (
-    <div className="voice-live-screen">
-      <button type="button" className="voice-live-switch" onClick={onSwitchToApp}
-        title="ใช้งานแบบเว็บแอปปกติ" aria-label="สลับไปหน้าเว็บแอปปกติ">
-        🖥️ เว็บแอป
-      </button>
-
-      <div className="voice-live-center">
-        <button type="button" className={`voice-live-orb voice-live-orb--${state}`}
-          onClick={handleTap} title={label} aria-label={label}>
-          <span className="voice-live-orb-icon">{icon}</span>
-        </button>
-        <p className="voice-live-label">{label}</p>
-      </div>
-
-      {(transcript || reply || error) && (
-        <div className="voice-live-transcript">
-          {transcript && <p className="voice-assistant-you">🗣️ {transcript}</p>}
-          {reply && <p className="voice-assistant-reply">🤖 {reply}</p>}
-          {error && <p className="voice-assistant-error">⚠️ {error}</p>}
-        </div>
-      )}
-
-      {(transcript || reply) && (
-        <button type="button" className="voice-live-reset" onClick={handleReset}>🔄 เริ่มคุยใหม่</button>
-      )}
-    </div>
-  );
-}
 
 export function PremiumUpsell() {
   return (

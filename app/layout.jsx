@@ -4,25 +4,6 @@ import './globals.css';
 export const metadata = {
   title: 'Jarvis',
   description: 'Jarvis Premium — jarvis-line-bot web app',
-  manifest: '/manifest.json',
-  // iOS's Safari-based "Add to Home Screen" does NOT read manifest.json
-  // at all — it needs these Apple-specific tags directly. Without
-  // apple-mobile-web-app-capable, the icon still gets added but
-  // TAPPING IT just opens Safari with the address bar showing (a
-  // bookmark, not an app) — none of the standalone-detection in
-  // VoiceAssistant's auto-greet would ever fire on iPhone without this.
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'Jarvis',
-  },
-  icons: {
-    icon: [
-      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-    ],
-    apple: '/icons/apple-touch-icon.png',
-  },
 };
 
 export const viewport = {
@@ -34,7 +15,6 @@ export const viewport = {
   // adjustment (globals.css) is a silent no-op and it can end up
   // sitting under the home-indicator bar on notched iPhones.
   viewportFit: 'cover',
-  themeColor: '#0f172a',
 };
 
 // Runs synchronously before the page paints — sets [data-theme] on

@@ -1,9 +1,9 @@
 // app/api/assistant/quota/route.js
 //
-// GET — raw quota numbers (AI call count, voice daily seconds) for
-// display on the settings page. Previously the only way to check any
-// of this was asking through the voice assistant itself, or LINE
-// (which only has the AI-count dimension).
+// GET — raw quota numbers (AI call count, voice daily seconds, Chirp 3
+// HD monthly characters) for display on the settings page. Previously
+// the only way to check any of this was asking through the voice
+// assistant itself, or LINE (which only has the AI-count dimension).
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
