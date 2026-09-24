@@ -23,7 +23,7 @@ export function useVoiceEngine() {
   const recognitionRef = useRef(null);
   const turnStartRef = useRef(null); // Date.now() when listening began — used to measure this turn's duration for the time-based quota
   const silenceTimerRef = useRef(null); // 10s no-speech watchdog — see startAutoListen for when this applies
-  const voicePrefRef = useRef(null); // { voiceName, voiceLang, voiceStyle, assistantName, assistantGender } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
+  const voicePrefRef = useRef(null); // { voiceName, voiceLang, voiceStyle, assistantName, assistantGender, greetingMessage, endingParticle } loaded once from /api/assistant/preferences — conversation MEMORY itself lives server-side (keyed by userId), so the client doesn't track history at all, just this
   const wakeLockRef = useRef(null); // current Screen Wake Lock, if any — see the effect below
 
   useEffect(() => {
@@ -31,10 +31,11 @@ export function useVoiceEngine() {
       voicePrefRef.current = {
         voiceName: data.voiceName, voiceLang: data.voiceLang, voiceStyle: data.voiceStyle || 'human',
         assistantName: data.assistantName || null, assistantGender: data.assistantGender || null,
+        greetingMessage: data.greetingMessage || null, endingParticle: data.endingParticle || null,
       };
       maybeAutoGreet(data.autoGreet !== false);
     }).catch(() => {
-      voicePrefRef.current = { voiceName: null, voiceLang: null, voiceStyle: 'human', assistantName: null, assistantGender: null };
+      voicePrefRef.current = { voiceName: null, voiceLang: null, voiceStyle: 'human', assistantName: null, assistantGender: null, greetingMessage: null, endingParticle: null };
       // Preferences fetch failed — fail CLOSED here specifically (the
       // voiceStyle default above fails open to 'human', but an unknown
       // voice suddenly talking on launch if something's wrong
@@ -116,8 +117,16 @@ export function useVoiceEngine() {
       sessionStorage.setItem('jarvis-auto-greeted', '1');
     } catch (e) { return; } // storage disabled — skip rather than risk re-greeting on every page nav with no way to remember it already happened
     const name = voicePrefRef.current?.assistantName || 'Jarvis';
-    const particle = voicePrefRef.current?.assistantGender === 'female' ? 'ค่ะ' : 'ครับ';
-    speak(`สวัสดี${particle} ${name} พร้อมรับคำสั่งแล้ว${particle} มีอะไรให้ช่วยไหม${particle}`, { thenListen: true });
+    const particle = voicePrefRef.current?.endingParticle || (voicePrefRef.current?.assistantGender === 'female' ? 'ค่ะ' : 'ครับ');
+    const custom = voicePrefRef.current?.greetingMessage;
+    // A custom greeting is used verbatim (with a {name} placeholder
+    // substitution as the one bit of dynamism kept) — someone who
+    // typed their own greeting gets exactly that, not the particle
+    // spliced in on top of words they didn't write.
+    const greeting = custom
+      ? custom.replace(/\{name\}/g, name)
+      : `สวัสดี${particle} ${name} พร้อมรับคำสั่งแล้ว${particle} มีอะไรให้ช่วยไหม${particle}`;
+    speak(greeting, { thenListen: true });
   }
 
   useEffect(() => {

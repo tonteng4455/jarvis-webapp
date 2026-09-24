@@ -24,6 +24,8 @@ export default function SettingsPage() {
   const [assistantName, setAssistantName] = useState('');
   const [assistantGender, setAssistantGender] = useState('male');
   const [autoGreet, setAutoGreet] = useState(true);
+  const [greetingMessage, setGreetingMessage] = useState('');
+  const [endingParticle, setEndingParticle] = useState('');
   const [status, setStatus] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [quota, setQuota] = useState(null);
@@ -61,6 +63,8 @@ export default function SettingsPage() {
         setAssistantName(data.assistantName || '');
         setAssistantGender(data.assistantGender || 'male');
         setAutoGreet(data.autoGreet !== false);
+        setGreetingMessage(data.greetingMessage || '');
+        setEndingParticle(data.endingParticle || '');
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -79,6 +83,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           voiceName: selectedVoice || null, voiceLang: voice?.lang || null, personality,
           assistantName: assistantName.trim() || null, assistantGender, autoGreet,
+          greetingMessage: greetingMessage.trim() || null, endingParticle: endingParticle.trim() || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -93,7 +98,7 @@ export default function SettingsPage() {
   function playSample() {
     if (!window.speechSynthesis) return;
     const name = assistantName.trim() || 'Jarvis';
-    const particle = assistantGender === 'female' ? 'ค่ะ' : 'ครับ';
+    const particle = endingParticle.trim() || (assistantGender === 'female' ? 'ค่ะ' : 'ครับ');
     const self = assistantGender === 'female' ? 'ฉัน' : 'ผม';
     const utterance = new SpeechSynthesisUtterance(`สวัสดี${particle} ${self}คือ ${name} ผู้ช่วยของคุณ${particle}`);
     const voice = voices.find(v => v.name === selectedVoice);
@@ -140,7 +145,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="glass-card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>📞 ทักทายอัตโนมัติเมื่อเปิดจากไอคอนหน้าโฮม</h2>
+        <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>📞 ทักทายอัตโนมัติเมื่อเปิดเว็บแอป</h2>
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
           <button type="button" onClick={() => setAutoGreet(true)}
             className={autoGreet ? 'glass-btn' : 'glass-btn-outline'}
@@ -155,8 +160,31 @@ export default function SettingsPage() {
         </div>
         <p className="muted" style={{ fontSize: '0.75rem' }}>
           {autoGreet
-            ? 'พอกดไอคอน Jarvis บนหน้าโฮม แอปจะทักด้วยเสียงทันทีแล้วฟังคำสั่งเลย เหมือนโทรหาเลขา — ถ้าไม่พูดอะไรภายใน 5 วินาที จะเงียบแล้วเข้าหน้าเว็บปกติให้เอง'
+            ? 'พอเปิดเว็บแอป จะทักด้วยเสียงทันทีแล้วฟังคำสั่งเลย เหมือนโทรหาเลขา — ถ้าไม่พูดอะไรภายใน 10 วินาที จะเงียบแล้วเข้าหน้าเว็บปกติให้เอง (หลังบอทตอบทุกครั้งก็เปิดไมค์รอฟังต่ออีก 10 วินาทีเช่นกัน คุยต่อเนื่องได้โดยไม่ต้องแตะปุ่มซ้ำ)'
             : 'เปิดแอปแบบเงียบ ๆ เข้าหน้าเว็บปกติทันที ไม่มีเสียงทัก — ยังกดปุ่ม 🎤 เพื่อคุยด้วยเสียงเองได้ตามปกติ'}
+        </p>
+      </div>
+
+      <div className="glass-card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '0.95rem', marginBottom: '0.6rem' }}>💬 ข้อความทักทาย + คำลงท้าย</h2>
+        <label style={{ fontSize: '0.78rem', display: 'block', marginBottom: '0.3rem', color: 'var(--text-secondary)' }}>
+          ข้อความทักทาย (ปล่อยว่างใช้ค่าเริ่มต้น)
+        </label>
+        <textarea value={greetingMessage} onChange={e => setGreetingMessage(e.target.value)}
+          placeholder={`สวัสดีครับ ${assistantName.trim() || 'Jarvis'} พร้อมรับคำสั่งแล้วครับ มีอะไรให้ช่วยไหมครับ`}
+          maxLength={200} rows={2}
+          style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', marginBottom: '0.4rem', fontSize: '0.85rem', resize: 'vertical', fontFamily: 'inherit' }} />
+        <p className="muted" style={{ fontSize: '0.72rem', marginBottom: '0.8rem' }}>
+          ใส่ {'{name}'} ในข้อความได้ จะถูกแทนด้วยชื่อเลขาที่ตั้งไว้ด้านบนให้อัตโนมัติ — มีผลเฉพาะข้อความทักทายตอนเปิดแอปเท่านั้น
+        </p>
+        <label style={{ fontSize: '0.78rem', display: 'block', marginBottom: '0.3rem', color: 'var(--text-secondary)' }}>
+          คำลงท้าย (ปล่อยว่างใช้ "ครับ"/"ค่ะ" ตามเพศที่ตั้งไว้ด้านบน)
+        </label>
+        <input type="text" value={endingParticle} onChange={e => setEndingParticle(e.target.value)}
+          placeholder="เช่น ครับผม, นะครับ, จ้า, ฮะ" maxLength={20}
+          style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }} />
+        <p className="muted" style={{ fontSize: '0.72rem', marginTop: '0.4rem' }}>
+          มีผลกับทุกคำตอบที่พูดออกมาจากผู้ช่วยเสียง ไม่ใช่แค่ข้อความทักทาย — แทนที่ "ครับ"/"ค่ะ" ทั้งหมดด้วยคำนี้แทน
         </p>
       </div>
 
