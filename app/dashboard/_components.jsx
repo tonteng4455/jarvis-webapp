@@ -40,8 +40,7 @@ export function ThemeToggle() {
 
 export function DashNav({ current }) {
   const tabs = [
-    { key: 'dashboard', label: '🏠 หน้าแรก', href: '/dashboard' },
-    { key: 'notes', label: '📝 โน้ต', href: '/dashboard/notes' },
+    { key: 'notes', label: '📝 โน้ต', href: '/dashboard' },
     { key: 'calendar', label: '📅 นัดหมาย', href: '/dashboard/calendar' },
     { key: 'expenses', label: '💰 เงิน', href: '/dashboard/expenses' },
     { key: 'files', label: '📁 ไฟล์', href: '/dashboard/files' },
@@ -53,8 +52,56 @@ export function DashNav({ current }) {
           {t.label}
         </a>
       ))}
-      <ThemeToggle />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
+        <ThemeToggle />
+        <AccountMenu />
+      </div>
     </nav>
+  );
+}
+
+// Avatar + name, click to reveal a small "ออกจากระบบ" dropdown — moved
+// up here from the old standalone dashboard/home page (removed; notes
+// is the landing page now) so account access isn't tied to any one
+// particular page.
+function AccountMenu() {
+  const [me, setMe] = useState(null);
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    fetch('/api/me').then(r => r.ok ? r.json() : null).then(setMe).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e) { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  if (!me) return null;
+
+  return (
+    <div ref={boxRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.2rem 0.3rem', borderRadius: 'var(--radius-pill)', color: 'inherit', font: 'inherit' }}
+        aria-label="บัญชีผู้ใช้">
+        {me.pictureUrl && <img src={me.pictureUrl} alt="" style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0 }} />}
+        <span style={{ fontSize: '0.8rem', fontWeight: 600, maxWidth: '7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {me.displayName || 'ผู้ใช้'}
+        </span>
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '0.4rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: '9rem', overflow: 'hidden', zIndex: 20 }}>
+          <form action="/api/auth/logout" method="POST">
+            <button type="submit" style={{ width: '100%', textAlign: 'left', padding: '0.6rem 0.9rem', background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', font: 'inherit', fontSize: '0.85rem' }}>
+              ออกจากระบบ
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
   );
 }
 

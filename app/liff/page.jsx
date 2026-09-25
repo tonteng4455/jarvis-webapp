@@ -8,7 +8,7 @@
 // LIFF already knows who's tapping, since they're inside LINE), then
 // hand the resulting ID token to /api/auth/liff to mint our normal
 // session cookie, and finally redirect to wherever the link meant to
-// go (?to=/dashboard/notes&id=123, etc).
+// go (?to=/dashboard&id=123, etc).
 //
 // Query params:
 //   to    — destination path (defaults to /dashboard)
