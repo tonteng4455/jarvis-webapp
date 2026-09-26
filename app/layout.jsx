@@ -2,8 +2,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Jarvis',
-  description: 'Jarvis Premium — jarvis-line-bot web app',
+  title: 'Dee',
+  description: 'Dee — jarvis-line-bot web app',
 };
 
 export const viewport = {

@@ -99,7 +99,7 @@ async function promoteWaitlist(supabase) {
     if (insertErr) { console.error('waitlist promote insert failed:', w.user_id, insertErr); continue; }
     await supabase.from('waitlist').update({ notified: true }).eq('user_id', w.user_id);
     promoted.push(w.user_id);
-    await pushLineMessage(w.user_id, '🎉 มีที่ว่างเพิ่มแล้วครับ! ตอนนี้คุณใช้งาน Jarvis ได้เต็มรูปแบบแล้ว ลองพิมพ์ "เมนู" ดูได้เลยครับ');
+    await pushLineMessage(w.user_id, '🎉 มีที่ว่างเพิ่มแล้วครับ! ตอนนี้คุณใช้งาน Dee ได้เต็มรูปแบบแล้ว ลองพิมพ์ "เมนู" ดูได้เลยครับ');
   }
   return promoted;
 }

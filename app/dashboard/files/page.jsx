@@ -71,7 +71,7 @@ export default function FilesPage() {
             ))}
           </div>
 
-          {shown.length === 0 && <div className="glass-card"><p className="muted">ยังไม่มีไฟล์ครับ ส่งรูปหรือไฟล์เข้าแชทกับ Jarvis ได้เลย</p></div>}
+          {shown.length === 0 && <div className="glass-card"><p className="muted">ยังไม่มีไฟล์ครับ ส่งรูปหรือไฟล์เข้าแชทกับ Dee ได้เลย</p></div>}
 
           <div className="grid-cards">
             {shown.map(f => (
