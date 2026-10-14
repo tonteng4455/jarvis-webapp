@@ -433,9 +433,14 @@ a { color: inherit; }
   -webkit-overflow-scrolling: touch;
 }
 .note-editor-modal .note-content-textarea {
-  flex: 1;
+  /* Height is set by AutoGrowTextarea to fit the text. Must NOT shrink
+     (flex: 1 squashed it inside the fixed-height panel and the overflow
+     was clipped, so long notes got cut off and images sat on top of the
+     text). The panel itself scrolls instead. */
+  flex: 0 0 auto;
   min-height: 200px;
 }
+.note-editor-modal > * { flex-shrink: 0; }
 
 /* ---------- Table (admin) — collapses to stacked cards on mobile ---------- */
 .glass-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
