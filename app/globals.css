@@ -409,10 +409,17 @@ a { color: inherit; }
   background: rgba(0, 0, 0, 0.55);
   display: flex; align-items: center; justify-content: center;
   padding: 1.5rem;
+  overflow: hidden;
+  /* a scroll gesture that reaches the edge of the panel must never
+     leak out to the page/list behind the backdrop */
+  overscroll-behavior: contain;
 }
 .note-editor-modal.note-composer {
   width: min(720px, 100%);
   height: min(88vh, 900px);
+  /* dvh = the visible viewport on mobile (excludes collapsing browser
+     bars / on-screen keyboard), so the panel bottom isn't cut off */
+  height: min(88dvh, 900px);
   max-height: 100%;
   display: flex;
   flex-direction: column;
@@ -422,6 +429,8 @@ a { color: inherit; }
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .note-editor-modal .note-content-textarea {
   flex: 1;
@@ -451,4 +460,34 @@ a { color: inherit; }
     color: var(--text-secondary);
     margin-bottom: 0.2rem;
   }
+}
+
+/* ---------- Images inside notes ---------- */
+.note-image-strip {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem;
+}
+.note-image-thumb {
+  position: relative; width: 92px; height: 92px; border-radius: 10px; overflow: hidden;
+  background: var(--surface-muted); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; flex: 0 0 auto;
+}
+.note-image-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.note-image-loading, .note-image-fail { font-size: 1.4rem; cursor: default; }
+.note-image-remove {
+  position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%;
+  border: none; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 0.7rem; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.note-add-image-btn { margin-top: 0.6rem; padding: 0.3rem 0.8rem; font-size: 0.78rem; align-self: flex-start; }
+.note-add-image-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.note-image-error { margin-top: 0.5rem; font-size: 0.75rem; color: var(--danger); }
+.note-lightbox {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.88);
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+  overscroll-behavior: contain;
+}
+.note-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+.note-lightbox-close {
+  position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border-radius: 50%;
+  border: none; background: rgba(255, 255, 255, 0.2); color: #fff; font-size: 1rem; cursor: pointer;
 }

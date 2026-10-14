@@ -6,8 +6,10 @@
 // away before hitting the network (local state only until then).
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, CategorySelect, NOTE_CATEGORIES } from './_components';
+import { MAX_NOTE_IMAGES } from '../../lib/noteImages';
 
 const COLORS = [
   { key: 'default', label: 'ค่าเริ่มต้น' },
@@ -30,6 +32,186 @@ function colorBg(key) {
   return `var(--note-${key || 'default'})`;
 }
 
+// Locks the page behind a full-screen editor so scrolling a long note
+// can't "chain" through to the note list underneath. overflow:hidden on
+// <body> alone isn't enough on mobile Safari/Chrome (touch scrolling
+// still moves the page once the inner panel hits its end), so this pins
+// the body with position:fixed at the current scroll offset and puts it
+// back exactly where it was on close.
+function useBodyScrollLock() {
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const prev = { position: body.style.position, top: body.style.top, width: body.style.width, overflow: body.style.overflow };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      body.style.overflow = prev.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+}
+
+// Shared backdrop for both the new-note composer and the edit modal.
+function EditorOverlay({ children }) {
+  useBodyScrollLock();
+  return <div className="note-editor-overlay">{children}</div>;
+}
+
+// ---------- Images in notes ----------
+// Photos are stored in the user's own Google Drive (uploaded through the
+// bot Worker) — a note only keeps {drive_file_id, name} references, so
+// nothing image-sized ever touches Supabase. Removing an image from a
+// note (or deleting the note) only drops the reference; the file stays
+// in the user's Drive folder on purpose.
+function driveImageSrc(id, width) {
+  return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${width}`;
+}
+
+// Downscale a photo in the browser before uploading (phone photos are
+// often 3–8 MB; ~1600px JPEG is plenty for a note and ~10x smaller).
+// Falls back to the original file if the browser can't decode it.
+async function shrinkImage(file, maxEdge = 1600, quality = 0.82) {
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = url;
+    });
+    URL.revokeObjectURL(url);
+    const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; // PNG transparency → white instead of black in JPEG
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (!blob) return file;
+    const base = (file.name || 'photo').replace(/\.[^.]+$/, '');
+    return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
+// Shared by the composer and the edit modal: owns the images list for
+// ONE open editor plus the upload state. `uploadingRef` lets the
+// click-outside handlers refuse to close the editor mid-upload (which
+// would orphan the file just uploaded).
+function useNoteImages(initial) {
+  const [images, setImages] = useState(initial || []);
+  const [uploading, setUploading] = useState(0);
+  const [error, setError] = useState('');
+  const uploadingRef = useRef(false);
+  const imagesRef = useRef(images);
+  useEffect(() => { imagesRef.current = images; }, [images]);
+  useEffect(() => { uploadingRef.current = uploading > 0; }, [uploading]);
+
+  async function addFiles(fileList) {
+    const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    setError('');
+    const room = MAX_NOTE_IMAGES - imagesRef.current.length;
+    if (room <= 0) { setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต`); return; }
+    if (files.length > room) setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต — ใส่ให้ ${room} รูปแรก`);
+    uploadingRef.current = true;
+    for (const original of files.slice(0, room)) {
+      setUploading(n => n + 1);
+      try {
+        const file = await shrinkImage(original);
+        const form = new FormData();
+        form.append('file', file, file.name);
+        const res = await fetch('/api/notes/images', { method: 'POST', body: form });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.image) {
+          setImages(prev => [...prev, data.image]);
+        } else if (data.error === 'google_not_connected') {
+          setError('ยังไม่ได้เชื่อมต่อ Google Drive — พิมพ์ "เชื่อมต่อ google" ในแชท LINE แล้วลองใหม่ครับ');
+        } else if (data.error === 'too_large') {
+          setError('รูปใหญ่เกินไป ลองรูปที่เล็กลงครับ');
+        } else {
+          setError('อัปโหลดรูปไม่สำเร็จ ลองอีกครั้งครับ');
+        }
+      } catch {
+        setError('อัปโหลดรูปไม่สำเร็จ ลองอีกครั้งครับ');
+      } finally {
+        setUploading(n => n - 1);
+      }
+    }
+  }
+
+  function removeImage(id) { setImages(prev => prev.filter(im => im.drive_file_id !== id)); }
+  return { images, setImages, uploading, uploadingRef, error, addFiles, removeImage };
+}
+
+function ImageThumb({ image, onOpen, onRemove }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="note-image-thumb" onClick={() => onOpen(image)}>
+      {failed ? (
+        <span className="note-image-fail" title="โหลดรูปไม่ได้">🖼️</span>
+      ) : (
+        <img src={driveImageSrc(image.drive_file_id, 400)} alt={image.name || 'รูปในโน้ต'}
+          loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+      )}
+      <button type="button" className="note-image-remove" title="เอารูปออกจากโน้ต"
+        onMouseDown={e => e.stopPropagation()}
+        onClick={e => { e.stopPropagation(); onRemove(image.drive_file_id); }}>✕</button>
+    </div>
+  );
+}
+
+// Image row + "add photo" button + full-size viewer (see the portal
+// note below on why the viewer is not a plain child).
+function NoteImagesEditor({ state }) {
+  const { images, uploading, error, addFiles, removeImage } = state;
+  const [viewing, setViewing] = useState(null);
+  const inputRef = useRef(null);
+  return (
+    <>
+      {(images.length > 0 || uploading > 0) && (
+        <div className="note-image-strip">
+          {images.map(im => (
+            <ImageThumb key={im.drive_file_id} image={im} onOpen={setViewing} onRemove={removeImage} />
+          ))}
+          {uploading > 0 && <div className="note-image-thumb note-image-loading">⏳</div>}
+        </div>
+      )}
+      {error && <div className="note-image-error">{error}</div>}
+      <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+        onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+      <button type="button" className="glass-btn-outline note-add-image-btn"
+        disabled={images.length >= MAX_NOTE_IMAGES}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={() => inputRef.current?.click()}>
+        📷 เพิ่มรูป{images.length > 0 ? ` (${images.length}/${MAX_NOTE_IMAGES})` : ''}
+      </button>
+      {viewing && createPortal(
+        // Portal to <body>: the editor modal has a backdrop-filter, which
+        // would turn this position:fixed viewer into "fixed inside the
+        // modal" and clip it. mousedown must not reach the document-level
+        // click-outside handler (the portal is outside the modal's DOM),
+        // or tapping the viewer would save and close the editor.
+        <div className="note-lightbox" onMouseDown={e => e.stopPropagation()} onClick={() => setViewing(null)}>
+          <img src={driveImageSrc(viewing.drive_file_id, 1600)} alt={viewing.name || 'รูปในโน้ต'} referrerPolicy="no-referrer" />
+          <button type="button" className="note-lightbox-close" title="ปิด">✕</button>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 // Textarea that grows to fit its content — no scrollbar, no cramped box.
 function AutoGrowTextarea({ value, onChange, placeholder, autoFocus, className }) {
   const ref = useRef(null);
@@ -49,14 +231,17 @@ function Composer({ onCreate, onEditingChange, categories }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('general');
+  const imgState = useNoteImages([]);
+  const { images, setImages, uploadingRef } = imgState;
   const ref = useRef(null);
 
   useEffect(() => { onEditingChange(open); }, [open, onEditingChange]);
 
   async function commit() {
-    if (!title.trim() && !content.trim()) { setOpen(false); return; }
-    await onCreate({ title, content, category });
-    setTitle(''); setContent(''); setCategory('general'); setOpen(false);
+    if (uploadingRef.current) return; // wait for the in-flight photo upload
+    if (!title.trim() && !content.trim() && images.length === 0) { setOpen(false); return; }
+    await onCreate({ title, content, category, images });
+    setTitle(''); setContent(''); setCategory('general'); setImages([]); setOpen(false);
   }
 
   useEffect(() => {
@@ -67,7 +252,7 @@ function Composer({ onCreate, onEditingChange, categories }) {
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, title, content, category]);
+  }, [open, title, content, category, images]);
 
   if (!open) {
     return (
@@ -77,20 +262,21 @@ function Composer({ onCreate, onEditingChange, categories }) {
     );
   }
   return (
-    <div className="note-editor-overlay">
+    <EditorOverlay>
       <div className="note-editor-modal note-composer" ref={ref}>
         <input className="note-title-input" placeholder="หัวข้อ" value={title}
           onChange={e => setTitle(e.target.value)} autoFocus />
         <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content}
           onChange={e => setContent(e.target.value)} />
+        <NoteImagesEditor state={imgState} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', gap: '0.5rem' }}>
           <div style={{ flex: 1, maxWidth: 180 }} onMouseDown={e => e.stopPropagation()}>
             <CategorySelect options={categories} value={category} onChange={setCategory} />
           </div>
-          <button onClick={commit} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem', flex: '0 0 auto' }}>เสร็จสิ้น</button>
+          <button onClick={commit} disabled={imgState.uploading > 0} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem', flex: '0 0 auto' }}>เสร็จสิ้น</button>
         </div>
       </div>
-    </div>
+    </EditorOverlay>
   );
 }
 
@@ -106,6 +292,8 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
   const [content, setContent] = useState(note.content);
   const [category, setCategory] = useState(note.category || 'general');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const imgState = useNoteImages(note.images || []);
+  const { images, setImages, uploadingRef } = imgState;
   const ref = useRef(null);
 
   // Coming from a LIFF link (bot card's "✏️ แก้ไข" button) with
@@ -119,13 +307,15 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEditId]);
 
-  useEffect(() => { if (!editing) { setTitle(note.title); setContent(note.content); setCategory(note.category || 'general'); } }, [note.title, note.content, note.category, editing]);
+  useEffect(() => { if (!editing) { setTitle(note.title); setContent(note.content); setCategory(note.category || 'general'); setImages(note.images || []); } }, [note.title, note.content, note.category, note.images, editing]);
   useEffect(() => { onEditingChange(note.id, editing); }, [editing, note.id, onEditingChange]);
 
   function saveEdit() {
+    if (uploadingRef.current) return; // wait for the in-flight photo upload
     setEditing(false);
-    if (title !== note.title || content !== note.content || category !== note.category) {
-      onUpdate(note.id, { title, content, category });
+    const imagesChanged = JSON.stringify(images) !== JSON.stringify(note.images || []);
+    if (title !== note.title || content !== note.content || category !== note.category || imagesChanged) {
+      onUpdate(note.id, { title, content, category, ...(imagesChanged ? { images } : {}) });
     }
   }
 
@@ -137,16 +327,17 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, title, content, category]);
+  }, [editing, title, content, category, images]);
 
   const isArchived = note.archived;
 
   if (editing) {
     return (
-      <div className="note-editor-overlay">
+      <EditorOverlay>
         <div className="note-editor-modal note-composer" ref={ref} data-note-id={note.id}>
           <input className="note-title-input" placeholder="หัวข้อ" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
           <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content} onChange={e => setContent(e.target.value)} />
+          <NoteImagesEditor state={imgState} />
           <div style={{ marginTop: '0.5rem', maxWidth: 220 }} onMouseDown={e => e.stopPropagation()}>
             <CategorySelect options={categories} value={category} onChange={setCategory} />
           </div>
@@ -167,7 +358,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
             )}
             <button className="note-icon-btn" title="ลบ" onMouseDown={e => e.stopPropagation()}
               onClick={() => { if (confirm('ลบโน้ตนี้ใช่ไหม?')) onDelete(note.id); }}>🗑️</button>
-            <button onClick={saveEdit} className="glass-btn" style={{ marginLeft: 'auto', padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
+            <button onClick={saveEdit} disabled={imgState.uploading > 0} className="glass-btn" style={{ marginLeft: 'auto', padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
           </div>
 
           {pickerOpen && (
@@ -182,7 +373,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
             </div>
           )}
         </div>
-      </div>
+      </EditorOverlay>
     );
   }
 
@@ -195,9 +386,10 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
       <div style={{ flex: 1, minWidth: 0 }}>
         {note.title && <div style={{ fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note.title}</div>}
         <div className="muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {note.content || 'โน้ตว่างเปล่า'}
+          {note.content || (note.images?.length ? 'รูปภาพ' : 'โน้ตว่างเปล่า')}
         </div>
       </div>
+      {note.images?.length > 0 && <span title={`มีรูป ${note.images.length} รูป`} style={{ fontSize: '0.75rem', flex: '0 0 auto' }}>📷{note.images.length}</span>}
       {note.pinned && <span title="ปักหมุด">📌</span>}
       <span className="muted" style={{ fontSize: '0.65rem', flex: '0 0 auto' }}>{categoryLabel(note.category)}</span>
     </div>
@@ -350,10 +542,10 @@ function NotesPageInner() {
     if (isEditing) editingIds.current.add(id); else editingIds.current.delete(id);
   }, []);
 
-  async function createNote({ title, content, category }) {
+  async function createNote({ title, content, category, images }) {
     const res = await fetch('/api/notes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, content, category }),
+      body: JSON.stringify({ title, content, category, images }),
     });
     if (res.ok) { load(); return; }
     const data = await res.json().catch(() => ({}));

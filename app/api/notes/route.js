@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../lib/premium';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
+import { sanitizeNoteImages } from '../../../lib/noteImages';
 
 const NOTES_LIMIT_FREE = 50; // keep in sync with NOTES_LIMIT_FREE on the bot's Worker
 
@@ -24,7 +25,7 @@ export async function GET(request) {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from('notes')
-    .select('id, title, content, category, color, pinned, archived, sort_order, created_at, updated_at')
+    .select('id, title, content, category, color, images, pinned, archived, sort_order, created_at, updated_at')
     .eq('user_id', session.lineUserId)
     .eq('archived', showArchived)
     .order('pinned', { ascending: false })
@@ -40,8 +41,9 @@ export async function POST(request) {
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const { title, content, category, color } = await request.json();
-  if (!title?.trim() && !content?.trim()) {
+  const { title, content, category, color, images } = await request.json();
+  const cleanImages = sanitizeNoteImages(images);
+  if (!title?.trim() && !content?.trim() && cleanImages.length === 0) {
     return NextResponse.json({ error: 'empty_note' }, { status: 400 });
   }
 
@@ -80,6 +82,7 @@ export async function POST(request) {
       content: content?.trim() || '',
       category: category || 'general',
       color: color || 'default',
+      images: cleanImages,
       sort_order: sortOrder,
     })
     .select()

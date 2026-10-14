@@ -11,13 +11,14 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../../lib/premium';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
+import { sanitizeNoteImages } from '../../../../lib/noteImages';
 
-const EDITABLE_FIELDS = ['title', 'content', 'category', 'color', 'pinned', 'archived', 'sort_order'];
+const EDITABLE_FIELDS = ['title', 'content', 'category', 'color', 'images', 'pinned', 'archived', 'sort_order'];
 // Only these count as "actually editing the note" — pin/archive/reorder
 // are structural UI state, not content, so they shouldn't bump
 // updated_at (that would wrongly make a reordered note look "recently
 // edited" and mess up the fallback sort order for un-reordered notes).
-const CONTENT_FIELDS = ['title', 'content', 'category', 'color'];
+const CONTENT_FIELDS = ['title', 'content', 'category', 'color', 'images'];
 
 export async function PATCH(request, { params }) {
   const { session, isPremium } = await getPremiumSession(await cookies());
@@ -28,6 +29,7 @@ export async function PATCH(request, { params }) {
   for (const key of EDITABLE_FIELDS) {
     if (key in body) updates[key] = body[key];
   }
+  if ('images' in updates) updates.images = sanitizeNoteImages(updates.images);
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'no_fields' }, { status: 400 });
   }
