@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, CategorySelect, NOTE_CATEGORIES } from './_components';
 import { MAX_NOTE_IMAGES } from '../../lib/noteImages';
+import { apiGet, ErrorState, Fab, ListSkeleton, shareText, useToast, withoutPending } from './_ui';
 
 const COLORS = [
   { key: 'default', label: 'ค่าเริ่มต้น' },
@@ -306,8 +307,10 @@ function AutoGrowTextarea({ value, onChange, placeholder, autoFocus, className }
 
 // --- New-note composer: click to expand, auto-grows, has a category
 // picker, and only saves when you click "เสร็จสิ้น" or click away. ---
-function Composer({ onCreate, onEditingChange, categories }) {
+function Composer({ onCreate, onEditingChange, categories, openSignal }) {
   const [open, setOpen] = useState(false);
+  // The mobile "+" button (and ?new=1) bump openSignal to open this.
+  useEffect(() => { if (openSignal) setOpen(true); }, [openSignal]);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('general');
@@ -336,8 +339,9 @@ function Composer({ onCreate, onEditingChange, categories }) {
 
   if (!open) {
     return (
-      <div className="note-composer" onClick={() => setOpen(true)} style={{ cursor: 'text' }}>
-        <span className="muted">➕ จดโน้ตใหม่...</span>
+      <div className="add-bar" onClick={() => setOpen(true)} role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter') setOpen(true); }}>
+        <span className="add-bar-plus">＋</span><span>จดโน้ตใหม่...</span>
       </div>
     );
   }
@@ -367,6 +371,7 @@ function Composer({ onCreate, onEditingChange, categories }) {
 // category select, full toolbar — instead of editing cramped inside
 // the small row. Saves on "เสร็จสิ้น" or clicking away. ---
 function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDown, isDragging, autoEditId, categories }) {
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
@@ -436,8 +441,10 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
               <button className="note-icon-btn" title="เก็บเข้าคลัง" onMouseDown={e => e.stopPropagation()}
                 onClick={() => onUpdate(note.id, { archived: true })}>🗄️</button>
             )}
-            <button className="note-icon-btn" title="ลบ" onMouseDown={e => e.stopPropagation()}
-              onClick={() => { if (confirm('ลบโน้ตนี้ใช่ไหม?')) onDelete(note.id); }}>🗑️</button>
+            <button className="note-icon-btn" title="แชร์/คัดลอกข้อความ" onMouseDown={e => e.stopPropagation()}
+              onClick={() => shareText({ title, text: content }, toast)}>📤</button>
+            <button className="note-icon-btn" title="ลบ (เลิกทำได้)" onMouseDown={e => e.stopPropagation()}
+              onClick={() => onDelete(note.id)}>🗑️</button>
             <button onClick={saveEdit} disabled={imgState.uploading > 0} className="glass-btn" style={{ marginLeft: 'auto', padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
           </div>
 
@@ -567,7 +574,7 @@ function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorde
 
 export default function NotesPage() {
   return (
-    <Suspense fallback={<main className="page"><p className="text-white-muted">กำลังโหลด...</p></main>}>
+    <Suspense fallback={<main className="page"><ListSkeleton /></main>}>
       <NotesPageInner />
     </Suspense>
   );
@@ -597,14 +604,23 @@ function NotesPageInner() {
     return [...NOTE_CATEGORIES, ...used.map(cat => ({ key: cat, label: `🏷️ ${cat}` }))];
   })();
 
+  const toast = useToast();
+  const [error, setError] = useState(false);
+  const [openSignal, setOpenSignal] = useState(0);
+
   const load = useCallback(async (archived = showArchived) => {
-    const res = await fetch(`/api/notes?archived=${archived}`);
-    if (res.status === 401) { window.location.href = '/login'; return; }
-    const data = await res.json();
-    setNotes(data.notes);
+    try {
+      const data = await apiGet(`/api/notes?archived=${archived}`);
+      setError(false);
+      setNotes(withoutPending(data.notes));
+    } catch (e) {
+      // A failed background refresh must not wipe notes already on screen.
+      if (e.message !== 'unauthorized') setNotes(prev => { if (prev === null) setError(true); return prev; });
+    }
   }, [showArchived]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (searchParams.get('new') === '1') setOpenSignal(n => n + 1); }, [searchParams]);
 
   // Auto-refresh — a note added via the LINE bot shows up here without
   // a manual reload. Paused while the composer or any card is being
@@ -632,7 +648,7 @@ function NotesPageInner() {
     if (data.error === 'quota_reached') {
       setStatus(`📝 คุณมีโน้ตครบ ${data.limit} รายการแล้วครับ (สูงสุดสำหรับ Free) ลองลบโน้ตเก่าที่ไม่ใช้แล้ว หรืออัปเกรด Premium เพื่อจดได้ไม่จำกัด`);
     } else {
-      setStatus('❌ บันทึกไม่สำเร็จ');
+      toast.show('❌ บันทึกไม่สำเร็จ', { tone: 'error' });
     }
   }
 
@@ -646,9 +662,21 @@ function NotesPageInner() {
     else if ('archived' in patch || 'pinned' in patch) load();
   }
 
-  async function deleteNote(id) {
-    setNotes(prev => prev?.filter(n => n.id !== id));
-    await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+  function deleteNote(id) {
+    const note = (notes || []).find(n => n.id === id);
+    if (!note) return;
+    toast.undoableDelete({
+      id,
+      label: `ลบโน้ต${note.title ? ` “${note.title.slice(0, 24)}”` : ''}แล้ว`,
+      remove: () => setNotes(prev => prev?.filter(n => n.id !== id)),
+      commit: async () => {
+        try {
+          const res = await fetch(`/api/notes/${id}`, { method: 'DELETE', keepalive: true });
+          if (!res.ok) throw new Error(String(res.status));
+        } catch (e) { toast.show('❌ ลบไม่สำเร็จ', { tone: 'error' }); load(); }
+      },
+      restore: () => setNotes(prev => prev ? [...prev, note].sort((a, b) => (b.pinned - a.pinned) || ((a.sort_order ?? 1e9) - (b.sort_order ?? 1e9))) : prev),
+    });
   }
 
   async function reorderSection(reordered, sectionIds, opts = {}) {
@@ -691,7 +719,7 @@ function NotesPageInner() {
 
   return (
     <main className="page page-wide">
-      <DashNav current="notes" />
+      <DashNav />
       <h1 className="page-title">📝 โน้ตของฉัน</h1>
       {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
 
@@ -708,9 +736,10 @@ function NotesPageInner() {
             </button>
           </div>
 
-          {!showArchived && <Composer onCreate={createNote} onEditingChange={setComposerEditing} categories={categoryOptions} />}
+          {!showArchived && <Composer onCreate={createNote} onEditingChange={setComposerEditing} categories={categoryOptions} openSignal={openSignal} />}
 
-          {notes === null && <p className="text-white-muted">กำลังโหลด...</p>}
+          {error && <ErrorState onRetry={() => { setError(false); load(); }} />}
+          {!error && notes === null && <ListSkeleton rows={4} height={72} />}
           {notes?.length === 0 && <p className="text-white-muted">{showArchived ? 'ยังไม่มีโน้ตในคลังเก็บ' : 'ยังไม่มีโน้ตครับ ลองจดดูได้เลย'}</p>}
 
           {viewMode === 'all' && (
@@ -741,6 +770,7 @@ function NotesPageInner() {
             </div>
           ))}
         </>
+      {!showArchived && <Fab onClick={() => setOpenSignal(n => n + 1)} label="จดโน้ตใหม่" />}
     </main>
   );
 }

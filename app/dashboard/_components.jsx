@@ -2,102 +2,122 @@
 // app/dashboard/_components.jsx
 
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
-// Reads the saved theme (or falls back to system preference) and
-// applies it to <html data-theme="...">. Called both from the
-// FOUC-prevention inline script in layout.jsx (before hydration, so
-// there's never a flash of the wrong theme) and from ThemeToggle below
-// when someone taps it.
+// Theme: 'auto' removes [data-theme] so the CSS prefers-color-scheme
+// rules apply and the app follows the phone's own light/dark schedule
+// live; 'light'/'dark' pin it. Also called from the FOUC-prevention
+// inline script in layout.jsx before hydration.
 export function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
+  if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  else document.documentElement.removeAttribute('data-theme');
   try { localStorage.setItem('jarvis-theme', theme); } catch (e) { /* ignore — private browsing etc */ }
 }
 
-export function ThemeToggle() {
-  const [theme, setTheme] = useState(null); // null until mounted, to avoid a hydration mismatch
-
-  useEffect(() => {
-    const current = document.documentElement.getAttribute('data-theme')
-      || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    setTheme(current);
-  }, []);
-
-  function toggle() {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-    setTheme(next);
-  }
-
-  if (!theme) return <span className="theme-toggle-btn" style={{ visibility: 'hidden' }} />;
-  return (
-    <button type="button" className="theme-toggle-btn" onClick={toggle}
-      title={theme === 'dark' ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'}
-      aria-label="สลับโหมดมืด/สว่าง">
-      {theme === 'dark' ? '☀️' : '🌙'}
-    </button>
-  );
+export function applyFontSize(size) {
+  document.documentElement.setAttribute('data-fs', size);
+  try { localStorage.setItem('jarvis-fs', size); } catch (e) { /* ignore */ }
 }
 
-export function DashNav({ current }) {
-  const tabs = [
-    { key: 'notes', label: '📝 โน้ต', href: '/dashboard' },
-    { key: 'calendar', label: '📅 นัดหมาย', href: '/dashboard/calendar' },
-    { key: 'expenses', label: '💰 เงิน', href: '/dashboard/expenses' },
-    { key: 'files', label: '📁 ไฟล์', href: '/dashboard/files' },
-  ];
+// Pages (top-level tabs). The same list drives the desktop top bar and
+// the mobile bottom bar (see BottomNav in _shell.jsx).
+export const NAV_TABS = [
+  { key: 'today', icon: '🏠', label: 'วันนี้', href: '/dashboard/today' },
+  { key: 'notes', icon: '📝', label: 'โน้ต', href: '/dashboard' },
+  { key: 'tasks', icon: '✅', label: 'งาน', href: '/dashboard/tasks' },
+  { key: 'calendar', icon: '📅', label: 'นัดหมาย', href: '/dashboard/calendar' },
+  { key: 'expenses', icon: '💰', label: 'เงิน', href: '/dashboard/expenses' },
+  { key: 'files', icon: '📁', label: 'ไฟล์', href: '/dashboard/files' },
+];
+
+export function tabKeyForPath(pathname) {
+  if (pathname === '/dashboard') return 'notes';
+  const hit = NAV_TABS.find(t => t.key !== 'notes' && pathname.startsWith(t.href));
+  return hit ? hit.key : null;
+}
+
+// `current` is kept for the old call sites; the active tab now comes
+// from the URL so it can never disagree with the page. Navigation uses
+// next/link (client-side) — the old plain <a> reloaded the whole page
+// on every tab switch.
+export function DashNav() {
+  const pathname = usePathname();
+  const current = tabKeyForPath(pathname);
   return (
     <nav className="dash-nav">
-      {tabs.map(t => (
-        <a key={t.key} href={t.href} className={`dash-nav-item${current === t.key ? ' active' : ''}`}>
-          {t.label}
-        </a>
-      ))}
+      <span className="dash-brand">✨ Dee</span>
+      <div className="dash-tabs">
+        {NAV_TABS.map(t => (
+          <Link key={t.key} href={t.href} className={`dash-nav-item${current === t.key ? ' active' : ''}`}>
+            {t.icon} {t.label}
+          </Link>
+        ))}
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
-        <ThemeToggle />
         <AccountMenu />
       </div>
     </nav>
   );
 }
 
-// Avatar + name, click to reveal a small "ออกจากระบบ" dropdown — moved
-// up here from the old standalone dashboard/home page (removed; notes
-// is the landing page now) so account access isn't tied to any one
-// particular page.
+const FONT_SIZES = [['sm', 'เล็ก'], ['md', 'ปกติ'], ['lg', 'ใหญ่']];
+const THEMES = [['auto', '🌓 ตามระบบ'], ['light', '☀️ สว่าง'], ['dark', '🌙 มืด']];
+
+// Avatar + name; opens a small settings sheet: theme (auto follows the
+// phone's own light/dark schedule), text size, logout.
 function AccountMenu() {
   const [me, setMe] = useState(null);
   const [open, setOpen] = useState(false);
+  const [theme, setThemeState] = useState('auto');
+  const [fs, setFsState] = useState('md');
   const boxRef = useRef(null);
 
   useEffect(() => {
     fetch('/api/me').then(r => r.ok ? r.json() : null).then(setMe).catch(() => {});
+    try {
+      setThemeState(localStorage.getItem('jarvis-theme') || 'auto');
+      setFsState(localStorage.getItem('jarvis-fs') || 'md');
+    } catch (e) { /* ignore */ }
   }, []);
 
   useEffect(() => {
     if (!open) return;
     function onClickOutside(e) { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
     document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
+    document.addEventListener('touchstart', onClickOutside);
+    return () => { document.removeEventListener('mousedown', onClickOutside); document.removeEventListener('touchstart', onClickOutside); };
   }, [open]);
 
-  if (!me) return null;
+  function pickTheme(t) { applyTheme(t); setThemeState(t); }
+  function pickFs(f) { applyFontSize(f); setFsState(f); }
+
+  const chip = (active) => ({
+    flex: 1, padding: '0.45rem 0.3rem', minHeight: 40, borderRadius: 10, cursor: 'pointer', font: 'inherit', fontSize: '0.78rem',
+    border: active ? '2px solid var(--accent)' : '1px solid var(--border-strong)',
+    background: active ? 'var(--accent-soft)' : 'var(--surface-muted)', color: 'var(--text-primary)', fontWeight: active ? 700 : 500,
+  });
 
   return (
     <div ref={boxRef} style={{ position: 'relative', flexShrink: 0 }}>
-      <button type="button" onClick={() => setOpen(o => !o)}
-        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.2rem 0.3rem', borderRadius: 'var(--radius-pill)', color: 'inherit', font: 'inherit' }}
-        aria-label="บัญชีผู้ใช้">
-        {me.pictureUrl && <img src={me.pictureUrl} alt="" style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0 }} />}
-        <span style={{ fontSize: '0.8rem', fontWeight: 600, maxWidth: '7rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {me.displayName || 'ผู้ใช้'}
-        </span>
+      <button type="button" onClick={() => setOpen(o => !o)} className="account-btn" aria-label="บัญชีและการตั้งค่า">
+        {me?.pictureUrl
+          ? <img src={me.pictureUrl} alt="" style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0 }} />
+          : <span className="avatar-fallback">{Array.from(me?.displayName || '👤')[0]}</span>}
+        <span className="account-name">{me?.displayName || ''}</span>
       </button>
       {open && (
-        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '0.4rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', minWidth: '9rem', overflow: 'hidden', zIndex: 20 }}>
-          <form action="/api/auth/logout" method="POST">
-            <button type="submit" style={{ width: '100%', textAlign: 'left', padding: '0.6rem 0.9rem', background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', font: 'inherit', fontSize: '0.85rem' }}>
-              ออกจากระบบ
-            </button>
+        <div className="account-sheet">
+          <div className="account-sheet-label">ธีม</div>
+          <div style={{ display: 'flex', gap: '0.35rem' }}>
+            {THEMES.map(([k, l]) => <button key={k} type="button" style={chip(theme === k)} onClick={() => pickTheme(k)}>{l}</button>)}
+          </div>
+          <div className="account-sheet-label">ขนาดตัวอักษร</div>
+          <div style={{ display: 'flex', gap: '0.35rem' }}>
+            {FONT_SIZES.map(([k, l]) => <button key={k} type="button" style={chip(fs === k)} onClick={() => pickFs(k)}>{l}</button>)}
+          </div>
+          <form action="/api/auth/logout" method="POST" style={{ marginTop: '0.7rem' }}>
+            <button type="submit" className="glass-btn-danger" style={{ width: '100%', minHeight: 44 }}>ออกจากระบบ</button>
           </form>
         </div>
       )}

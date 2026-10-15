@@ -152,3 +152,17 @@ or `?user=nodrive` for a user without Google Drive). Data is in memory
 (`dev/mockSupabase.js`, seeded by `dev/mockSeed.js`; Drive by
 `dev/mockBot.js`). These paths are disabled when `NODE_ENV=production`, so
 they cannot be reached on the deployed site.
+
+## App features worth knowing (mobile-first)
+
+- Bottom tab bar on phones (วันนี้ / โน้ต / งาน / นัดหมาย / เงิน / ไฟล์), top tabs on desktop
+- `/dashboard/today` landing page: next appointments, open tasks, today's spending, recent notes, quick add and one search across everything
+- Calendar: month grid + list; add / edit / cancel (syncs to Google Calendar via the bot Worker)
+- Ledger: cards grouped by day, add / edit / delete
+- Deletes can be undone for 6 seconds (the real DELETE only fires afterwards)
+- PWA: `public/manifest.webmanifest` + `public/sw.js` (installable, notes list readable offline)
+- Settings (avatar menu): theme (auto follows the phone), text size
+- Optional env `NEXT_PUBLIC_LINE_OA_URL` adds an "open Dee in LINE" button on the Today page
+- `POST /api/calendar` and `POST /api/expenses` insert rows directly — they assume the
+  columns used in those routes exist (user_id, title, start_time, end_time, location,
+  description, reminder_minutes, status / type, amount, category, memo).

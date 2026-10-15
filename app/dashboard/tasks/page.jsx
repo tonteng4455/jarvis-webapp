@@ -3,16 +3,19 @@
 // to mark done, archive, delete, and a recurring routine (daily/
 // weekly/monthly) that syncs a reminder to Google Calendar.
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav } from '../_components';
+import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from '../_ui';
 
 const PRIORITY_COLOR = { high: 'var(--danger)', medium: 'var(--warning)', low: 'var(--success)' };
 const PRIORITY_LABEL = { high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' };
 const RECURRENCE_LABEL = { daily: '🔁 ทุกวัน', weekly: '🔁 ทุกสัปดาห์', monthly: '🔁 ทุกเดือน' };
 
-function Composer({ onCreate }) {
+function Composer({ onCreate, openSignal }) {
   const [open, setOpen] = useState(false);
+  // The mobile "+" button (and ?new=1) bump openSignal to open this.
+  useEffect(() => { if (openSignal) setOpen(true); }, [openSignal]);
   const [name, setName] = useState('');
   const [priority, setPriority] = useState('medium');
   const ref = useRef(null);
@@ -32,8 +35,9 @@ function Composer({ onCreate }) {
   }, [open, name, priority]);
 
   if (!open) {
-    return <div className="note-composer" onClick={() => setOpen(true)} style={{ cursor: 'text', marginBottom: '1rem' }}>
-      <span className="muted">➕ เพิ่มงานใหม่...</span>
+    return <div className="add-bar" onClick={() => setOpen(true)} role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter') setOpen(true); }}>
+      <span className="add-bar-plus">＋</span><span>เพิ่มงานใหม่...</span>
     </div>;
   }
   return (
@@ -122,7 +126,7 @@ function TaskRow({ task, onUpdate, onDelete, autoEditId }) {
     <div className="glass-card" ref={ref} style={{ opacity: task.is_done ? 0.55 : 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         <input type="checkbox" checked={!!task.is_done} onChange={() => onUpdate(task.id, { is_done: !task.is_done })}
-          style={{ width: 20, height: 20, flexShrink: 0, cursor: 'pointer' }} />
+          className="big-check" />
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: PRIORITY_COLOR[task.priority] || 'var(--text-secondary)', flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           {editing ? (
@@ -143,7 +147,7 @@ function TaskRow({ task, onUpdate, onDelete, autoEditId }) {
         ) : (
           <button className="note-icon-btn" onClick={() => onUpdate(task.id, { archived: true })}>🗄️ เก็บ</button>
         )}
-        <button className="note-icon-btn" onClick={() => { if (confirm('ลบงานนี้ใช่ไหม?')) onDelete(task.id); }}>🗑️ ลบ</button>
+        <button className="note-icon-btn" onClick={() => onDelete(task)}>🗑️ ลบ</button>
       </div>
       {routineOpen && <RoutinePicker task={task} onUpdate={onUpdate} onClose={() => setRoutineOpen(false)} />}
     </div>
@@ -152,27 +156,32 @@ function TaskRow({ task, onUpdate, onDelete, autoEditId }) {
 
 export default function TasksPage() {
   return (
-    <Suspense fallback={<main className="page"><p className="text-white-muted">กำลังโหลด...</p></main>}>
+    <Suspense fallback={<main className="page"><ListSkeleton /></main>}>
       <TasksPageInner />
     </Suspense>
   );
 }
 
 function TasksPageInner() {
+  const toast = useToast();
   const [tasks, setTasks] = useState(null);
+  const [error, setError] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [status, setStatus] = useState(null);
+  const [openSignal, setOpenSignal] = useState(0);
   const searchParams = useSearchParams();
   const autoEditId = searchParams.get('id');
 
-  async function load(archived = showArchived) {
-    const res = await fetch(`/api/tasks?archived=${archived}`);
-    if (res.status === 401) { window.location.href = '/login'; return; }
-    const data = await res.json();
-    setTasks(data.tasks);
-  }
+  const load = useCallback(async (archived = showArchived) => {
+    setError(false);
+    try {
+      const data = await apiGet(`/api/tasks?archived=${archived}`);
+      setTasks(withoutPending(data.tasks));
+    } catch (e) { if (e.message !== 'unauthorized') setError(true); }
+  }, [showArchived]);
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (searchParams.get('new') === '1') setOpenSignal(n => n + 1); }, [searchParams]);
 
   async function createTask(payload) {
     const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -181,38 +190,50 @@ function TasksPageInner() {
     if (data.error === 'quota_reached') {
       setStatus(`✅ คุณมีงานครบ ${data.limit} รายการแล้วครับ (สูงสุดสำหรับ Free) ลองลบงานเก่าที่ไม่ใช้แล้ว หรืออัปเกรด Premium เพื่อเพิ่มได้ไม่จำกัด`);
     } else {
-      setStatus('❌ เพิ่มงานไม่สำเร็จ');
+      toast.show('❌ เพิ่มงานไม่สำเร็จ', { tone: 'error' });
     }
   }
 
   async function updateTask(id, patch) {
     setTasks(prev => prev?.map(t => t.id === id ? { ...t, ...patch } : t));
     const res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
-    if (!res.ok) load();
+    if (!res.ok) { toast.show('❌ บันทึกไม่สำเร็จ', { tone: 'error' }); load(); }
     else if ('archived' in patch) load();
   }
 
-  async function deleteTask(id) {
-    setTasks(prev => prev?.filter(t => t.id !== id));
-    await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+  function deleteTask(task) {
+    toast.undoableDelete({
+      id: task.id,
+      label: `ลบงาน “${task.task_name}” แล้ว`,
+      remove: () => setTasks(prev => prev?.filter(t => t.id !== task.id)),
+      commit: async () => {
+        try {
+          const res = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE', keepalive: true });
+          if (!res.ok) throw new Error(String(res.status));
+        } catch (e) { toast.show('❌ ลบไม่สำเร็จ', { tone: 'error' }); load(); }
+      },
+      restore: () => setTasks(prev => prev ? [...prev, task].sort((a, b) => (a.is_done - b.is_done) || b.created_at.localeCompare(a.created_at)) : prev),
+    });
   }
 
   return (
     <main className="page">
-      <DashNav current="tasks" />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <DashNav />
+      <div className="page-head">
         <h1 className="page-title" style={{ marginBottom: 0 }}>✅ งานของฉัน</h1>
-        <button className="glass-btn-outline" onClick={() => { const v = !showArchived; setShowArchived(v); load(v); }}>
+        <button className="glass-btn-outline" onClick={() => { const v = !showArchived; setShowArchived(v); setTasks(null); load(v); }}>
           {showArchived ? '⬅️ กลับไปงานปกติ' : '🗄️ ดูคลังเก็บ'}
         </button>
       </div>
       {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
-      {!showArchived && <Composer onCreate={createTask} />}
-      {tasks === null && <p className="text-white-muted">กำลังโหลด...</p>}
-      {tasks?.length === 0 && <div className="glass-card"><p className="muted">{showArchived ? 'ยังไม่มีงานในคลังเก็บ' : 'ไม่มีงานค้างครับ 🎉'}</p></div>}
+      {!showArchived && <Composer onCreate={createTask} openSignal={openSignal} />}
+      {error && <ErrorState onRetry={() => { setTasks(null); load(); }} />}
+      {!error && tasks === null && <ListSkeleton />}
+      {tasks?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showArchived ? 'ยังไม่มีงานในคลังเก็บ' : 'ไม่มีงานค้างครับ 🎉'}</p></div>}
       <div className="list-stack">
         {tasks?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} autoEditId={autoEditId} />)}
       </div>
+      {!showArchived && <Fab onClick={() => setOpenSignal(n => n + 1)} label="เพิ่มงาน" />}
     </main>
   );
 }

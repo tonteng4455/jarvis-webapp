@@ -24,3 +24,35 @@ export async function GET() {
 
   return NextResponse.json({ expenses: data, net });
 }
+
+// POST — add an income/expense entry from the web.
+export async function POST(request) {
+  const { session } = await getPremiumSession(await cookies());
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  const body = await request.json().catch(() => ({}));
+  const amount = Number(body.amount);
+  const type = body.type === 'income' ? 'income' : 'expense';
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1e9) {
+    return NextResponse.json({ error: 'invalid_amount' }, { status: 400 });
+  }
+
+  const supabase = supabaseAdmin();
+  const { data, error } = await supabase
+    .from('expenses')
+    .insert({
+      user_id: session.lineUserId,
+      type,
+      amount,
+      category: String(body.category || 'general').slice(0, 60),
+      memo: body.memo ? String(body.memo).slice(0, 300) : null,
+    })
+    .select('id, type, amount, category, memo, created_at')
+    .single();
+
+  if (error) {
+    console.error('expense insert failed:', error);
+    return NextResponse.json({ error: 'db_error', detail: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ item: data });
+}

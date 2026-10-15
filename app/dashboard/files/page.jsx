@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { DashNav } from '../_components';
+import { apiGet, ErrorState, ListSkeleton, useToast } from '../_ui';
 
 const KIND_ICON = { image: '🖼️', video: '🎬', audio: '🎵', file: '📄' };
 
@@ -25,15 +26,14 @@ function formatDate(iso) {
 
 export default function FilesPage() {
   const [data, setData] = useState(null);
-  const [status, setStatus] = useState(null);
+  const [error, setError] = useState(false);
+  const toast = useToast();
   const [filterKind, setFilterKind] = useState('all');
 
-  function load() {
-    fetch('/api/files').then(async res => {
-      if (res.status === 401) { window.location.href = '/login'; return; }
-      const json = await res.json();
-      setData(json);
-    });
+  async function load() {
+    setError(false);
+    try { setData(await apiGet('/api/files')); }
+    catch (e) { if (e.message !== 'unauthorized') setError(true); }
   }
 
   useEffect(() => { load(); }, []);
@@ -41,7 +41,7 @@ export default function FilesPage() {
   async function deleteFile(id) {
     if (!confirm('ลบไฟล์นี้ถาวรใช่ไหมครับ? กู้คืนไม่ได้แล้ว')) return;
     const res = await fetch(`/api/files/${id}`, { method: 'DELETE' });
-    if (!res.ok) { setStatus('❌ ลบไม่สำเร็จ'); return; }
+    if (!res.ok) { toast.show('❌ ลบไม่สำเร็จ', { tone: 'error' }); return; }
     setData(prev => ({ ...prev, files: prev.files.filter(f => f.id !== id) }));
   }
 
@@ -51,15 +51,14 @@ export default function FilesPage() {
 
   return (
     <main className="page page-wide">
-      <DashNav current="files" />
+      <DashNav />
       <h1 className="page-title">📁 ไฟล์ของฉัน</h1>
 
-      {data === null && <p className="text-white-muted">กำลังโหลด...</p>}
+      {error && <ErrorState onRetry={() => { setData(null); load(); }} />}
+      {!error && data === null && <ListSkeleton rows={3} height={140} />}
 
       {data && (
         <>
-          {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
-
           <div className="dash-nav" style={{ margin: '0 0 1rem' }}>
             <span className={`dash-nav-item${filterKind === 'all' ? ' active' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setFilterKind('all')}>
               ทั้งหมด {files.length}

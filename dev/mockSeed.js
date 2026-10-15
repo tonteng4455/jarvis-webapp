@@ -41,7 +41,12 @@ export function seed() {
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', type: 'income', amount: '5000', category: 'salary', memo: 'งานเสริม', created_at: now },
     ],
     calendar_events: [
-      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', title: 'ประชุมทีม', start_time: day(1), end_time: day(1), location: 'ห้องประชุม', description: '', status: 'confirmed', reminder_minutes: 15, google_event_id: null, calendar_id: null, created_at: now },
+      ...[[0, 14, 'ประชุมทีม', 'ห้องประชุม'], [0, 17, 'ส่งงานลูกค้า', ''], [1, 9, 'ทันตแพทย์', 'คลินิก'], [3, 10, 'โทรหาประกัน', ''],
+        [3, 13, 'ซื้อของ', 'ตลาด'], [3, 18, 'ดินเนอร์ครอบครัว', 'บ้าน'], [3, 20, 'ดูหนัง', ''], [9, 8, 'ตรวจรถ', 'ศูนย์บริการ'], [-4, 11, 'คุยโปรเจกต์', '']]
+        .map(([dOff, hr, title, location]) => {
+          const d = new Date(); d.setDate(d.getDate() + dOff); d.setHours(hr, 0, 0, 0);
+          return { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', title, start_time: d.toISOString(), end_time: d.toISOString(), location, description: '', status: 'confirmed', reminder_minutes: 15, google_event_id: null, calendar_id: null, created_at: now };
+        }),
     ],
     user_files: [],
     waitlist: [],

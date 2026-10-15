@@ -33,6 +33,11 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const past = searchParams.get('past') === 'true';
   const nowIso = new Date().toISOString();
+  // ?from=ISO&to=ISO — every event in a window (the month view), past
+  // and future together, ordered by time. Takes precedence over ?past.
+  const from = searchParams.get('from');
+  const to = searchParams.get('to');
+  const ranged = !!(from && to && !Number.isNaN(Date.parse(from)) && !Number.isNaN(Date.parse(to)));
 
   const supabase = supabaseAdmin();
   let query = supabase
@@ -41,9 +46,13 @@ export async function GET(request) {
     .eq('user_id', session.lineUserId)
     .neq('status', 'cancelled');
 
-  query = past
-    ? query.lt('start_time', nowIso).order('start_time', { ascending: false })
-    : query.gte('start_time', nowIso).order('start_time', { ascending: true });
+  if (ranged) {
+    query = query.gte('start_time', from).lt('start_time', to).order('start_time', { ascending: true });
+  } else {
+    query = past
+      ? query.lt('start_time', nowIso).order('start_time', { ascending: false })
+      : query.gte('start_time', nowIso).order('start_time', { ascending: true });
+  }
 
   const { data, error } = await query.limit(500);
 
@@ -57,10 +66,15 @@ export async function GET(request) {
   // applied to the upcoming view; see the bot Worker's handler for why
   // the archive view is skipped.
   let events = data;
-  if (!past) {
+  if (!past || ranged) {
+    // For a ranged (month) view only the not-yet-started events are
+    // reconciled — same rule as the archive view: past rows are never
+    // hidden by it.
+    const toCheck = ranged ? data.filter(e => e.start_time >= nowIso) : data;
     const reconcile = await callBotInternal('/internal/calendar-reconcile', { userId: session.lineUserId });
     if (reconcile?.googleEventIds) {
-      events = reconcileWithGoogle(data, reconcile.googleEventIds, reconcile.checkedCalendarIds || [], reconcile.targetCalendarId || null);
+      const kept = reconcileWithGoogle(toCheck, reconcile.googleEventIds, reconcile.checkedCalendarIds || [], reconcile.targetCalendarId || null);
+      events = ranged ? data.filter(e => e.start_time < nowIso || kept.includes(e)) : kept;
     }
     // If the reconcile call itself failed (Worker unreachable, secret
     // misconfigured, etc.) events just falls back to the unfiltered
@@ -68,4 +82,44 @@ export async function GET(request) {
   }
 
   return NextResponse.json({ events });
+}
+
+// POST — create an event from the web: insert the row, then ask the
+// bot Worker to sync it to Google Calendar (same call PATCH uses; the
+// Worker creates the Google event when the row has no google_event_id).
+export async function POST(request) {
+  const { session } = await getPremiumSession(await cookies());
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  const body = await request.json().catch(() => ({}));
+  const title = String(body.title || '').trim();
+  const start = Date.parse(body.start_time);
+  if (!title || Number.isNaN(start)) return NextResponse.json({ error: 'title_and_start_time_required' }, { status: 400 });
+  const endParsed = body.end_time ? Date.parse(body.end_time) : NaN;
+  const end = !Number.isNaN(endParsed) && endParsed >= start ? endParsed : start + 60 * 60 * 1000;
+  const reminder = Number.isInteger(body.reminder_minutes) ? body.reminder_minutes : null;
+
+  const supabase = supabaseAdmin();
+  const { data, error } = await supabase
+    .from('calendar_events')
+    .insert({
+      user_id: session.lineUserId,
+      title: title.slice(0, 200),
+      start_time: new Date(start).toISOString(),
+      end_time: new Date(end).toISOString(),
+      location: body.location ? String(body.location).slice(0, 300) : null,
+      description: body.description ? String(body.description).slice(0, 2000) : null,
+      reminder_minutes: reminder,
+      status: 'confirmed',
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('calendar insert failed:', error);
+    return NextResponse.json({ error: 'db_error', detail: error.message }, { status: 500 });
+  }
+
+  const syncResult = await callBotInternal('/internal/calendar-sync', { userId: session.lineUserId, eventId: data.id });
+  return NextResponse.json({ event: data, syncResult });
 }

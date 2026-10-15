@@ -69,7 +69,7 @@ export async function GET(request) {
 
   // --- Mint our session, redirect into the app ---
   const sessionToken = await createSessionToken({ lineUserId, displayName: verified.name, pictureUrl: verified.picture });
-  const res = NextResponse.redirect(new URL('/dashboard', request.url));
+  const res = NextResponse.redirect(new URL('/dashboard/today', request.url));
   res.cookies.set(sessionCookieOptions().name, sessionToken, sessionCookieOptions());
   res.cookies.delete('line_oauth_state');
   return res;

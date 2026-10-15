@@ -21,7 +21,7 @@ export async function GET(request) {
   const u = MOCK_USERS[who];
   if (!u) return NextResponse.json({ error: 'unknown_mock_user' }, { status: 400 });
   const token = await createSessionToken({ ...u, pictureUrl: null });
-  const res = NextResponse.redirect(new URL('/dashboard', request.url));
+  const res = NextResponse.redirect(new URL('/dashboard/today', request.url));
   res.cookies.set(sessionCookieOptions().name, token, { ...sessionCookieOptions(), secure: false });
   return res;
 }
