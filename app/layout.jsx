@@ -32,9 +32,12 @@ const themeInitScript = `
 })();
 `;
 
+// suppressHydrationWarning on <html>: themeInitScript sets data-theme
+// before React hydrates, so that attribute intentionally differs from
+// the server HTML. It only silences this one element's attributes.
 export default function RootLayout({ children }) {
   return (
-    <html lang="th">
+    <html lang="th" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>

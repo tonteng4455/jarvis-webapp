@@ -70,6 +70,8 @@ function EditorOverlay({ children }) {
 // note (or deleting the note) only drops the reference; the file stays
 // in the user's Drive folder on purpose.
 function driveImageSrc(id, width) {
+  // Test-only: with the mock backend the photos live in memory, not Drive.
+  if (process.env.NEXT_PUBLIC_MOCK_MODE === '1') return `/api/dev/drive-image/${encodeURIComponent(id)}`;
   return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${width}`;
 }
 
@@ -112,6 +114,7 @@ function useNoteImages(initial) {
   const [images, setImages] = useState(initial || []);
   const [uploading, setUploading] = useState(0);
   const [error, setError] = useState('');
+  const [connectUrl, setConnectUrl] = useState('');
   const uploadingRef = useRef(false);
   const imagesRef = useRef(images);
   useEffect(() => { imagesRef.current = images; }, [images]);
@@ -121,6 +124,7 @@ function useNoteImages(initial) {
     const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
     setError('');
+    setConnectUrl('');
     const room = MAX_NOTE_IMAGES - imagesRef.current.length;
     if (room <= 0) { setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต`); return; }
     if (files.length > room) setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต — ใส่ให้ ${room} รูปแรก`);
@@ -136,7 +140,10 @@ function useNoteImages(initial) {
         if (res.ok && data.image) {
           setImages(prev => [...prev, data.image]);
         } else if (data.error === 'google_not_connected') {
-          setError('ยังไม่ได้เชื่อมต่อ Google Drive — พิมพ์ "เชื่อมต่อ google" ในแชท LINE แล้วลองใหม่ครับ');
+          setConnectUrl(data.connectUrl || '');
+          setError(data.connectUrl
+            ? 'ต้องเชื่อมต่อ Google Drive ก่อนถึงจะแนบรูปได้ครับ'
+            : 'ต้องเชื่อมต่อ Google Drive ก่อนถึงจะแนบรูปได้ — พิมพ์ "เชื่อมต่อ google" ในแชท LINE แล้วลองใหม่ครับ');
         } else if (data.error === 'too_large') {
           setError('รูปใหญ่เกินไป ลองรูปที่เล็กลงครับ');
         } else {
@@ -151,7 +158,7 @@ function useNoteImages(initial) {
   }
 
   function removeImage(id) { setImages(prev => prev.filter(im => im.drive_file_id !== id)); }
-  return { images, setImages, uploading, uploadingRef, error, addFiles, removeImage };
+  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage };
 }
 
 function ImageThumb({ image, onOpen, onRemove }) {
@@ -174,7 +181,7 @@ function ImageThumb({ image, onOpen, onRemove }) {
 // Image row + "add photo" button + full-size viewer (see the portal
 // note below on why the viewer is not a plain child).
 function NoteImagesEditor({ state }) {
-  const { images, uploading, error, addFiles, removeImage } = state;
+  const { images, uploading, error, connectUrl, addFiles, removeImage } = state;
   const [viewing, setViewing] = useState(null);
   const inputRef = useRef(null);
   return (
@@ -187,7 +194,15 @@ function NoteImagesEditor({ state }) {
           {uploading > 0 && <div className="note-image-thumb note-image-loading">⏳</div>}
         </div>
       )}
-      {error && <div className="note-image-error">{error}</div>}
+      {error && (
+        <div className="note-image-error">
+          {error}
+          {connectUrl && (
+            <> <a href={connectUrl} target="_blank" rel="noopener noreferrer"
+              onMouseDown={e => e.stopPropagation()} style={{ fontWeight: 600, textDecoration: 'underline' }}>🔗 เชื่อมต่อ Google Drive</a></>
+          )}
+        </div>
+      )}
       <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
         onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
       <button type="button" className="glass-btn-outline note-add-image-btn"
@@ -213,14 +228,79 @@ function NoteImagesEditor({ state }) {
 }
 
 // Textarea that grows to fit its content — no scrollbar, no cramped box.
+// The surrounding editor panel is what scrolls, so two things have to be
+// handled by hand:
+//  1. Resizing (height:auto → scrollHeight) momentarily collapses the
+//     panel's scrollable height; the browser clamps scrollTop and the
+//     view jumps to the middle of the note. We save/restore scrollTop
+//     around the resize.
+//  2. The line being typed must stay in view with some breathing room
+//     below it (esp. on the last line), so after each change we measure
+//     the caret's position and scroll the panel just enough.
+const CARET_MARGIN_BOTTOM = 96; // px of free space kept under the caret line
+const CARET_MARGIN_TOP = 24;
+
+function caretTop(ta) {
+  // Mirror the textarea's text/wrapping in an off-screen div and read
+  // where a marker at the caret lands (textareas don't expose caret
+  // coordinates). Returns { top, height } relative to the textarea.
+  const cs = getComputedStyle(ta);
+  const mirror = document.createElement('div');
+  for (const prop of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'wordSpacing',
+    'textTransform', 'textIndent', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'boxSizing', 'tabSize']) {
+    mirror.style[prop] = cs[prop];
+  }
+  mirror.style.position = 'absolute';
+  mirror.style.visibility = 'hidden';
+  mirror.style.top = '0';
+  mirror.style.left = '-9999px';
+  mirror.style.width = `${ta.clientWidth}px`;
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.overflowWrap = 'break-word';
+  mirror.textContent = ta.value.slice(0, ta.selectionEnd);
+  const marker = document.createElement('span');
+  marker.textContent = '\u200b';
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+  const lineH = parseFloat(cs.lineHeight) || marker.offsetHeight || 20;
+  const top = marker.offsetTop;
+  mirror.remove();
+  return { top, height: lineH };
+}
+
+function keepCaretVisible(ta) {
+  const scroller = ta.closest('.note-editor-modal');
+  if (!scroller || document.activeElement !== ta) return;
+  const { top, height } = caretTop(ta);
+  const sRect = scroller.getBoundingClientRect();
+  const tRect = ta.getBoundingClientRect();
+  const caretTopInView = tRect.top - sRect.top + top;          // relative to scroller's visible box
+  const caretBottomInView = caretTopInView + height;
+  if (caretBottomInView + CARET_MARGIN_BOTTOM > scroller.clientHeight) {
+    scroller.scrollTop += caretBottomInView + CARET_MARGIN_BOTTOM - scroller.clientHeight;
+  } else if (caretTopInView < CARET_MARGIN_TOP) {
+    scroller.scrollTop -= CARET_MARGIN_TOP - caretTopInView;
+  }
+}
+
 function AutoGrowTextarea({ value, onChange, placeholder, autoFocus, className }) {
   const ref = useRef(null);
   useEffect(() => {
-    if (ref.current) { ref.current.style.height = 'auto'; ref.current.style.height = `${ref.current.scrollHeight}px`; }
+    const ta = ref.current;
+    if (!ta) return;
+    const scroller = ta.closest('.note-editor-modal');
+    const saved = scroller ? scroller.scrollTop : 0;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+    if (scroller) scroller.scrollTop = saved;
+    keepCaretVisible(ta);
   }, [value]);
   return (
     <textarea ref={ref} className={className} placeholder={placeholder} value={value}
-      onChange={onChange} autoFocus={autoFocus} rows={1} style={{ overflow: 'hidden' }} />
+      onChange={onChange} autoFocus={autoFocus} rows={1} style={{ overflow: 'hidden' }}
+      // Arrow keys / clicks move the caret without changing the value.
+      onKeyUp={e => { if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End' || e.key.startsWith('Page')) keepCaretVisible(e.currentTarget); }}
+      onClick={e => keepCaretVisible(e.currentTarget)} />
   );
 }
 

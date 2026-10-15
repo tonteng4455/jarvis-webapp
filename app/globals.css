@@ -439,6 +439,10 @@ a { color: inherit; }
      text). The panel itself scrolls instead. */
   flex: 0 0 auto;
   min-height: 200px;
+  /* Free space under the last line so typing there never feels jammed
+     against the images/buttons below (counted in scrollHeight, so the
+     auto-grow sizing includes it). */
+  padding-bottom: 3rem;
 }
 .note-editor-modal > * { flex-shrink: 0; }
 

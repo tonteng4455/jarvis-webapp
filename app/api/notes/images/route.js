@@ -48,7 +48,12 @@ export async function POST(request) {
   if (!result?.ok || !result.driveFileId) {
     const notConnected = String(result?.error || '').includes('google_not_connected');
     return NextResponse.json(
-      { error: notConnected ? 'google_not_connected' : 'upload_failed' },
+      {
+        error: notConnected ? 'google_not_connected' : 'upload_failed',
+        // The bot Worker hands back the Google-connect link (same as for
+        // the expense sheet export) so the page can link straight to it.
+        ...(notConnected && result.connectUrl ? { connectUrl: result.connectUrl } : {}),
+      },
       { status: notConnected ? 409 : 502 }
     );
   }

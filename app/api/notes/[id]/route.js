@@ -21,6 +21,7 @@ const EDITABLE_FIELDS = ['title', 'content', 'category', 'color', 'images', 'pin
 const CONTENT_FIELDS = ['title', 'content', 'category', 'color', 'images'];
 
 export async function PATCH(request, { params }) {
+  const { id } = await params;
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
@@ -41,7 +42,7 @@ export async function PATCH(request, { params }) {
   const { data, error } = await supabase
     .from('notes')
     .update(updates)
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', session.lineUserId)
     .select()
     .single();
@@ -51,6 +52,7 @@ export async function PATCH(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
+  const { id } = await params;
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
@@ -58,7 +60,7 @@ export async function DELETE(request, { params }) {
   const { error } = await supabase
     .from('notes')
     .delete()
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', session.lineUserId);
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });

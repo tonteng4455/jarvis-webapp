@@ -8,6 +8,11 @@ export default function LoginPage() {
         <a href="/api/auth/login" className="glass-btn" style={{ display: 'inline-block', textDecoration: 'none', padding: '0.75rem 1.5rem' }}>
           เข้าสู่ระบบด้วย LINE
         </a>
+        {process.env.NEXT_PUBLIC_MOCK_MODE === '1' && (
+          <p style={{ marginTop: '1rem', fontSize: '0.8rem' }}>
+            <a href="/api/auth/dev-login?user=demo">[test] เข้าด้วยบัญชีทดสอบ</a> · <a href="/api/auth/dev-login?user=nodrive">ไม่เชื่อม Drive</a>
+          </p>
+        )}
       </div>
     </main>
   );

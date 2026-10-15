@@ -18,6 +18,7 @@ const EDITABLE_FIELDS = ['task_name', 'priority', 'category', 'is_done', 'archiv
 const RECURRENCE_FIELDS = ['recurrence', 'recurrence_time'];
 
 export async function PATCH(request, { params }) {
+  const { id } = await params;
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
@@ -34,7 +35,7 @@ export async function PATCH(request, { params }) {
   const { data, error } = await supabase
     .from('tasks')
     .update(updates)
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', session.lineUserId)
     .select()
     .single();
@@ -43,18 +44,19 @@ export async function PATCH(request, { params }) {
 
   let recurrenceSync = null;
   if (RECURRENCE_FIELDS.some(f => f in updates)) {
-    recurrenceSync = await callBotInternal('/internal/task-recurrence', { userId: session.lineUserId, taskId: params.id });
+    recurrenceSync = await callBotInternal('/internal/task-recurrence', { userId: session.lineUserId, taskId: id });
   }
 
   return NextResponse.json({ task: data, recurrenceSync });
 }
 
 export async function DELETE(request, { params }) {
+  const { id } = await params;
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
-  const { error } = await supabase.from('tasks').delete().eq('id', params.id).eq('user_id', session.lineUserId);
+  const { error } = await supabase.from('tasks').delete().eq('id', id).eq('user_id', session.lineUserId);
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
   return NextResponse.json({ deleted: true });
 }

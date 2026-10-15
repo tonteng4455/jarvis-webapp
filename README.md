@@ -4,7 +4,7 @@ Scope of this phase, per what we agreed on:
 - Supabase schema for tiers/quota (`users` table + trigger, reusing the
   existing `user_files` table — NOT a separate `files` table)
 - LINE Login OAuth flow (separate channel from the Messaging API bot)
-- R2 presigned-upload API with server-side quota enforcement
+- (R2 presigned upload was removed — file storage is the user's own Google Drive, handled by the bot Worker)
 - A manual admin console to grant Premium after a PromptPay QR payment
   (no payment gateway integration yet — that's a later phase, once a
   GB Prime Pay/Omise merchant account actually exists)
@@ -36,16 +36,12 @@ automatically every time a row is added to or removed from `user_files`
    `https://<your-pages-domain>/api/auth/callback`
 4. Scopes needed: `profile`, `openid` (defaults are fine)
 
-## 3) Create R2 S3 API credentials
+## 3) File storage
 
-Cloudflare Dashboard → R2 → **Manage API Tokens** → **Create API Token**
-→ scope: **Object Read & Write**, limited to the `jarvis-line-bot-files`
-bucket. This gives you an Access Key ID + Secret Access Key — different
-from the Worker's `IMAGES_BUCKET` binding, needed because the web app
-runs outside the Worker and can't use bindings directly.
-
-Your R2 Account ID is shown on the main R2 overview page in the
-dashboard (top right, under your account name).
+The web app no longer uses R2. Photos/files live in each user's own Google
+Drive, written by the bot Worker. If a user hasn't connected Google, the
+web app shows a "connect Google Drive" link (the Worker returns it as
+`connectUrl`).
 
 ## 4) Configure environment variables
 
@@ -144,3 +140,15 @@ Run `webapp_phone_number.sql` in Supabase before deploying this drop
   the one thing the web app does that needs LINE Messaging API access
   outside of the bot itself.
 - Run `waitlist.sql` in Supabase before deploying this drop.
+
+## Local testing without LINE / Supabase / Drive
+
+```
+MOCK_MODE=1 NEXT_PUBLIC_MOCK_MODE=1 SESSION_SECRET=<32+ chars> npm run dev
+```
+
+Then open `/login` and use the "[test]" links (`/api/auth/dev-login?user=demo`
+or `?user=nodrive` for a user without Google Drive). Data is in memory
+(`dev/mockSupabase.js`, seeded by `dev/mockSeed.js`; Drive by
+`dev/mockBot.js`). These paths are disabled when `NODE_ENV=production`, so
+they cannot be reached on the deployed site.
