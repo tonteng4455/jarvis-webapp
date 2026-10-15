@@ -163,7 +163,7 @@ export default function TodayPage() {
             ))}
           </Card>
 
-          {LINE_OA_URL && <a href={LINE_OA_URL} className="glass-btn" style={{ textAlign: 'center', textDecoration: 'none', padding: '0.8rem' }}>💬 เปิดแชท Dee ใน LINE</a>}
+          {LINE_OA_URL && <a href={LINE_OA_URL} className="glass-btn" style={{ textAlign: 'center', textDecoration: 'none', padding: '0.8rem' }}>💬 เปิดแชท Jarvis ใน LINE</a>}
         </div>
       )}
     </main>

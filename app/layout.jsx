@@ -2,11 +2,11 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Dee',
-  description: 'Dee — jarvis-line-bot web app',
+  title: 'Jarvis',
+  description: 'Jarvis — jarvis-line-bot web app',
   manifest: '/manifest.webmanifest',
   // iOS "Add to Home Screen": opens full-screen like an app.
-  appleWebApp: { capable: true, title: 'Dee', statusBarStyle: 'default' },
+  appleWebApp: { capable: true, title: 'Jarvis', statusBarStyle: 'default' },
   icons: { icon: '/icon-192.png', apple: '/apple-touch-icon.png' },
 };
 

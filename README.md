@@ -162,7 +162,7 @@ they cannot be reached on the deployed site.
 - Deletes can be undone for 6 seconds (the real DELETE only fires afterwards)
 - PWA: `public/manifest.webmanifest` + `public/sw.js` (installable, notes list readable offline)
 - Settings (avatar menu): theme (auto follows the phone), text size
-- Optional env `NEXT_PUBLIC_LINE_OA_URL` adds an "open Dee in LINE" button on the Today page
+- Optional env `NEXT_PUBLIC_LINE_OA_URL` adds an "open Jarvis in LINE" button on the Today page
 - `POST /api/calendar` and `POST /api/expenses` insert rows directly — they assume the
   columns used in those routes exist (user_id, title, start_time, end_time, location,
   description, reminder_minutes, status / type, amount, category, memo).

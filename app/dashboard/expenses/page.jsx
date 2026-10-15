@@ -203,7 +203,7 @@ function ExpensesPageInner() {
           </div>
 
           {adding && <div style={{ marginBottom: '0.8rem' }}><ExpenseEditor key="new" expense={{}} categories={categoryOptions} onSave={saveExpense} onCancel={() => setAdding(false)} /></div>}
-          {list.length === 0 && !adding && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>ยังไม่มีรายการครับ กด ➕ เพิ่ม หรือพิมพ์บอก Dee ในแชท LINE ได้เลย</p></div>}
+          {list.length === 0 && !adding && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>ยังไม่มีรายการครับ กด ➕ เพิ่ม หรือพิมพ์บอก Jarvis ในแชท LINE ได้เลย</p></div>}
 
           {groups.map(g => (
             <section key={g.k} style={{ marginBottom: '0.9rem' }}>

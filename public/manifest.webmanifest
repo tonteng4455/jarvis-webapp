@@ -1,6 +1,6 @@
 {
-  "name": "Dee — ผู้ช่วยจดบันทึก",
-  "short_name": "Dee",
+  "name": "Jarvis — ผู้ช่วยจดบันทึก",
+  "short_name": "Jarvis",
   "description": "โน้ต งาน นัดหมาย และรายรับ-รายจ่าย ในที่เดียว",
   "start_url": "/dashboard/today",
   "scope": "/",
