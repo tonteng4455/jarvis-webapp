@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../../lib/premium';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
+import { learnCategory } from '../../../../lib/lexicon';
 
 const EDITABLE_FIELDS = ['type', 'amount', 'category', 'memo'];
 
@@ -27,6 +28,10 @@ export async function PATCH(request, { params }) {
   }
 
   const supabase = supabaseAdmin();
+  // Only a real category CHANGE counts as a lesson (editors resend the unchanged category on every save).
+  const prevCategory = 'category' in updates
+    ? (await supabase.from('expenses').select('category').eq('id', id).eq('user_id', session.lineUserId).maybeSingle()).data?.category
+    : undefined;
   const { data, error } = await supabase
     .from('expenses')
     .update(updates)
@@ -36,6 +41,8 @@ export async function PATCH(request, { params }) {
     .single();
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+  // A corrected category is a lesson for the bot ("this kind of text → that category").
+  if (updates.category && data && prevCategory !== undefined && prevCategory !== updates.category) await learnCategory(supabase, session.lineUserId, 'expense', data.memo || '', updates.category);
   return NextResponse.json({ item: data });
 }
 

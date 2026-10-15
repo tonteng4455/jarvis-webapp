@@ -166,3 +166,10 @@ they cannot be reached on the deployed site.
 - `POST /api/calendar` and `POST /api/expenses` insert rows directly — they assume the
   columns used in those routes exist (user_id, title, start_time, end_time, location,
   description, reminder_minutes, status / type, amount, category, memo).
+
+## Teaching Jarvis (no AI)
+
+`/dashboard/memory` lists what the person has taught the LINE bot ("จำไว้ว่า ทางด่วน = เดินทาง", reminders, locations)
+and what it learned from their category corrections; they can add or forget entries there. Table: `user_lexicon`
+(`jarvis-line-bot/user_lexicon.sql`, run once in Supabase). Rules are per person, plain data, and used by the bot
+before the AI. The pages work without the table (they show a setup hint).

@@ -48,6 +48,11 @@ export function seed() {
           return { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', title, start_time: d.toISOString(), end_time: d.toISOString(), location, description: '', status: 'scheduled', reminder_minutes: 15, google_event_id: null, calendar_id: null, created_at: now };
         }),
     ],
+    user_lexicon: [
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', kind: 'category', scope: 'expense', trigger: 'ทางด่วน', value: 'transport', source: 'taught', created_at: now },
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', kind: 'reminder', scope: 'event', trigger: 'ประชุมใหญ่', value: '1440', source: 'taught', created_at: now },
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', kind: 'category', scope: 'note', trigger: 'ลูกค้า', value: 'work', source: 'learned', created_at: now },
+    ],
     user_files: [],
     waitlist: [],
   };

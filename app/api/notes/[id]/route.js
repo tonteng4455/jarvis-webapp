@@ -12,6 +12,7 @@ import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../../lib/premium';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { sanitizeNoteImages } from '../../../../lib/noteImages';
+import { learnCategory } from '../../../../lib/lexicon';
 
 const EDITABLE_FIELDS = ['title', 'content', 'category', 'color', 'images', 'pinned', 'archived', 'sort_order'];
 // Only these count as "actually editing the note" — pin/archive/reorder
@@ -39,6 +40,10 @@ export async function PATCH(request, { params }) {
   }
 
   const supabase = supabaseAdmin();
+  // Only a real category CHANGE counts as a lesson (editors resend the unchanged category on every save).
+  const prevCategory = 'category' in updates
+    ? (await supabase.from('notes').select('category').eq('id', id).eq('user_id', session.lineUserId).maybeSingle()).data?.category
+    : undefined;
   const { data, error } = await supabase
     .from('notes')
     .update(updates)
@@ -48,6 +53,7 @@ export async function PATCH(request, { params }) {
     .single();
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+  if ('category' in updates && data && prevCategory !== undefined && prevCategory !== updates.category) await learnCategory(supabase, session.lineUserId, 'note', data.title || String(data.content || '').split('\n')[0], updates.category);
   return NextResponse.json({ note: data });
 }
 

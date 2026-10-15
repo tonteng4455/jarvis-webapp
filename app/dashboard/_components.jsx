@@ -116,7 +116,8 @@ function AccountMenu() {
           <div style={{ display: 'flex', gap: '0.35rem' }}>
             {FONT_SIZES.map(([k, l]) => <button key={k} type="button" style={chip(fs === k)} onClick={() => pickFs(k)}>{l}</button>)}
           </div>
-          <form action="/api/auth/logout" method="POST" style={{ marginTop: '0.7rem' }}>
+          <Link href="/dashboard/memory" onClick={() => setOpen(false)} className="glass-btn-outline" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, marginTop: '0.8rem', textDecoration: 'none' }}>🧠 สิ่งที่ Jarvis จำได้</Link>
+          <form action="/api/auth/logout" method="POST" style={{ marginTop: '0.5rem' }}>
             <button type="submit" className="glass-btn-danger" style={{ width: '100%', minHeight: 44 }}>ออกจากระบบ</button>
           </form>
         </div>
