@@ -110,7 +110,7 @@ export async function POST(request) {
       location: body.location ? String(body.location).slice(0, 300) : null,
       description: body.description ? String(body.description).slice(0, 2000) : null,
       reminder_minutes: reminder,
-      status: 'confirmed',
+      status: 'scheduled', // same value the LINE bot writes for a created event
     })
     .select()
     .single();

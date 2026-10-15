@@ -45,7 +45,7 @@ export function seed() {
         [3, 13, 'ซื้อของ', 'ตลาด'], [3, 18, 'ดินเนอร์ครอบครัว', 'บ้าน'], [3, 20, 'ดูหนัง', ''], [9, 8, 'ตรวจรถ', 'ศูนย์บริการ'], [-4, 11, 'คุยโปรเจกต์', '']]
         .map(([dOff, hr, title, location]) => {
           const d = new Date(); d.setDate(d.getDate() + dOff); d.setHours(hr, 0, 0, 0);
-          return { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', title, start_time: d.toISOString(), end_time: d.toISOString(), location, description: '', status: 'confirmed', reminder_minutes: 15, google_event_id: null, calendar_id: null, created_at: now };
+          return { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', title, start_time: d.toISOString(), end_time: d.toISOString(), location, description: '', status: 'scheduled', reminder_minutes: 15, google_event_id: null, calendar_id: null, created_at: now };
         }),
     ],
     user_files: [],
