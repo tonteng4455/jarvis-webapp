@@ -163,6 +163,12 @@ export default function TodayPage() {
             ))}
           </Card>
 
+          <Link href="/dashboard/guide" className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', textDecoration: 'none' }}>
+            <span style={{ fontSize: '1.5rem' }}>📖</span>
+            <span style={{ flex: 1 }}><b>คู่มือการใช้งาน</b><br /><span className="muted">ตัวอย่างคำสั่งที่พิมพ์ได้ และวิธีใช้ทุกฟีเจอร์</span></span>
+            <span className="today-link">เปิด ›</span>
+          </Link>
+
           {LINE_OA_URL && <a href={LINE_OA_URL} className="glass-btn" style={{ textAlign: 'center', textDecoration: 'none', padding: '0.8rem' }}>💬 เปิดแชท Jarvis ใน LINE</a>}
         </div>
       )}

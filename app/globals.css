@@ -643,3 +643,20 @@ html[data-fs="lg"] { font-size: 18px; }
   .glass-input, .note-title-input, .note-content-textarea, select, input[type="date"], input[type="time"] { font-size: 16px; }
   .note-title-input { font-size: 1.05rem; }
 }
+
+/* ---------- User guide ---------- */
+.guide-sec { padding: 0; scroll-margin-top: 5rem; }
+.guide-sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.6rem; padding: 0.95rem 1rem; font-weight: 700; font-size: 1rem; min-height: 52px; }
+.guide-sec > summary::-webkit-details-marker { display: none; }
+.guide-sec > summary::after { content: '▾'; margin-left: auto; color: var(--text-secondary); transition: transform .15s; }
+.guide-sec[open] > summary::after { transform: rotate(180deg); }
+.guide-ico { font-size: 1.3rem; }
+.guide-intro { margin: 0; padding: 0 1rem 0.4rem; color: var(--text-secondary); font-size: 0.88rem; line-height: 1.55; }
+.guide-item { padding: 0.7rem 1rem; border-top: 1px solid var(--border); }
+.guide-item h3 { margin: 0 0 0.35rem; font-size: 0.92rem; }
+.guide-item p { margin: 0.35rem 0 0; font-size: 0.86rem; line-height: 1.6; color: var(--text-primary); }
+.say-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.say-chip { display: inline-flex; align-items: center; gap: 0.45rem; max-width: 100%; text-align: left; padding: 0.45rem 0.7rem; min-height: 40px; border-radius: 12px; border: 1px dashed var(--border-strong); background: var(--accent-soft); color: var(--text-primary); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.say-chip span:first-child { overflow-wrap: anywhere; }
+.say-copy { color: var(--accent); font-size: 0.9rem; flex: 0 0 auto; }
+.say-chip:active { transform: scale(0.98); }
