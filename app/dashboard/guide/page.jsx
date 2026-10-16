@@ -28,7 +28,7 @@ export default function GuidePage() {
     if (!query) return sec;
     const hit = s => s.toLowerCase().includes(query);
     const secHit = hit(sec.title) || hit(sec.intro || '');
-    const items = sec.items.filter(it => secHit || hit(it.h || '') || hit(it.p || '') || (it.say || []).some(hit));
+    const items = sec.items.filter(it => secHit || hit(it.h || '') || hit(it.p || '') || hit(it.tip || '') || (it.say || []).some(hit) || (it.steps || []).some(hit));
     return items.length ? { ...sec, items } : null;
   }).filter(Boolean), [query]);
 
@@ -54,8 +54,10 @@ export default function GuidePage() {
             {sec.items.map((it, j) => (
               <div key={j} className="guide-item">
                 {it.h && <h3>{it.h}</h3>}
-                {it.say && <div className="say-row">{it.say.map(t => <Say key={t} text={t} />)}</div>}
                 {it.p && <p>{it.p}</p>}
+                {it.steps && <ol className="guide-steps">{it.steps.map((st, k) => <li key={k}>{st}</li>)}</ol>}
+                {it.say && <div className="say-row">{it.say.map(t => <Say key={t} text={t} />)}</div>}
+                {it.tip && <p className="guide-tip">💡 {it.tip}</p>}
               </div>
             ))}
           </details>
