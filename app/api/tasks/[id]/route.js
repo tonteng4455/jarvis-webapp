@@ -14,7 +14,7 @@ import { getPremiumSession } from '../../../../lib/premium';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { callBotInternal } from '../../../../lib/botWorker';
 
-const EDITABLE_FIELDS = ['task_name', 'priority', 'category', 'is_done', 'archived', 'recurrence', 'recurrence_time'];
+const EDITABLE_FIELDS = ['task_name', 'priority', 'category', 'is_done', 'archived', 'recurrence', 'recurrence_time', 'due_at', 'due_all_day'];
 const RECURRENCE_FIELDS = ['recurrence', 'recurrence_time'];
 
 export async function PATCH(request, { params }) {
@@ -27,6 +27,17 @@ export async function PATCH(request, { params }) {
   for (const key of EDITABLE_FIELDS) {
     if (key in body) updates[key] = body[key];
   }
+  if ('due_at' in updates) {
+    // null clears the due date; anything else must be a real date
+    if (updates.due_at === null || updates.due_at === '') { updates.due_at = null; updates.due_all_day = false; }
+    else {
+      const ms = Date.parse(updates.due_at);
+      if (Number.isNaN(ms)) return NextResponse.json({ error: 'bad_due' }, { status: 400 });
+      updates.due_at = new Date(ms).toISOString();
+      updates.due_all_day = updates.due_all_day === true;
+    }
+  }
+  if ('due_all_day' in updates) updates.due_all_day = updates.due_all_day === true;
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'no_fields' }, { status: 400 });
   }
@@ -40,7 +51,7 @@ export async function PATCH(request, { params }) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+  if (error) return NextResponse.json({ error: ('due_at' in updates) ? 'due_unsupported' : 'db_error' }, { status: 500 });
 
   let recurrenceSync = null;
   if (RECURRENCE_FIELDS.some(f => f in updates)) {

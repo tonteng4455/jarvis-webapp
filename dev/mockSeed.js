@@ -14,6 +14,11 @@ const LONG = [
 
 const day = n => new Date(Date.now() + n * 86400000).toISOString();
 
+import { buildDue, thaiDateKey } from '../lib/taskDue.js';
+
+// due date `days` from today (Thai time); '' = date only
+const dueIn = (days, time) => buildDue(thaiDateKey(Date.now() + days * 86400000), time);
+
 export function seed() {
   const now = new Date().toISOString();
   const notes = (user, rows) => rows.map((r, i) => ({
@@ -35,7 +40,10 @@ export function seed() {
       ...notes('mock-nodrive', [{ title: 'Note (no Drive)', content: 'hello' }]),
     ],
     tasks: [
-      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'ส่งรายงาน', category: 'work', priority: 'high', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now },
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'ส่งรายงาน', category: 'work', priority: 'high', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(0, '17:00') },
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'จ่ายค่าไฟ', category: 'finance', priority: 'medium', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(-2, '') },
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'โทรนัดหมอฟัน', category: 'general', priority: 'low', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(1, '') },
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'จัดห้อง', category: 'family', priority: 'low', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now },
     ],
     expenses: [
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', type: 'expense', amount: '120', category: 'food', memo: 'ข้าวกลางวัน', created_at: now },

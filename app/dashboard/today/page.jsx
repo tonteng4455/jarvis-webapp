@@ -7,6 +7,8 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { DashNav } from '../_components';
 import { apiGet, ErrorState, ListSkeleton, useToast } from '../_ui';
+import { DueChip } from '../_due';
+import { sortTasks } from '../../../lib/taskDue';
 
 const LINE_OA_URL = process.env.NEXT_PUBLIC_LINE_OA_URL || '';
 const money = n => Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 });
@@ -84,7 +86,7 @@ export default function TodayPage() {
   const todaySpend = data ? data.expenses.filter(e => sameDay(new Date(e.created_at), now)) : [];
   const spent = todaySpend.filter(e => e.type !== 'income').reduce((s, e) => s + parseFloat(e.amount), 0);
   const earned = todaySpend.filter(e => e.type === 'income').reduce((s, e) => s + parseFloat(e.amount), 0);
-  const openTasks = data ? data.tasks.filter(t => !t.is_done) : [];
+  const openTasks = data ? sortTasks(data.tasks.filter(t => !t.is_done)) : [];
   const recentNotes = data ? [...data.notes].sort((a, b) => (b.pinned - a.pinned) || String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 3) : [];
 
   return (
@@ -140,7 +142,8 @@ export default function TodayPage() {
             {openTasks.slice(0, 5).map(t => (
               <label key={t.id} className="task-line">
                 <input type="checkbox" className="big-check" checked={!!t.is_done} onChange={() => toggleTask(t)} />
-                <span>{t.task_name}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>{t.task_name}</span>
+                {t.due_at && <DueChip task={t} />}
               </label>
             ))}
           </Card>

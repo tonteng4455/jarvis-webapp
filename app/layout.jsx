@@ -7,7 +7,7 @@ export const metadata = {
   manifest: '/manifest.webmanifest',
   // iOS "Add to Home Screen": opens full-screen like an app.
   appleWebApp: { capable: true, title: 'Jarvis', statusBarStyle: 'default' },
-  icons: { icon: '/icon-192.png', apple: '/apple-touch-icon.png' },
+  icons: { icon: [{ url: '/favicon.ico', sizes: 'any' }, { url: '/favicon-48.png', sizes: '48x48', type: 'image/png' }, { url: '/icon-192.png', sizes: '192x192', type: 'image/png' }], apple: '/apple-touch-icon.png' },
 };
 
 export const viewport = {

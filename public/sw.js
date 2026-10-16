@@ -7,7 +7,7 @@
 // Everything else (other APIs, all writes) goes straight to the network.
 // Logging out wipes the API cache so one person's notes never linger
 // for the next user of the same browser.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const STATIC = `jarvis-static-${VERSION}`;
 const PAGES = `jarvis-pages-${VERSION}`;
 const API = `jarvis-api-${VERSION}`;

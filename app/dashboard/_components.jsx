@@ -46,7 +46,7 @@ export function DashNav() {
   const current = tabKeyForPath(pathname);
   return (
     <nav className="dash-nav">
-      <span className="dash-brand">✨ Jarvis</span>
+      <span className="dash-brand"><img src="/logo-head.png" alt="" width="24" height="24" className="dash-logo" /> Jarvis</span>
       <div className="dash-tabs">
         {NAV_TABS.map(t => (
           <Link key={t.key} href={t.href} className={`dash-nav-item${current === t.key ? ' active' : ''}`}>
