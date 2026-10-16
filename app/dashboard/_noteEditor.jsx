@@ -20,7 +20,7 @@ import { CategorySelect } from './_components';
 import { shareText, useToast } from './_ui';
 import {
   parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart,
-  indentBlock, toggleCheck, pasteInto, rowInfo, appendRow,
+  indentBlock, toggleCheck, pasteInto, rowInfo, appendRow, doneLayout, moveSubtree, subtreeEnd,
 } from '../../lib/noteBlocks';
 
 export const COLORS = [
@@ -322,12 +322,22 @@ const BULLETS = ['•', '◦', '▪', '•', '◦'];
 export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, onActive, placeholder = 'พิมพ์โน้ต...', autoFocus }, ref) {
   const [blocks, setBlocks] = useState(() => parseContent(initial));
   const blocksRef = useRef(blocks);
+  const [allSel, setAllSel] = useState(false);          // Ctrl/⌘+A pressed twice → every row is selected
+  const [hideDone, setHideDone] = useState(false);       // the "รายการที่ทำแล้ว" group is folded
+  const [drag, setDrag] = useState(null);                // { id, i, j, dy, target } while a row is being dragged
+  const dragRef = useRef(null);
+  // Own undo/redo (the boxes are controlled, so the browser's native undo can't be trusted).
+  const hist = useRef(null);
+  if (!hist.current) hist.current = { list: [blocks], idx: 0, last: null };
   const els = useRef(new Map());
   const activeId = useRef(null);
   const rootRef = useRef(null);
   const reg = useCallback((id, el) => { if (el) els.current.set(id, el); else els.current.delete(id); }, []);
 
-  const report = useCallback(() => onActive?.(rowInfo(blocksRef.current, activeId.current)), [onActive]);
+  const report = useCallback(() => {
+    const h = hist.current;
+    onActive?.({ ...rowInfo(blocksRef.current, activeId.current), canUndo: h.idx > 0, canRedo: h.idx < h.list.length - 1 });
+  }, [onActive]);
 
   const focusAt = useCallback((id, pos) => {
     const el = els.current.get(id); if (!el) return;
@@ -340,8 +350,18 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
 
   // Apply an operation's result: render NOW (so the new row exists and can take focus inside the
   // same user gesture — that is what keeps the phone keyboard open), tell the parent, move the caret.
-  const commit = useCallback((res, keepFocusId) => {
+  const record = useCallback((blocks, typingId) => {
+    const h = hist.current; const now = Date.now();
+    if (serializeBlocks(h.list[h.idx]) === serializeBlocks(blocks)) return;
+    h.list.length = h.idx + 1;
+    if (typingId && h.last && h.last.key === typingId && now - h.last.t < 1200) h.list[h.idx] = blocks;   // one undo step per burst of typing
+    else { h.list.push(blocks); if (h.list.length > 101) h.list.shift(); h.idx = h.list.length - 1; }
+    h.last = { key: typingId || null, t: now };
+  }, []);
+
+  const commit = useCallback((res, keepFocusId, typingId) => {
     if (!res) return false;
+    record(res.blocks, res.focus ? null : typingId);
     blocksRef.current = res.blocks;
     flushSync(() => setBlocks(res.blocks));
     onChange(serializeBlocks(res.blocks));
@@ -349,16 +369,32 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     else if (keepFocusId) { const el = els.current.get(keepFocusId); if (el && document.activeElement !== el) el.focus({ preventScroll: true }); }
     report();
     return true;
+  }, [onChange, focusAt, report, record]);
+
+  const jump = useCallback((delta) => {
+    const h = hist.current; const ni = h.idx + delta;
+    if (ni < 0 || ni >= h.list.length) return;
+    const prev = blocksRef.current; h.idx = ni; h.last = null;
+    const next = h.list[ni];
+    blocksRef.current = next;
+    flushSync(() => setBlocks(next));
+    onChange(serializeBlocks(next));
+    // put the caret where the change happened
+    let k = 0; while (k < next.length && k < prev.length && next[k].id === prev[k].id && next[k].text === prev[k].text && next[k].type === prev[k].type && next[k].indent === prev[k].indent && next[k].checked === prev[k].checked) k++;
+    const t = next[Math.min(k, next.length - 1)]; if (t) focusAt(t.id, t.text.length);
+    setAllSel(false); report();
   }, [onChange, focusAt, report]);
 
   useImperativeHandle(ref, () => ({
     focusStart() { const f = blocksRef.current[0]; if (f) focusAt(f.id, 0); },
+    undo() { jump(-1); },
+    redo() { jump(1); },
     indent(delta) {
       const id = activeId.current; if (!id) return;
       const el = els.current.get(id); const s = el?.selectionStart, e2 = el?.selectionEnd;
       if (commit(indentBlock(blocksRef.current, id, delta), id) && el) { try { el.setSelectionRange(s, e2); } catch { /* ignore */ } }
     },
-  }), [commit]);
+  }), [commit, jump, focusAt]);
 
   useEffect(() => { if (autoFocus) { const first = blocksRef.current[0]; if (first) focusAt(first.id, first.text.length); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { report(); }, [report]);
@@ -370,6 +406,8 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
       const ta = e.target;
       if (!(ta instanceof HTMLTextAreaElement) || !ta.dataset.bid || e.isComposing) return;
       const id = ta.dataset.bid;
+      if (e.inputType === 'historyUndo') { e.preventDefault(); jump(-1); return; }
+      if (e.inputType === 'historyRedo') { e.preventDefault(); jump(1); return; }
       if (e.inputType !== 'insertLineBreak' && e.inputType !== 'insertParagraph') return;
       const cur = blocksRef.current;
       const b = cur.find(x => x.id === id); if (!b) return;
@@ -387,7 +425,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     };
     root.addEventListener('beforeinput', onBefore);
     return () => root.removeEventListener('beforeinput', onBefore);
-  }, [commit]);
+  }, [commit, jump]);
 
   function onInput(e, b) {
     const el = e.target;
@@ -414,7 +452,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
       commit(enterInList(tmp, b.id, at)); return;
     }
     const res = setText(blocksRef.current, b.id, text, caret);
-    commit(res, b.id);
+    commit(res, b.id, b.id);
     if (!res?.focus) { if (el.value !== ZW + text) { el.value = ZW + text; el.setSelectionRange(caret + 1, caret + 1); } keepCaretVisible(el); }
   }
 
@@ -422,6 +460,24 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     const el = e.target;
     const cur = blocksRef.current;
     const i = cur.findIndex(x => x.id === b.id);
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.nativeEvent.isComposing) {
+      const k = e.key.toLowerCase();
+      if (k === 'z') { e.preventDefault(); jump(e.shiftKey ? 1 : -1); return; }
+      if (k === 'y') { e.preventDefault(); jump(1); return; }
+      if (k === 'a') {
+        // first press = this row's text (native); second press = the whole note
+        const whole = el.selectionStart <= 1 && el.selectionEnd >= el.value.length;
+        if (whole || el.value.length <= 1) { e.preventDefault(); el.setSelectionRange(0, el.value.length); setAllSel(true); }
+        return;
+      }
+    }
+    if (allSel && !mod) {
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); clearAll(''); return; }
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Meta' || e.key === 'Alt') return;
+      if (e.key.length === 1 && !e.nativeEvent.isComposing) { e.preventDefault(); clearAll(e.key); return; }
+      setAllSel(false);
+    }
     if (e.key === 'Tab' && b.type !== 'text') {
       e.preventDefault();
       const s = el.selectionStart, e2 = el.selectionEnd;
@@ -449,8 +505,20 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
   }
 
   // Never put the invisible sentinel on the clipboard.
+  function clearAll(text) {
+    const fresh = parseContent(text);
+    setAllSel(false);
+    commit({ blocks: fresh, focus: { id: fresh[0].id, pos: fresh[0].text.length } });
+  }
+
   function onCopyCut(e) {
     const el = e.target;
+    if (allSel) {                                            // the whole note, as plain text
+      e.clipboardData.setData('text/plain', serializeBlocks(blocksRef.current));
+      e.preventDefault();
+      if (e.type === 'cut') clearAll('');
+      return;
+    }
     const sel = stripZw(el.value.slice(el.selectionStart, el.selectionEnd));
     if (!sel) return;
     e.clipboardData.setData('text/plain', sel);
@@ -464,10 +532,61 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     commit(appendRow(blocksRef.current));
   }
 
+  // ----- drag & drop of list rows (⋮⋮ handle) -----
+  function startDrag(e, b) {
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const cur = blocksRef.current;
+    const i = cur.findIndex(x => x.id === b.id); if (i < 0) return;
+    const j = subtreeEnd(cur, i);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    dragRef.current = { id: b.id, i, j, y0: e.clientY, y: e.clientY, target: null };
+    setDrag({ id: b.id, i, j, dy: 0, target: null });
+  }
+  function dropTarget(d, y) {
+    const rows = rootRef.current ? [...rootRef.current.querySelectorAll('[data-ri]')] : [];
+    let t = blocksRef.current.length;
+    for (const r of rows) {
+      const k = Number(r.dataset.ri);
+      if (k >= d.i && k < d.j) continue;
+      const rect = r.getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) { t = k; break; }
+    }
+    return t >= d.i && t <= d.j ? null : t;                 // dropping where it already is = no move
+  }
+  function moveDrag(e) {
+    const d = dragRef.current; if (!d) return;
+    d.y = e.clientY; d.target = dropTarget(d, e.clientY);
+    setDrag({ id: d.id, i: d.i, j: d.j, dy: e.clientY - d.y0, target: d.target });
+  }
+  function endDrag(e, cancel) {
+    const d = dragRef.current; dragRef.current = null; setDrag(null);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (!d || cancel || d.target == null) return;
+    commit(moveSubtree(blocksRef.current, d.id, d.target));
+  }
+  // scroll the panel while a row is held near its top / bottom edge
+  useEffect(() => {
+    if (!drag) return;
+    const sc = rootRef.current?.closest('.note-editor-modal'); if (!sc) return;
+    let raf = 0;
+    const tick = () => {
+      const d = dragRef.current; if (!d) return;
+      const r = sc.getBoundingClientRect();
+      if (d.y < r.top + 90) sc.scrollTop -= 10; else if (d.y > r.bottom - 90) sc.scrollTop += 10;
+      d.target = dropTarget(d, d.y);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [!!drag]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const nums = numbering(blocks);
+  const { header, done } = doneLayout(blocks);
   const onlyEmptyText = blocks.length === 1 && blocks[0].type === 'text' && blocks[0].text === '';
+  const dropLine = <div key="drop" className="kl-drop" />;
   return (
-    <div className="kl-root" ref={rootRef} onClick={onBackgroundClick}>
+    <div className={`kl-root${allSel ? ' allsel' : ''}${drag ? ' dragging' : ''}`} ref={rootRef} onClick={onBackgroundClick}>
       {blocks.map((b, i) => {
         const marker = b.type === 'bullet'
           ? <span className="kl-mark kl-bullet">{BULLETS[b.indent % BULLETS.length]}</span>
@@ -478,17 +597,39 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
                 onClick={() => commit(toggleCheck(blocksRef.current, b.id), activeId.current)}>{b.checked ? '✓' : ''}</button>
             )
             : b.type === 'num' ? <span className="kl-mark kl-num">{nums[i]}.</span> : null;
+        const inDrag = drag && i >= drag.i && i < drag.j;
+        const hidden = hideDone && done[i] && !inDrag;
         return (
-          <div key={b.id} className={`kl-row kl-r-${b.type}`} style={b.type === 'text' ? undefined : { paddingLeft: `${b.indent * 1.5}rem` }}
-            onClick={e => { if (e.target === e.currentTarget) { e.stopPropagation(); focusAt(b.id, b.text.length); } }}>
-            {marker}
-            <RowText b={b} reg={reg}
-              placeholder={onlyEmptyText ? placeholder : (b.type !== 'text' && b.text === '' ? 'รายการ' : '')}
-              onInput={onInput} onKey={onKey} onPasteRow={onPasteRow} onCopyCut={onCopyCut}
-              onFocusRow={id => { activeId.current = id; report(); }} />
+          <div key={b.id} style={{ display: 'contents' }}>
+            {drag && drag.target === i && dropLine}
+            {header[i] > 0 && (
+              <button type="button" className="kl-done-head" aria-expanded={!hideDone}
+                onPointerDown={e => e.preventDefault()} onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={e => { e.stopPropagation(); setHideDone(v => !v); }}>
+                <span className="kl-done-caret">{hideDone ? '▸' : '▾'}</span> รายการที่ทำแล้ว <span className="kl-done-n">{header[i]}</span>
+              </button>
+            )}
+            {!hidden && (
+              <div data-ri={i} className={`kl-row kl-r-${b.type}${inDrag ? ' lifted' : ''}`}
+                style={{ ...(b.type === 'text' ? null : { paddingLeft: `${b.indent * 1.5}rem` }), ...(inDrag ? { transform: `translateY(${drag.dy}px)` } : null) }}
+                onClick={e => { if (e.target === e.currentTarget) { e.stopPropagation(); focusAt(b.id, b.text.length); } }}>
+                {marker}
+                <RowText b={b} reg={reg}
+                  placeholder={onlyEmptyText ? placeholder : (b.type !== 'text' && b.text === '' ? 'รายการ' : '')}
+                  onInput={onInput} onKey={onKey} onPasteRow={onPasteRow} onCopyCut={onCopyCut}
+                  onFocusRow={id => { activeId.current = id; if (allSel) setAllSel(false); report(); }} />
+                {b.type !== 'text' && (
+                  <span className="kl-handle" title="ลากเพื่อย้าย" aria-label="ลากเพื่อย้ายแถว" role="button"
+                    onPointerDown={e => startDrag(e, b)} onPointerMove={moveDrag}
+                    onPointerUp={e => endDrag(e, false)} onPointerCancel={e => endDrag(e, true)}
+                    onClick={e => e.stopPropagation()}>⋮⋮</span>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
+      {drag && drag.target === blocks.length && dropLine}
     </div>
   );
 });
@@ -525,6 +666,8 @@ export function NoteEditorPanel({
 
       <div className="ne-bottom" onMouseDown={e => e.stopPropagation()}>
         <div className="ne-cat"><CategorySelect options={categories} value={category} onChange={onCategory} /></div>
+        <ToolBtn className="ne-push" title="เลิกทำ (Ctrl+Z)" disabled={!info.canUndo} onClick={() => bodyRef.current?.undo()}>↶</ToolBtn>
+        <ToolBtn title="ทำซ้ำ (Ctrl+Shift+Z)" disabled={!info.canRedo} onClick={() => bodyRef.current?.redo()}>↷</ToolBtn>
         <ToolBtn title="สี" onClick={() => setPickerOpen(v => !v)} active={pickerOpen}>🎨</ToolBtn>
         <ToolBtn title="แชร์/คัดลอกข้อความ" onClick={() => shareText({ title: titleValue, text: contentRef.current }, toast)}>📤</ToolBtn>
       </div>

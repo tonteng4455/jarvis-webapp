@@ -694,7 +694,8 @@ html[data-fs="lg"] { font-size: 18px; }
 .ne-btn.ne-done:disabled { background: var(--accent); opacity: 0.45; }
 .ne-badge { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; background: var(--accent); color: var(--text-on-accent); font-size: 0.62rem; font-weight: 700; line-height: 16px; text-align: center; }
 .ne-bottom { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.9rem; }
-.ne-cat { flex: 1; max-width: 230px; }
+.ne-cat { flex: 1 1 0; min-width: 0; max-width: 230px; }
+.ne-bottom .ne-push { margin-left: auto; }
 
 .note-editor-modal .note-image-strip { flex-wrap: nowrap; overflow-x: auto; margin: 0 0 0.5rem; padding-bottom: 0.2rem; -webkit-overflow-scrolling: touch; }
 .note-editor-modal .note-image-thumb { width: 72px; height: 72px; }
@@ -714,6 +715,18 @@ html[data-fs="lg"] { font-size: 18px; }
 .kl-check { flex: 0 0 2.1rem; width: 2.1rem; height: 2.1rem; padding: 0; border: none; background: transparent; cursor: pointer; position: relative; isolation: isolate; color: var(--text-on-accent); font-size: 0.8rem; font-weight: 700; -webkit-tap-highlight-color: transparent; }
 .kl-check::before { content: ''; position: absolute; inset: 0.45rem; z-index: -1; border: 2px solid var(--text-secondary); border-radius: 5px; background: transparent; transition: background .1s, border-color .1s; }
 .kl-check.on::before { background: var(--accent); border-color: var(--accent); }
+
+/* ----- Keep-style extras: done group, drag handle, select-all, drop line ----- */
+.kl-done-head { display: flex; align-items: center; gap: 0.4rem; width: 100%; margin: 0.6rem 0 0.2rem; padding: 0.35rem 0.1rem; border: none; border-top: 1px solid var(--border); background: transparent; color: var(--text-secondary); font: inherit; font-size: 0.85rem; font-weight: 600; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.kl-done-caret { display: inline-block; width: 1rem; text-align: center; }
+.kl-done-n { margin-left: 0.1rem; padding: 0 0.45rem; border-radius: 999px; background: var(--surface-muted); font-size: 0.75rem; line-height: 1.5; }
+.kl-handle { flex: 0 0 1.7rem; align-self: stretch; display: flex; align-items: flex-start; justify-content: center; padding-top: 0.3rem; color: var(--text-secondary); opacity: 0.4; font-size: 0.9rem; letter-spacing: -2px; line-height: 1.6; cursor: grab; user-select: none; touch-action: none; -webkit-tap-highlight-color: transparent; }
+.kl-row:hover .kl-handle, .kl-row:focus-within .kl-handle { opacity: 0.85; }
+.kl-root.dragging { cursor: grabbing; user-select: none; }
+.kl-row.lifted { position: relative; z-index: 5; background: var(--editor-bg, var(--surface)); box-shadow: 0 6px 18px rgba(0,0,0,0.22); border-radius: 8px; opacity: 0.96; pointer-events: none; }
+.kl-drop { position: relative; height: 0; }
+.kl-drop::before { content: ''; position: absolute; left: 0; right: 0; top: -2px; height: 3px; border-radius: 2px; background: var(--accent); }
+.kl-root.allsel .kl-row, .kl-root.allsel .kl-done-head { background: color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 4px; }
 
 @media (max-width: 759px) {
   /* Like Keep: the editor takes the whole screen on a phone, toolbar pinned at the top. */
