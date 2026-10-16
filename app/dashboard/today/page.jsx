@@ -74,7 +74,7 @@ export default function TodayPage() {
     const has = (...f) => f.some(x => String(x || '').toLowerCase().includes(query));
     results = {
       notes: data.notes.filter(n => has(n.title, n.content)).slice(0, 6),
-      tasks: data.tasks.filter(t => has(t.task_name)).slice(0, 6),
+      tasks: data.tasks.filter(t => has(t.task_name) || has(t.details || '')).slice(0, 6),
       events: data.events.filter(e => has(e.title, e.location, e.description)).slice(0, 6),
       expenses: data.expenses.filter(e => has(e.memo, e.category)).slice(0, 6),
       files: data.files.filter(f => has(f.file_name)).slice(0, 6),

@@ -20,8 +20,51 @@ import { CategorySelect } from './_components';
 import { shareText, useToast } from './_ui';
 import {
   parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart,
-  indentBlock, toggleCheck, pasteInto, rowInfo, appendRow, doneLayout, moveSubtree, subtreeEnd,
+  indentBlock, toggleCheck, pasteInto, rowInfo, appendRow, doneLayout, moveSubtree, subtreeEnd, cycleList, LIST_CYCLE,
 } from '../../lib/noteBlocks';
+
+// Locks the page behind a full-screen editor so scrolling a long note
+// can't "chain" through to the note list underneath. overflow:hidden on
+// <body> alone isn't enough on mobile Safari/Chrome (touch scrolling
+// still moves the page once the inner panel hits its end), so this pins
+// the body with position:fixed at the current scroll offset and puts it
+// back exactly where it was on close.
+export function useBodyScrollLock() {
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const prev = { position: body.style.position, top: body.style.top, width: body.style.width, overflow: body.style.overflow };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      body.style.overflow = prev.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+}
+
+// Shared backdrop for both the new-note composer and the edit modal.
+export function EditorOverlay({ children }) {
+  useBodyScrollLock();
+  const ref = useRef(null);
+  // iOS Safari keeps the layout viewport full height when the keyboard opens, hiding the bottom
+  // of a fixed panel behind it. Following the visual viewport keeps the whole editor (and the
+  // line being typed) above the keyboard.
+  useEffect(() => {
+    const vv = window.visualViewport, el = ref.current;
+    if (!vv || !el) return undefined;
+    const fit = () => { el.style.height = `${vv.height}px`; el.style.transform = `translateY(${vv.offsetTop}px)`; };
+    fit();
+    vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+    return () => { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); };
+  }, []);
+  return <div className="note-editor-overlay" ref={ref}>{children}</div>;
+}
 
 export const COLORS = [
   { key: 'default', label: 'ค่าเริ่มต้น' },
@@ -268,7 +311,7 @@ export function NoteImageStrip({ state }) {
 }
 
 // A toolbar button that never steals the caret from the text (so the on-screen keyboard stays up).
-function ToolBtn({ title, onClick, disabled, active, children, className = '' }) {
+export function ToolBtn({ title, onClick, disabled, active, children, className = '' }) {
   return (
     <button type="button" className={`ne-btn${active ? ' on' : ''} ${className}`} title={title} aria-label={title} disabled={disabled}
       onPointerDown={e => e.preventDefault()} onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
@@ -318,6 +361,8 @@ function RowText({ b, placeholder, reg, onInput, onFocusRow, onKey, onPasteRow, 
 }
 
 const BULLETS = ['•', '◦', '▪', '•', '◦'];
+const LIST_GLYPH = { text: '☰', num: '1.', bullet: '•', check: '☑' };
+const LIST_LABEL = { text: 'ข้อความ', num: 'เลขข้อ', bullet: 'จุด', check: 'ช่องติ๊ก' };
 
 export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, onActive, placeholder = 'พิมพ์โน้ต...', autoFocus }, ref) {
   const [blocks, setBlocks] = useState(() => parseContent(initial));
@@ -387,6 +432,15 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
 
   useImperativeHandle(ref, () => ({
     focusStart() { const f = blocksRef.current[0]; if (f) focusAt(f.id, 0); },
+    cycle() {
+      const cur = blocksRef.current;
+      let id = activeId.current;
+      if (!id || !cur.some(x => x.id === id)) id = cur[cur.length - 1]?.id;
+      if (!id) return;
+      const el = els.current.get(id);
+      const caret = el ? Math.max(0, el.selectionStart - 1) : (cur.find(x => x.id === id)?.text.length || 0);
+      commit(cycleList(cur, id, caret), id);
+    },
     undo() { jump(-1); },
     redo() { jump(1); },
     indent(delta) {
@@ -637,7 +691,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
 // ---------- the whole editor panel ----------
 export function NoteEditorPanel({
   titleValue, onTitle, initialContent, onContent, imgState, categories, category, onCategory,
-  pinned, onPin, archived, onArchive, onDelete, onDone, doneDisabled, onColor, color, shareTitle, isNew, editorKey,
+  pinned, onPin, archived, onArchive, onDelete, onDone, doneDisabled, onColor, color, shareTitle, isNew, editorKey, onConvert,
 }) {
   const toast = useToast();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -654,6 +708,7 @@ export function NoteEditorPanel({
         {onArchive && <ToolBtn title={archived ? 'ย้ายกลับไปโน้ตปกติ' : 'เก็บเข้าคลัง'} onClick={onArchive}>{archived ? '↩️' : '🗄️'}</ToolBtn>}
         {onDelete && <ToolBtn title={isNew ? 'ทิ้งร่างนี้' : 'ลบ (เลิกทำได้)'} onClick={onDelete}>🗑️</ToolBtn>}
         <span className="ne-spacer" />
+        <ToolBtn title={`รายการ: กดเพื่อสลับ เลขข้อ → จุด → ช่องติ๊ก → ข้อความ (ตอนนี้: ${LIST_LABEL[info.type] || 'ข้อความ'})`} active={info.list} className="ne-list" onClick={() => bodyRef.current?.cycle()}>{LIST_GLYPH[info.type] || '☰'}</ToolBtn>
         <ToolBtn title="ลดย่อหน้า" disabled={!info.canOutdent} onClick={() => bodyRef.current?.indent(-1)}>⇤</ToolBtn>
         <ToolBtn title="เพิ่มย่อหน้า" disabled={!info.canIndent} onClick={() => bodyRef.current?.indent(1)}>⇥</ToolBtn>
         <ToolBtn title="เสร็จสิ้น" className="ne-done" disabled={doneDisabled} onClick={onDone}>✓</ToolBtn>
@@ -668,6 +723,7 @@ export function NoteEditorPanel({
         <div className="ne-cat"><CategorySelect options={categories} value={category} onChange={onCategory} /></div>
         <ToolBtn className="ne-push" title="เลิกทำ (Ctrl+Z)" disabled={!info.canUndo} onClick={() => bodyRef.current?.undo()}>↶</ToolBtn>
         <ToolBtn title="ทำซ้ำ (Ctrl+Shift+Z)" disabled={!info.canRedo} onClick={() => bodyRef.current?.redo()}>↷</ToolBtn>
+        {onConvert && <ToolBtn title="เปลี่ยนโน้ตนี้เป็นงาน (ตั้งกำหนดส่ง)" onClick={onConvert}>✅</ToolBtn>}
         <ToolBtn title="สี" onClick={() => setPickerOpen(v => !v)} active={pickerOpen}>🎨</ToolBtn>
         <ToolBtn title="แชร์/คัดลอกข้อความ" onClick={() => shareText({ title: titleValue, text: contentRef.current }, toast)}>📤</ToolBtn>
       </div>

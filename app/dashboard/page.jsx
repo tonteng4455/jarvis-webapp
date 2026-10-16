@@ -8,56 +8,14 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, NOTE_CATEGORIES } from './_components';
-import { NoteEditorPanel, useNoteImages, COLORS, colorBg } from './_noteEditor';
+import { NoteEditorPanel, EditorOverlay, useNoteImages, COLORS, colorBg } from './_noteEditor';
+import { ConvertToTaskSheet } from './_taskEditor';
 import { previewText } from '../../lib/noteBlocks';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from './_ui';
 
 
 function categoryLabel(key) {
   return NOTE_CATEGORIES.find(c => c.key === key)?.label || key || 'ทั่วไป';
-}
-
-// Locks the page behind a full-screen editor so scrolling a long note
-// can't "chain" through to the note list underneath. overflow:hidden on
-// <body> alone isn't enough on mobile Safari/Chrome (touch scrolling
-// still moves the page once the inner panel hits its end), so this pins
-// the body with position:fixed at the current scroll offset and puts it
-// back exactly where it was on close.
-function useBodyScrollLock() {
-  useEffect(() => {
-    const scrollY = window.scrollY;
-    const body = document.body;
-    const prev = { position: body.style.position, top: body.style.top, width: body.style.width, overflow: body.style.overflow };
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.width = '100%';
-    body.style.overflow = 'hidden';
-    return () => {
-      body.style.position = prev.position;
-      body.style.top = prev.top;
-      body.style.width = prev.width;
-      body.style.overflow = prev.overflow;
-      window.scrollTo(0, scrollY);
-    };
-  }, []);
-}
-
-// Shared backdrop for both the new-note composer and the edit modal.
-function EditorOverlay({ children }) {
-  useBodyScrollLock();
-  const ref = useRef(null);
-  // iOS Safari keeps the layout viewport full height when the keyboard opens, hiding the bottom
-  // of a fixed panel behind it. Following the visual viewport keeps the whole editor (and the
-  // line being typed) above the keyboard.
-  useEffect(() => {
-    const vv = window.visualViewport, el = ref.current;
-    if (!vv || !el) return undefined;
-    const fit = () => { el.style.height = `${vv.height}px`; el.style.transform = `translateY(${vv.offsetTop}px)`; };
-    fit();
-    vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
-    return () => { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); };
-  }, []);
-  return <div className="note-editor-overlay" ref={ref}>{children}</div>;
 }
 
 // --- New-note composer: opened ONLY by a deliberate tap on the list page (the "＋ จดโน้ตใหม่"
@@ -151,8 +109,9 @@ function Composer({ onCreate, onEditingChange, categories, openSignal }) {
 // used for creating a new note — big title input, auto-grow textarea,
 // category select, full toolbar — instead of editing cramped inside
 // the small row. Saves on "เสร็จสิ้น" or clicking away. ---
-function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDown, isDragging, autoEditId, categories }) {
+function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHandlePointerDown, isDragging, autoEditId, categories }) {
   const [editing, setEditing] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [category, setCategory] = useState(note.category || 'general');
@@ -244,9 +203,14 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
             pinned={!!note.pinned} onPin={() => onUpdate(note.id, { pinned: !note.pinned })}
             archived={!!isArchived} onArchive={() => onUpdate(note.id, { archived: !isArchived })}
             onDelete={() => onDelete(note.id)}
+            onConvert={onConvert ? () => { persist(); setConverting(true); } : undefined}
             color={note.color || 'default'} onColor={key => onUpdate(note.id, { color: key })}
             onDone={saveEdit} doneDisabled={imgState.uploading > 0} />
         </div>
+        {converting && (
+          <ConvertToTaskSheet note={{ ...note, title, content }} onCancel={() => setConverting(false)}
+            onConfirm={async payload => { const ok = await onConvert(note, payload); if (ok) { setConverting(false); setEditing(false); } }} />
+        )}
       </EditorOverlay>
     );
   }
@@ -281,7 +245,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
 // vertical stack (rather than the earlier masonry grid) also makes
 // target-index detection unambiguous — no column-jumping to reason
 // about, just "which row am I closest to vertically".
-function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorder, onDragStateChange, autoEditId, categories }) {
+function DraggableSection({ notes, onUpdate, onDelete, onConvert, onEditingChange, onReorder, onDragStateChange, autoEditId, categories }) {
   const containerRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
   const dragState = useRef(null); // { fromIndex, pointerId }
@@ -343,7 +307,7 @@ function DraggableSection({ notes, onUpdate, onDelete, onEditingChange, onReorde
     <div className="list-stack" ref={containerRef}
       onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}>
       {notes.map((n, i) => (
-        <NoteCard
+        <NoteCard onConvert={onConvert}
           key={n.id}
           note={n}
           onUpdate={onUpdate}
@@ -472,6 +436,34 @@ function NotesPageInner() {
     });
   }
 
+  // Note → task: create the task (name, details, due date), then remove the note with the usual
+  // 6-second undo — undoing brings the note back AND removes the task again.
+  async function convertToTask(note, payload) {
+    let res;
+    try {
+      res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    } catch { toast.show('❌ สร้างงานไม่สำเร็จ', { tone: 'error' }); return false; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.task) { toast.show(data.error === 'quota_reached' ? '❌ งานครบจำนวนที่สร้างได้แล้ว' : '❌ สร้างงานไม่สำเร็จ', { tone: 'error' }); return false; }
+    const taskId = data.task.id;
+    toast.undoableDelete({
+      id: note.id,
+      label: `เปลี่ยนโน้ตเป็นงาน “${payload.task_name.slice(0, 24)}” แล้ว`,
+      remove: () => setNotes(prev => prev?.filter(n => n.id !== note.id)),
+      commit: async () => {
+        try {
+          const r = await fetch(`/api/notes/${note.id}`, { method: 'DELETE', keepalive: true });
+          if (!r.ok) throw new Error(String(r.status));
+        } catch { toast.show('❌ ลบโน้ตเดิมไม่สำเร็จ', { tone: 'error' }); load(); }
+      },
+      restore: () => {
+        fetch(`/api/tasks/${taskId}`, { method: 'DELETE' }).catch(() => {});
+        setNotes(prev => prev ? [...prev, note].sort((a, b) => (b.pinned - a.pinned) || ((a.sort_order ?? 1e9) - (b.sort_order ?? 1e9))) : prev);
+      },
+    });
+    return true;
+  }
+
   async function reorderSection(reordered, sectionIds, opts = {}) {
     // `reordered` is the new order for just the items in ONE section
     // (pinned-only, or one category group) — rebuild the notes array
@@ -540,13 +532,13 @@ function NotesPageInner() {
               {pinned.length > 0 && (
                 <>
                   <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>📌 ปักหมุด</div>
-                  <DraggableSection notes={pinned} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
+                  <DraggableSection notes={pinned} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertToTask} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                     onDragStateChange={(v) => { draggingRef.current = v; }}
                     onReorder={(r, opts) => reorderSection(r, new Set(pinned.map(n => n.id)), opts)} />
                   {others.length > 0 && <div className="text-white-muted" style={{ margin: '1rem 0 0.5rem', fontWeight: 600 }}>อื่นๆ</div>}
                 </>
               )}
-              <DraggableSection notes={others} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
+              <DraggableSection notes={others} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertToTask} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                 onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r, opts) => reorderSection(r, new Set(others.map(n => n.id)), opts)} />
             </>
@@ -557,7 +549,7 @@ function NotesPageInner() {
               <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>
                 🏷️ {categoryLabel(category)} <span style={{ opacity: 0.7 }}>({catNotes.length})</span>
               </div>
-              <DraggableSection notes={catNotes} onUpdate={updateNote} onDelete={deleteNote} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
+              <DraggableSection notes={catNotes} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertToTask} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                 onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r, opts) => reorderSection(r, new Set(catNotes.map(n => n.id)), opts)} />
             </div>

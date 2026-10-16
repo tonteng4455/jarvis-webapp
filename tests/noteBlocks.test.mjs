@@ -1,7 +1,7 @@
 // node --test tests/   — the note-body logic (no browser needed)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, pasteInto, rowInfo, previewText } from '../lib/noteBlocks.js';
+import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, cycleList, pasteInto, rowInfo, previewText } from '../lib/noteBlocks.js';
 
 const types = blocks => blocks.map(b => `${b.type}${b.indent ? '@' + b.indent : ''}${b.checked ? '✓' : ''}:${JSON.stringify(b.text)}`);
 const idOf = (blocks, n) => blocks[n].id;
@@ -152,6 +152,7 @@ test('indent needs a list row above, at most one level deeper; outdent stops at 
   assert.equal(indentBlock(b, idOf(b, 1), -1), null);
   assert.deepEqual(rowInfo(b, idOf(b, 1)), { list: true, type: 'bullet', canOutdent: false, canIndent: true });
   assert.equal(rowInfo(parseContent('x'), 'nope').list, false);
+  assert.equal(rowInfo(parseContent('x'), parseContent('x')[0].id).type, 'text');
 });
 
 test('ticking a checkbox toggles [ ] ↔ [x] and moves it into the done group', () => {
@@ -227,4 +228,45 @@ test('trailing blank row is not saved as extra newlines', () => {
 
 test('the list preview shows real glyphs', () => {
   assert.equal(previewText('- นม\n[x] ไข่\n[ ] ขนม\n3. สาม\nจบ'), '• นม  ☑ ไข่  ☐ ขนม  3. สาม  จบ');
+});
+
+test('cycleList: numbered → bullet → checkbox → text, the whole list at once', () => {
+  let b = parseContent('หัวข้อ\n1. a\n2. b\n3. c\nจบ');
+  const id = b[2].id;                                         // caret in "b"
+  let r = cycleList(b, id, 1);
+  assert.equal(serializeBlocks(r.blocks), 'หัวข้อ\n- a\n- b\n- c\nจบ');
+  r = cycleList(r.blocks, id, 1);
+  assert.equal(serializeBlocks(r.blocks), 'หัวข้อ\n[ ] a\n[ ] b\n[ ] c\nจบ');
+  r = cycleList(r.blocks, id, 1);
+  assert.equal(serializeBlocks(r.blocks), 'หัวข้อ\na\nb\nc\nจบ');
+  assert.equal(r.blocks.length, 1);                           // one plain text block again
+  assert.equal(r.focus.pos, 'หัวข้อ\na\n'.length + 1);        // caret stays in "b"
+});
+
+test('cycleList: only the list under the caret changes, other lists are left alone', () => {
+  const b = parseContent('1. a\n2. b\n[ ] x\n[x] y\n- p');
+  const r = cycleList(b, b[3].id, 0);                         // caret in a checkbox row
+  assert.equal(serializeBlocks(r.blocks), '1. a\n2. b\nx\ny\n- p');
+  const r2 = cycleList(b, b[0].id, 0);                        // caret in the numbered list
+  assert.equal(serializeBlocks(r2.blocks), '- a\n- b\n[ ] x\n[x] y\n- p');
+});
+
+test('cycleList: sub-items of another kind are kept; same-kind sub-items follow', () => {
+  const b = parseContent('1. a\n  - sub\n2. b');
+  const r = cycleList(b, b[0].id, 0);
+  assert.equal(serializeBlocks(r.blocks), '- a\n  - sub\n- b');   // numbered rows → bullets; "sub" already a bullet
+  const c = parseContent('- a\n  - sub\n- b');
+  const r2 = cycleList(c, c[0].id, 0);
+  assert.equal(serializeBlocks(r2.blocks), '[ ] a\n  [ ] sub\n[ ] b');
+});
+
+test('cycleList: a plain line becomes a numbered row; ticked boxes lose the tick', () => {
+  const b = parseContent('ก\nข\nค');
+  const r = cycleList(b, b[0].id, 3);                         // caret on line "ข"
+  assert.equal(serializeBlocks(r.blocks), 'ก\n1. ข\nค');
+  assert.equal(r.blocks[1].text, 'ข');
+  const c = parseContent('- a\n- b');
+  const t = cycleList(c, c[0].id, 0);
+  assert.equal(serializeBlocks(toggleCheck(t.blocks, t.blocks[0].id).blocks), '[ ] b\n[x] a');
+  assert.equal(cycleList(b, 'nope', 0), null);
 });

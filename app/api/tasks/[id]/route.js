@@ -14,7 +14,7 @@ import { getPremiumSession } from '../../../../lib/premium';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { callBotInternal } from '../../../../lib/botWorker';
 
-const EDITABLE_FIELDS = ['task_name', 'priority', 'category', 'is_done', 'archived', 'recurrence', 'recurrence_time', 'due_at', 'due_all_day'];
+const EDITABLE_FIELDS = ['task_name', 'priority', 'category', 'is_done', 'archived', 'recurrence', 'recurrence_time', 'due_at', 'due_all_day', 'details'];
 const RECURRENCE_FIELDS = ['recurrence', 'recurrence_time'];
 
 export async function PATCH(request, { params }) {
@@ -38,6 +38,8 @@ export async function PATCH(request, { params }) {
     }
   }
   if ('due_all_day' in updates) updates.due_all_day = updates.due_all_day === true;
+  if ('details' in updates) updates.details = typeof updates.details === 'string' && updates.details.trim() ? updates.details.slice(0, 20000) : null;
+  if ('task_name' in updates && !String(updates.task_name || '').trim()) return NextResponse.json({ error: 'empty_task' }, { status: 400 });
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'no_fields' }, { status: 400 });
   }
@@ -51,7 +53,7 @@ export async function PATCH(request, { params }) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: ('due_at' in updates) ? 'due_unsupported' : 'db_error' }, { status: 500 });
+  if (error) return NextResponse.json({ error: ('due_at' in updates) ? 'due_unsupported' : ('details' in updates) ? 'details_unsupported' : 'db_error' }, { status: 500 });
 
   let recurrenceSync = null;
   if (RECURRENCE_FIELDS.some(f => f in updates)) {

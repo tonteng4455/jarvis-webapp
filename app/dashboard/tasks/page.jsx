@@ -7,59 +7,18 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav } from '../_components';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from '../_ui';
-import { DueChip, DueFields, DuePicker } from '../_due';
-import { buildDue, dueState, sortTasks } from '../../../lib/taskDue';
+import { DueChip, DuePicker } from '../_due';
+import { TaskEditorModal, PRIORITY_COLOR, PRIORITY_LABEL } from '../_taskEditor';
+import { previewText } from '../../../lib/noteBlocks';
+import { dueState, sortTasks } from '../../../lib/taskDue';
 
-const PRIORITY_COLOR = { high: 'var(--danger)', medium: 'var(--warning)', low: 'var(--success)' };
-const PRIORITY_LABEL = { high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' };
 const RECURRENCE_LABEL = { daily: '🔁 ทุกวัน', weekly: '🔁 ทุกสัปดาห์', monthly: '🔁 ทุกเดือน' };
 
-function Composer({ onCreate, openSignal }) {
-  const [open, setOpen] = useState(false);
-  // The mobile "+" button (and ?new=1) bump openSignal to open this.
-  useEffect(() => { if (openSignal) setOpen(true); }, [openSignal]);
-  const [name, setName] = useState('');
-  const [priority, setPriority] = useState('medium');
-  const [due, setDue] = useState({ date: '', time: '' });
-  const ref = useRef(null);
-
-  async function commit() {
-    if (!name.trim()) { setOpen(false); return; }
-    await onCreate({ task_name: name.trim(), priority, ...(buildDue(due.date, due.time) || {}) });
-    setName(''); setPriority('medium'); setDue({ date: '', time: '' }); setOpen(false);
-  }
-
-  useEffect(() => {
-    if (!open) return;
-    function onClickOutside(e) { if (ref.current && !ref.current.contains(e.target)) commit(); }
-    document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, name, priority, due]);
-
-  if (!open) {
-    return <div className="add-bar" onClick={() => setOpen(true)} role="button" tabIndex={0}
-      onKeyDown={e => { if (e.key === 'Enter') setOpen(true); }}>
-      <span className="add-bar-plus">＋</span><span>เพิ่มงานใหม่...</span>
-    </div>;
-  }
+// "＋ เพิ่มงานใหม่" opens the full task editor (name, details, due date, priority).
+function AddBar({ onOpen }) {
   return (
-    <div className="note-composer" ref={ref} style={{ marginBottom: '1rem' }}>
-      <input className="note-title-input" placeholder="ชื่องาน" value={name} onChange={e => setName(e.target.value)} autoFocus />
-      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
-        {Object.entries(PRIORITY_LABEL).map(([key, label]) => (
-          <button key={key} className="glass-btn-outline" onMouseDown={e => e.stopPropagation()}
-            style={{ padding: '0.3rem 0.7rem', fontSize: '0.75rem', color: 'var(--text-primary)', background: priority === key ? PRIORITY_COLOR[key] + '33' : 'var(--surface-muted)', borderColor: priority === key ? PRIORITY_COLOR[key] : 'var(--border-strong)' }}
-            onClick={() => setPriority(key)}>{label}</button>
-        ))}
-      </div>
-      <div style={{ marginTop: '0.6rem' }}>
-        <div className="muted" style={{ marginBottom: '0.3rem' }}>⏰ กำหนดวัน-เวลาที่ต้องเสร็จ (ไม่บังคับ)</div>
-        <DueFields value={due} onChange={setDue} />
-      </div>
-      <div style={{ textAlign: 'right', marginTop: '0.5rem' }}>
-        <button onClick={commit} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem' }}>เสร็จสิ้น</button>
-      </div>
+    <div className="add-bar" onClick={onOpen} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpen(); }}>
+      <span className="add-bar-plus">＋</span><span>เพิ่มงานใหม่...</span>
     </div>
   );
 }
@@ -99,16 +58,13 @@ function RoutinePicker({ task, onUpdate, onClose }) {
   );
 }
 
-function TaskRow({ task, onUpdate, onDelete, autoEditId }) {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(task.task_name);
+function TaskRow({ task, onUpdate, onDelete, onOpen, autoEditId }) {
   const [routineOpen, setRoutineOpen] = useState(false);
   const [dueOpen, setDueOpen] = useState(false);
   const ref = useRef(null);
 
   // Coming from a LIFF link with ?id=... — jump straight to this task's
-  // routine picker (the main thing worth opening a dedicated editor
-  // for) and scroll it into view.
+  // routine picker and scroll it into view.
   useEffect(() => {
     if (autoEditId && String(task.id) === String(autoEditId)) {
       setRoutineOpen(true);
@@ -117,18 +73,7 @@ function TaskRow({ task, onUpdate, onDelete, autoEditId }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEditId]);
 
-  function saveEdit() {
-    setEditing(false);
-    if (name !== task.task_name) onUpdate(task.id, { task_name: name });
-  }
-
-  useEffect(() => {
-    if (!editing) return;
-    function onClickOutside(e) { if (ref.current && !ref.current.contains(e.target)) saveEdit(); }
-    document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, name]);
+  const detailsPreview = previewText(task.details);
 
   return (
     <div className="glass-card" ref={ref} style={{ opacity: task.is_done ? 0.55 : 1, ...(dueState(task) === 'overdue' ? { borderLeft: '3px solid var(--danger)' } : null) }}>
@@ -136,12 +81,10 @@ function TaskRow({ task, onUpdate, onDelete, autoEditId }) {
         <input type="checkbox" checked={!!task.is_done} onChange={() => onUpdate(task.id, { is_done: !task.is_done })}
           className="big-check" />
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: PRIORITY_COLOR[task.priority] || 'var(--text-secondary)', flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {editing ? (
-            <input className="note-title-input" value={name} onChange={e => setName(e.target.value)} autoFocus style={{ fontSize: '0.9rem' }} />
-          ) : (
-            <div onClick={() => setEditing(true)} style={{ fontSize: '0.9rem', textDecoration: task.is_done ? 'line-through' : 'none', cursor: 'text' }}>{task.task_name}</div>
-          )}
+        <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onOpen(task)} role="button" tabIndex={0}
+          onKeyDown={e => { if (e.key === 'Enter') onOpen(task); }} title="แตะเพื่อแก้ไข / ดูรายละเอียด">
+          <div style={{ fontSize: '0.9rem', textDecoration: task.is_done ? 'line-through' : 'none' }}>{task.task_name}</div>
+          {detailsPreview && <div className="muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detailsPreview}</div>}
           <div className="muted">
             {task.category || 'general'} · {PRIORITY_LABEL[task.priority] || task.priority}
             {task.recurrence && <> · {RECURRENCE_LABEL[task.recurrence]} {task.recurrence_time}</>}
@@ -150,6 +93,7 @@ function TaskRow({ task, onUpdate, onDelete, autoEditId }) {
         </div>
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+        <button className="note-icon-btn" onClick={() => onOpen(task)}>✏️ แก้ไข</button>
         <button className="note-icon-btn" onClick={() => setDueOpen(v => !v)}>⏰ กำหนด</button>
         <button className="note-icon-btn" onClick={() => setRoutineOpen(v => !v)}>🔁 ทำซ้ำ</button>
         {task.archived ? (
@@ -179,7 +123,7 @@ function TasksPageInner() {
   const [error, setError] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [status, setStatus] = useState(null);
-  const [openSignal, setOpenSignal] = useState(0);
+  const [editor, setEditor] = useState(null);          // null | 'new' | the task being edited
   const searchParams = useSearchParams();
   const autoEditId = searchParams.get('id');
 
@@ -192,7 +136,11 @@ function TasksPageInner() {
   }, [showArchived]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (searchParams.get('new') === '1') setOpenSignal(n => n + 1); }, [searchParams]);
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return;
+    setEditor('new');
+    window.history.replaceState(null, '', '/dashboard/tasks');
+  }, [searchParams]);
 
   async function createTask(payload) {
     const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -210,7 +158,8 @@ function TasksPageInner() {
     const res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      toast.show(err.error === 'due_unsupported' ? '❌ ยังตั้งวัน-เวลาไม่ได้ (ต้องรัน tasks_due.sql ใน Supabase ก่อน)' : '❌ บันทึกไม่สำเร็จ', { tone: 'error' });
+      toast.show(err.error === 'due_unsupported' ? '❌ ยังตั้งวัน-เวลาไม่ได้ (ต้องรัน tasks_due.sql ใน Supabase ก่อน)'
+        : err.error === 'details_unsupported' ? '❌ ยังบันทึกรายละเอียดไม่ได้ (ต้องรัน tasks_details.sql ใน Supabase ก่อน)' : '❌ บันทึกไม่สำเร็จ', { tone: 'error' });
       load();
     }
     else if ('archived' in patch) load();
@@ -241,14 +190,20 @@ function TasksPageInner() {
         </button>
       </div>
       {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
-      {!showArchived && <Composer onCreate={createTask} openSignal={openSignal} />}
+      {!showArchived && <AddBar onOpen={() => setEditor('new')} />}
       {error && <ErrorState onRetry={() => { setTasks(null); load(); }} />}
       {!error && tasks === null && <ListSkeleton />}
       {tasks?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showArchived ? 'ยังไม่มีงานในคลังเก็บ' : 'ไม่มีงานค้างครับ 🎉'}</p></div>}
       <div className="list-stack">
-        {tasks?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} autoEditId={autoEditId} />)}
+        {tasks?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} onOpen={setEditor} autoEditId={autoEditId} />)}
       </div>
-      {!showArchived && <Fab onClick={() => setOpenSignal(n => n + 1)} label="เพิ่มงาน" />}
+      {!showArchived && <Fab onClick={() => setEditor('new')} label="เพิ่มงาน" />}
+      {editor && (
+        <TaskEditorModal key={editor === 'new' ? 'new' : editor.id} task={editor === 'new' ? null : editor}
+          onCreate={createTask} onUpdate={updateTask} onClose={() => setEditor(null)}
+          onArchive={t => { updateTask(t.id, { archived: !t.archived }); setEditor(null); }}
+          onDelete={t => { setEditor(null); deleteTask(t); }} />
+      )}
     </main>
   );
 }

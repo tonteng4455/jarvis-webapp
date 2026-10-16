@@ -40,7 +40,7 @@ export function seed() {
       ...notes('mock-nodrive', [{ title: 'Note (no Drive)', content: 'hello' }]),
     ],
     tasks: [
-      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'ส่งรายงาน', category: 'work', priority: 'high', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(0, '17:00') },
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'ส่งรายงาน', details: '[ ] สรุปยอดขาย\n[x] แนบกราฟ\n[ ] ส่งให้หัวหน้า', category: 'work', priority: 'high', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(0, '17:00') },
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'จ่ายค่าไฟ', category: 'finance', priority: 'medium', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(-2, '') },
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'โทรนัดหมอฟัน', category: 'general', priority: 'low', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(1, '') },
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'จัดห้อง', category: 'family', priority: 'low', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now },

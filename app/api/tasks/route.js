@@ -37,8 +37,9 @@ export async function GET(request) {
     .order('created_at', { ascending: false })
     .limit(500);
   const BASE = 'id, task_name, category, priority, is_done, archived, recurrence, recurrence_time, google_event_id, created_at';
-  let { data, error } = await query(`${BASE}, due_at, due_all_day`);
-  // The due-date columns come from tasks_due.sql; until that has been run, keep the page working without them.
+  // Optional columns come from tasks_due.sql / tasks_details.sql; until those have been run, keep the page working without them.
+  let { data, error } = await query(`${BASE}, due_at, due_all_day, details`);
+  if (error) ({ data, error } = await query(`${BASE}, due_at, due_all_day`));
   if (error) ({ data, error } = await query(BASE));
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
@@ -49,7 +50,7 @@ export async function POST(request) {
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const { task_name, priority, category, due_at, due_all_day } = await request.json();
+  const { task_name, priority, category, due_at, due_all_day, details } = await request.json();
   if (!task_name?.trim()) return NextResponse.json({ error: 'empty_task' }, { status: 400 });
 
   const supabase = supabaseAdmin();
@@ -71,8 +72,9 @@ export async function POST(request) {
     category: category || 'general',
   };
   const due = validDue(due_at, due_all_day);
-  let { data, error } = await supabase.from('tasks').insert(due ? { ...row, ...due } : row).select().single();
-  if (error && due) ({ data, error } = await supabase.from('tasks').insert(row).select().single());   // columns not created yet
+  const text = typeof details === 'string' && details.trim() ? details.slice(0, 20000) : null;
+  let { data, error } = await supabase.from('tasks').insert({ ...row, ...(due || {}), ...(text ? { details: text } : {}) }).select().single();
+  if (error && (due || text)) ({ data, error } = await supabase.from('tasks').insert(row).select().single());   // columns not created yet
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
   return NextResponse.json({ task: data });
