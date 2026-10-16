@@ -25,6 +25,7 @@ export async function GET() {
     // this used to bypass by reading is_premium straight from the DB).
     isPremium: true,
     premiumUntil: user?.premium_until ?? null,
+    cardTheme: user?.card_theme ?? null,
     usedBytes: user?.used_storage_bytes ?? 0,
     quotaBytes: quotaBytes ?? 1073741824,
   });

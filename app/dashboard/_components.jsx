@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { CARD_THEMES, normalizeCardTheme, themeColors } from '../../lib/cardThemes';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -72,6 +73,8 @@ function AccountMenu() {
   const [open, setOpen] = useState(false);
   const [theme, setThemeState] = useState('auto');
   const [fs, setFsState] = useState('md');
+  const [cardTheme, setCardTheme] = useState(null);
+  const [themeNote, setThemeNote] = useState('');
   const boxRef = useRef(null);
   const sheetRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, right: 8 });
@@ -88,7 +91,7 @@ function AccountMenu() {
   }
 
   useEffect(() => {
-    fetch('/api/me').then(r => r.ok ? r.json() : null).then(setMe).catch(() => {});
+    fetch('/api/me').then(r => r.ok ? r.json() : null).then(d => { setMe(d); if (d) setCardTheme(d.cardTheme ?? null); }).catch(() => {});
     try {
       setThemeState(localStorage.getItem('jarvis-theme') || 'auto');
       setFsState(localStorage.getItem('jarvis-fs') || 'md');
@@ -112,6 +115,17 @@ function AccountMenu() {
     };
   }, [open]);
 
+  async function pickCard(value) {
+    const next = normalizeCardTheme(value);
+    if (next === undefined) { setThemeNote('สีนี้อ่อนเกินไป ตัวหนังสือสีขาวบนการ์ดจะอ่านยาก ลองสีที่เข้มกว่านี้'); return; }
+    const before = cardTheme;
+    setCardTheme(next); setThemeNote('');
+    try {
+      const res = await fetch('/api/card-theme', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: next }) });
+      if (!res.ok) throw new Error('save');
+      setThemeNote('บันทึกแล้ว — การ์ดที่ Jarvis ตอบต่อจากนี้จะใช้สีนี้');
+    } catch { setCardTheme(before); setThemeNote('บันทึกไม่สำเร็จ (ผู้ดูแลระบบต้องรัน card_theme.sql ก่อน)'); }
+  }
   function pickTheme(t) { applyTheme(t); setThemeState(t); }
   function pickFs(f) { applyFontSize(f); setFsState(f); }
 
@@ -139,6 +153,25 @@ function AccountMenu() {
           <div style={{ display: 'flex', gap: '0.35rem' }}>
             {FONT_SIZES.map(([k, l]) => <button key={k} type="button" style={chip(fs === k)} onClick={() => pickFs(k)}>{l}</button>)}
           </div>
+          <div className="account-sheet-label">สีการ์ดที่ Jarvis ตอบใน LINE</div>
+          <div className="card-swatches">
+            {CARD_THEMES.map(t => (
+              <button key={t.key} type="button" title={t.label} aria-label={t.label} aria-pressed={(cardTheme || 'teal') === t.key}
+                className={`card-swatch${(cardTheme || 'teal') === t.key ? ' on' : ''}`} style={{ background: t.primary }} onClick={() => pickCard(t.key)}>
+                {(cardTheme || 'teal') === t.key ? '✓' : ''}
+              </button>
+            ))}
+            <label className={`card-swatch custom${cardTheme && cardTheme.startsWith('#') ? ' on' : ''}`} title="เลือกสีเอง"
+              style={cardTheme && cardTheme.startsWith('#') ? { background: cardTheme } : undefined}>
+              {cardTheme && cardTheme.startsWith('#') ? '✓' : '🎨'}
+              <input type="color" value={cardTheme && cardTheme.startsWith('#') ? cardTheme : '#2563EB'} onChange={e => pickCard(e.target.value)} aria-label="เลือกสีเอง" />
+            </label>
+          </div>
+          <div className="card-preview" style={{ '--c1': themeColors(cardTheme).primary, '--c2': themeColors(cardTheme).secondary }}>
+            <div className="card-preview-head">🏠 ตัวอย่างการ์ด</div>
+            <div className="card-preview-body"><span className="card-preview-btn">เสร็จแล้ว</span><span className="card-preview-btn alt">แก้ไข</span></div>
+          </div>
+          {themeNote && <div className="account-sheet-label" style={{ marginTop: '0.4rem', textTransform: 'none' }}>{themeNote}</div>}
           <Link href="/dashboard/guide" onClick={() => setOpen(false)} className="glass-btn-outline" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, marginTop: '0.8rem', textDecoration: 'none' }}>📖 คู่มือการใช้งาน</Link>
           <Link href="/dashboard/memory" onClick={() => setOpen(false)} className="glass-btn-outline" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, marginTop: '0.5rem', textDecoration: 'none' }}>🧠 สิ่งที่ Jarvis จำได้</Link>
           <form action="/api/auth/logout" method="POST" style={{ marginTop: '0.5rem' }}>
