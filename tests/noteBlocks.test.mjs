@@ -270,3 +270,49 @@ test('cycleList: a plain line becomes a numbered row; ticked boxes lose the tick
   assert.equal(serializeBlocks(toggleCheck(t.blocks, t.blocks[0].id).blocks), '[ ] b\n[x] a');
   assert.equal(cycleList(b, 'nope', 0), null);
 });
+
+test('calculator: typing "=" after a sum appends the answer, in text and in list rows', () => {
+  let b = parseContent('ราคา 5*10');
+  let r = setText(b, b[0].id, 'ราคา 5*10=', 'ราคา 5*10='.length);
+  assert.equal(serializeBlocks(r.blocks), 'ราคา 5*10=50');
+  assert.equal(r.focus.pos, 'ราคา 5*10=50'.length);
+  b = parseContent('- 12*3');
+  r = setText(b, b[0].id, '12*3=', 5);
+  assert.equal(serializeBlocks(r.blocks), '- 12*3=36');
+  b = parseContent('บรรทัดแรก\n7+8\nท้าย');
+  r = setText(b, b[0].id, 'บรรทัดแรก\n7+8=\nท้าย', 'บรรทัดแรก\n7+8='.length);
+  assert.equal(serializeBlocks(r.blocks), 'บรรทัดแรก\n7+8=15\nท้าย');       // only that line
+});
+
+test('calculator: not triggered by deleting, pasting, or a "=" in the middle of text', () => {
+  let b = parseContent('5*10=50');
+  assert.equal(serializeBlocks(setText(b, b[0].id, '5*10=5', 6).blocks), '5*10=5');       // backspace in the answer
+  b = parseContent('5*10');
+  assert.equal(serializeBlocks(setText(b, b[0].id, '5*10=', 5).blocks), '5*10=50');
+  b = parseContent('a');
+  assert.equal(serializeBlocks(setText(b, b[0].id, 'a=', 2).blocks), 'a=');                 // nothing to calculate
+  b = parseContent('5*10 ข้อความ');
+  assert.equal(serializeBlocks(setText(b, b[0].id, '5*10= ข้อความ', 5).blocks), '5*10= ข้อความ'); // caret not at the end of the line
+});
+
+test('calculator: "=5*10" + Enter becomes 50 and the new line follows', () => {
+  let b = parseContent('=5*10');
+  let r = enterInText(b, b[0].id, '=5*10', 5);
+  assert.equal(serializeBlocks(r.blocks), '50');           // trailing newline is trimmed on save; the caret is on the new line
+  assert.equal(r.blocks[0].text, '50\n');
+  assert.equal(r.focus.pos, 3);
+  b = parseContent('รวม =120+30\nต่อ');
+  r = enterInText(b, b[0].id, 'รวม =120+30\nต่อ', 'รวม =120+30'.length);
+  assert.equal(r.blocks[0].text, 'รวม 150\n\nต่อ');
+  b = parseContent('2+2=');
+  assert.equal(enterInText(b, b[0].id, '2+2=', 4).blocks[0].text, '2+2=4\n');           // typed "=" that was not auto-filled (e.g. pasted)
+  b = parseContent('ไม่มีสูตร');
+  assert.equal(enterInText(b, b[0].id, 'ไม่มีสูตร', 9), null);                            // normal Enter stays native
+});
+
+test('calculator: Enter in a list row finishes the sum then adds the next row', () => {
+  const b = parseContent('- =12*3');
+  const r = enterInList(b, b[0].id, 5);
+  assert.deepEqual(r.blocks.map(x => x.text), ['36', '']);
+  assert.equal(r.blocks[1].type, 'bullet');
+});
