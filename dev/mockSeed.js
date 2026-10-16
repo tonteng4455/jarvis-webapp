@@ -30,6 +30,7 @@ export function seed() {
         { title: 'Infrastructure and Drainage Maintenance Plan', content: LONG, category: 'work' },
         { title: 'ซื้อของเข้าบ้าน', content: 'ไข่\nนม\nขนมปัง', category: 'shopping', pinned: true },
         { title: 'สั้น ๆ', content: 'โน้ตสั้นมาก' },
+        { title: 'รายการซื้อของ', content: 'ของที่ต้องซื้อ\n- นม\n  - นมจืด\n[ ] ไข่\n[x] ขนมปัง\n1. ผัก\n2. ผลไม้', category: 'shopping' },
       ]),
       ...notes('mock-nodrive', [{ title: 'Note (no Drive)', content: 'hello' }]),
     ],

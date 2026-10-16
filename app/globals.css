@@ -660,3 +660,66 @@ html[data-fs="lg"] { font-size: 18px; }
 .say-chip span:first-child { overflow-wrap: anywhere; }
 .say-copy { color: var(--accent); font-size: 0.9rem; flex: 0 0 auto; }
 .say-chip:active { transform: scale(0.98); }
+
+/* =====================================================================
+   Note editor — Keep-style (toolbar on top, list rows, full-screen on phones)
+   ===================================================================== */
+/* The editor is a solid sheet (the old see-through glass over the dimmed list looked muddy), tinted by the note's colour. */
+:root { --editor-bg: #FFFFFF; }
+[data-theme="dark"] { --editor-bg: #151519; }
+@media (prefers-color-scheme: dark) { html:not([data-theme]) { --editor-bg: #151519; } }
+.note-editor-modal.note-composer {
+  padding-top: 0;
+  background-color: var(--editor-bg);
+  background-image: linear-gradient(var(--tint, transparent), var(--tint, transparent));
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.ne-toolbar {
+  position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 0.1rem;
+  margin: 0 -1.75rem 0.5rem; padding: 0.35rem 0.8rem;
+  background-color: var(--editor-bg); background-image: linear-gradient(var(--tint, transparent), var(--tint, transparent));
+  border-bottom: 1px solid var(--border); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.ne-spacer { flex: 1; }
+.ne-btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  min-width: 42px; height: 42px; padding: 0 0.3rem; border: none; border-radius: 12px; background: transparent;
+  color: var(--text-primary); font: inherit; font-size: 1.2rem; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.ne-btn:hover { background: var(--surface-muted); }
+.ne-btn.on { background: var(--accent-soft); }
+.ne-btn:disabled { opacity: 0.28; cursor: default; background: transparent; }
+.ne-btn:active:not(:disabled) { transform: scale(0.94); }
+.ne-btn.ne-done { background: var(--accent); color: var(--text-on-accent); border-radius: 50%; min-width: 42px; font-weight: 700; margin-left: 0.25rem; }
+.ne-btn.ne-done:disabled { background: var(--accent); opacity: 0.45; }
+.ne-badge { position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; background: var(--accent); color: var(--text-on-accent); font-size: 0.62rem; font-weight: 700; line-height: 16px; text-align: center; }
+.ne-bottom { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.9rem; }
+.ne-cat { flex: 1; max-width: 230px; }
+
+.note-editor-modal .note-image-strip { flex-wrap: nowrap; overflow-x: auto; margin: 0 0 0.5rem; padding-bottom: 0.2rem; -webkit-overflow-scrolling: touch; }
+.note-editor-modal .note-image-thumb { width: 72px; height: 72px; }
+
+.kl-root { min-height: 38vh; padding-bottom: 3rem; cursor: text; }
+.kl-row { display: flex; align-items: flex-start; }
+.kl-cell { position: relative; flex: 1; min-width: 0; }
+.kl-text {
+  display: block; width: 100%; padding: 0.2rem 0; border: none; outline: none; resize: none; overflow: hidden; background: transparent;
+  color: var(--text-primary); font: inherit; font-size: 0.95rem; line-height: 1.6;
+}
+.kl-text.done { text-decoration: line-through; color: var(--text-secondary); }
+.kl-ph { position: absolute; left: 0; top: 0.2rem; color: var(--text-secondary); opacity: 0.75; font-size: 0.95rem; line-height: 1.6; pointer-events: none; }
+.kl-mark { flex: 0 0 1.7rem; width: 1.7rem; line-height: 1.6; padding-top: 0.2rem; text-align: center; user-select: none; color: var(--text-primary); }
+.kl-bullet { font-size: 1.15rem; }
+.kl-num { flex-basis: 2.2rem; width: 2.2rem; padding-right: 0.45rem; text-align: right; font-size: 0.95rem; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.kl-check { flex: 0 0 2.1rem; width: 2.1rem; height: 2.1rem; padding: 0; border: none; background: transparent; cursor: pointer; position: relative; isolation: isolate; color: var(--text-on-accent); font-size: 0.8rem; font-weight: 700; -webkit-tap-highlight-color: transparent; }
+.kl-check::before { content: ''; position: absolute; inset: 0.45rem; z-index: -1; border: 2px solid var(--text-secondary); border-radius: 5px; background: transparent; transition: background .1s, border-color .1s; }
+.kl-check.on::before { background: var(--accent); border-color: var(--accent); }
+
+@media (max-width: 759px) {
+  /* Like Keep: the editor takes the whole screen on a phone, toolbar pinned at the top. */
+  .note-editor-overlay { padding: 0; }
+  .note-editor-modal.note-composer { width: 100%; height: 100%; max-height: 100%; border-radius: 0; padding: 0 1rem calc(1rem + env(safe-area-inset-bottom)); }
+  .ne-toolbar { margin: 0 -1rem 0.5rem; padding-top: calc(0.35rem + env(safe-area-inset-top)); border-radius: 0; }
+  .kl-text, .kl-ph { font-size: 16px; }
+  .ne-btn { min-width: 44px; height: 44px; }
+}

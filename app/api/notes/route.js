@@ -41,7 +41,7 @@ export async function POST(request) {
   const { session, isPremium } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const { title, content, category, color, images } = await request.json();
+  const { title, content, category, color, images, pinned } = await request.json();
   const cleanImages = sanitizeNoteImages(images);
   if (!title?.trim() && !content?.trim() && cleanImages.length === 0) {
     return NextResponse.json({ error: 'empty_note' }, { status: 400 });
@@ -82,6 +82,7 @@ export async function POST(request) {
       content: content?.trim() || '',
       category: category || 'general',
       color: color || 'default',
+      pinned: pinned === true,
       images: cleanImages,
       sort_order: sortOrder,
     })

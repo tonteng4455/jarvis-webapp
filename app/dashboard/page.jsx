@@ -6,31 +6,15 @@
 // away before hitting the network (local state only until then).
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
-import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
-import { DashNav, CategorySelect, NOTE_CATEGORIES } from './_components';
-import { MAX_NOTE_IMAGES } from '../../lib/noteImages';
-import { apiGet, ErrorState, Fab, ListSkeleton, shareText, useToast, withoutPending } from './_ui';
+import { DashNav, NOTE_CATEGORIES } from './_components';
+import { NoteEditorPanel, useNoteImages, COLORS, colorBg } from './_noteEditor';
+import { previewText } from '../../lib/noteBlocks';
+import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from './_ui';
 
-const COLORS = [
-  { key: 'default', label: 'ค่าเริ่มต้น' },
-  { key: 'red', label: 'แดง' },
-  { key: 'orange', label: 'ส้ม' },
-  { key: 'yellow', label: 'เหลือง' },
-  { key: 'green', label: 'เขียว' },
-  { key: 'teal', label: 'เขียวอมฟ้า' },
-  { key: 'blue', label: 'ฟ้า' },
-  { key: 'purple', label: 'ม่วง' },
-  { key: 'pink', label: 'ชมพู' },
-  { key: 'gray', label: 'เทา' },
-];
 
 function categoryLabel(key) {
   return NOTE_CATEGORIES.find(c => c.key === key)?.label || key || 'ทั่วไป';
-}
-
-function colorBg(key) {
-  return `var(--note-${key || 'default'})`;
 }
 
 // Locks the page behind a full-screen editor so scrolling a long note
@@ -61,271 +45,74 @@ function useBodyScrollLock() {
 // Shared backdrop for both the new-note composer and the edit modal.
 function EditorOverlay({ children }) {
   useBodyScrollLock();
-  return <div className="note-editor-overlay">{children}</div>;
-}
-
-// ---------- Images in notes ----------
-// Photos are stored in the user's own Google Drive (uploaded through the
-// bot Worker) — a note only keeps {drive_file_id, name} references, so
-// nothing image-sized ever touches Supabase. Removing an image from a
-// note (or deleting the note) only drops the reference; the file stays
-// in the user's Drive folder on purpose.
-function driveImageSrc(id, width) {
-  // Test-only: with the mock backend the photos live in memory, not Drive.
-  if (process.env.NEXT_PUBLIC_MOCK_MODE === '1') return `/api/dev/drive-image/${encodeURIComponent(id)}`;
-  return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${width}`;
-}
-
-// Downscale a photo in the browser before uploading (phone photos are
-// often 3–8 MB; ~1600px JPEG is plenty for a note and ~10x smaller).
-// Falls back to the original file if the browser can't decode it.
-async function shrinkImage(file, maxEdge = 1600, quality = 0.82) {
-  try {
-    const url = URL.createObjectURL(file);
-    const img = await new Promise((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = reject;
-      el.src = url;
-    });
-    URL.revokeObjectURL(url);
-    const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
-    const w = Math.max(1, Math.round(img.naturalWidth * scale));
-    const h = Math.max(1, Math.round(img.naturalHeight * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff'; // PNG transparency → white instead of black in JPEG
-    ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(img, 0, 0, w, h);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
-    if (!blob) return file;
-    const base = (file.name || 'photo').replace(/\.[^.]+$/, '');
-    return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
-  } catch {
-    return file;
-  }
-}
-
-// Shared by the composer and the edit modal: owns the images list for
-// ONE open editor plus the upload state. `uploadingRef` lets the
-// click-outside handlers refuse to close the editor mid-upload (which
-// would orphan the file just uploaded).
-function useNoteImages(initial) {
-  const [images, setImages] = useState(initial || []);
-  const [uploading, setUploading] = useState(0);
-  const [error, setError] = useState('');
-  const [connectUrl, setConnectUrl] = useState('');
-  const uploadingRef = useRef(false);
-  const imagesRef = useRef(images);
-  useEffect(() => { imagesRef.current = images; }, [images]);
-  useEffect(() => { uploadingRef.current = uploading > 0; }, [uploading]);
-
-  async function addFiles(fileList) {
-    const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-    setError('');
-    setConnectUrl('');
-    const room = MAX_NOTE_IMAGES - imagesRef.current.length;
-    if (room <= 0) { setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต`); return; }
-    if (files.length > room) setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต — ใส่ให้ ${room} รูปแรก`);
-    uploadingRef.current = true;
-    for (const original of files.slice(0, room)) {
-      setUploading(n => n + 1);
-      try {
-        const file = await shrinkImage(original);
-        const form = new FormData();
-        form.append('file', file, file.name);
-        const res = await fetch('/api/notes/images', { method: 'POST', body: form });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && data.image) {
-          setImages(prev => [...prev, data.image]);
-        } else if (data.error === 'google_not_connected') {
-          setConnectUrl(data.connectUrl || '');
-          setError(data.connectUrl
-            ? 'ต้องเชื่อมต่อ Google Drive ก่อนถึงจะแนบรูปได้ครับ'
-            : 'ต้องเชื่อมต่อ Google Drive ก่อนถึงจะแนบรูปได้ — พิมพ์ "เชื่อมต่อ google" ในแชท LINE แล้วลองใหม่ครับ');
-        } else if (data.error === 'too_large') {
-          setError('รูปใหญ่เกินไป ลองรูปที่เล็กลงครับ');
-        } else {
-          setError('อัปโหลดรูปไม่สำเร็จ ลองอีกครั้งครับ');
-        }
-      } catch {
-        setError('อัปโหลดรูปไม่สำเร็จ ลองอีกครั้งครับ');
-      } finally {
-        setUploading(n => n - 1);
-      }
-    }
-  }
-
-  function removeImage(id) { setImages(prev => prev.filter(im => im.drive_file_id !== id)); }
-  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage };
-}
-
-function ImageThumb({ image, onOpen, onRemove }) {
-  const [failed, setFailed] = useState(false);
-  return (
-    <div className="note-image-thumb" onClick={() => onOpen(image)}>
-      {failed ? (
-        <span className="note-image-fail" title="โหลดรูปไม่ได้">🖼️</span>
-      ) : (
-        <img src={driveImageSrc(image.drive_file_id, 400)} alt={image.name || 'รูปในโน้ต'}
-          loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
-      )}
-      <button type="button" className="note-image-remove" title="เอารูปออกจากโน้ต"
-        onMouseDown={e => e.stopPropagation()}
-        onClick={e => { e.stopPropagation(); onRemove(image.drive_file_id); }}>✕</button>
-    </div>
-  );
-}
-
-// Image row + "add photo" button + full-size viewer (see the portal
-// note below on why the viewer is not a plain child).
-function NoteImagesEditor({ state }) {
-  const { images, uploading, error, connectUrl, addFiles, removeImage } = state;
-  const [viewing, setViewing] = useState(null);
-  const inputRef = useRef(null);
-  return (
-    <>
-      {(images.length > 0 || uploading > 0) && (
-        <div className="note-image-strip">
-          {images.map(im => (
-            <ImageThumb key={im.drive_file_id} image={im} onOpen={setViewing} onRemove={removeImage} />
-          ))}
-          {uploading > 0 && <div className="note-image-thumb note-image-loading">⏳</div>}
-        </div>
-      )}
-      {error && (
-        <div className="note-image-error">
-          {error}
-          {connectUrl && (
-            <> <a href={connectUrl} target="_blank" rel="noopener noreferrer"
-              onMouseDown={e => e.stopPropagation()} style={{ fontWeight: 600, textDecoration: 'underline' }}>🔗 เชื่อมต่อ Google Drive</a></>
-          )}
-        </div>
-      )}
-      <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-        onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
-      <button type="button" className="glass-btn-outline note-add-image-btn"
-        disabled={images.length >= MAX_NOTE_IMAGES}
-        onMouseDown={e => e.stopPropagation()}
-        onClick={() => inputRef.current?.click()}>
-        📷 เพิ่มรูป{images.length > 0 ? ` (${images.length}/${MAX_NOTE_IMAGES})` : ''}
-      </button>
-      {viewing && createPortal(
-        // Portal to <body>: the editor modal has a backdrop-filter, which
-        // would turn this position:fixed viewer into "fixed inside the
-        // modal" and clip it. mousedown must not reach the document-level
-        // click-outside handler (the portal is outside the modal's DOM),
-        // or tapping the viewer would save and close the editor.
-        <div className="note-lightbox" onMouseDown={e => e.stopPropagation()} onClick={() => setViewing(null)}>
-          <img src={driveImageSrc(viewing.drive_file_id, 1600)} alt={viewing.name || 'รูปในโน้ต'} referrerPolicy="no-referrer" />
-          <button type="button" className="note-lightbox-close" title="ปิด">✕</button>
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
-
-// Textarea that grows to fit its content — no scrollbar, no cramped box.
-// The surrounding editor panel is what scrolls, so two things have to be
-// handled by hand:
-//  1. Resizing (height:auto → scrollHeight) momentarily collapses the
-//     panel's scrollable height; the browser clamps scrollTop and the
-//     view jumps to the middle of the note. We save/restore scrollTop
-//     around the resize.
-//  2. The line being typed must stay in view with some breathing room
-//     below it (esp. on the last line), so after each change we measure
-//     the caret's position and scroll the panel just enough.
-const CARET_MARGIN_BOTTOM = 96; // px of free space kept under the caret line
-const CARET_MARGIN_TOP = 24;
-
-function caretTop(ta) {
-  // Mirror the textarea's text/wrapping in an off-screen div and read
-  // where a marker at the caret lands (textareas don't expose caret
-  // coordinates). Returns { top, height } relative to the textarea.
-  const cs = getComputedStyle(ta);
-  const mirror = document.createElement('div');
-  for (const prop of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'wordSpacing',
-    'textTransform', 'textIndent', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'boxSizing', 'tabSize']) {
-    mirror.style[prop] = cs[prop];
-  }
-  mirror.style.position = 'absolute';
-  mirror.style.visibility = 'hidden';
-  mirror.style.top = '0';
-  mirror.style.left = '-9999px';
-  mirror.style.width = `${ta.clientWidth}px`;
-  mirror.style.whiteSpace = 'pre-wrap';
-  mirror.style.overflowWrap = 'break-word';
-  mirror.textContent = ta.value.slice(0, ta.selectionEnd);
-  const marker = document.createElement('span');
-  marker.textContent = '\u200b';
-  mirror.appendChild(marker);
-  document.body.appendChild(mirror);
-  const lineH = parseFloat(cs.lineHeight) || marker.offsetHeight || 20;
-  const top = marker.offsetTop;
-  mirror.remove();
-  return { top, height: lineH };
-}
-
-function keepCaretVisible(ta) {
-  const scroller = ta.closest('.note-editor-modal');
-  if (!scroller || document.activeElement !== ta) return;
-  const { top, height } = caretTop(ta);
-  const sRect = scroller.getBoundingClientRect();
-  const tRect = ta.getBoundingClientRect();
-  const caretTopInView = tRect.top - sRect.top + top;          // relative to scroller's visible box
-  const caretBottomInView = caretTopInView + height;
-  if (caretBottomInView + CARET_MARGIN_BOTTOM > scroller.clientHeight) {
-    scroller.scrollTop += caretBottomInView + CARET_MARGIN_BOTTOM - scroller.clientHeight;
-  } else if (caretTopInView < CARET_MARGIN_TOP) {
-    scroller.scrollTop -= CARET_MARGIN_TOP - caretTopInView;
-  }
-}
-
-function AutoGrowTextarea({ value, onChange, placeholder, autoFocus, className }) {
   const ref = useRef(null);
+  // iOS Safari keeps the layout viewport full height when the keyboard opens, hiding the bottom
+  // of a fixed panel behind it. Following the visual viewport keeps the whole editor (and the
+  // line being typed) above the keyboard.
   useEffect(() => {
-    const ta = ref.current;
-    if (!ta) return;
-    const scroller = ta.closest('.note-editor-modal');
-    const saved = scroller ? scroller.scrollTop : 0;
-    ta.style.height = 'auto';
-    ta.style.height = `${ta.scrollHeight}px`;
-    if (scroller) scroller.scrollTop = saved;
-    keepCaretVisible(ta);
-  }, [value]);
-  return (
-    <textarea ref={ref} className={className} placeholder={placeholder} value={value}
-      onChange={onChange} autoFocus={autoFocus} rows={1} style={{ overflow: 'hidden' }}
-      // Arrow keys / clicks move the caret without changing the value.
-      onKeyUp={e => { if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End' || e.key.startsWith('Page')) keepCaretVisible(e.currentTarget); }}
-      onClick={e => keepCaretVisible(e.currentTarget)} />
-  );
+    const vv = window.visualViewport, el = ref.current;
+    if (!vv || !el) return undefined;
+    const fit = () => { el.style.height = `${vv.height}px`; el.style.transform = `translateY(${vv.offsetTop}px)`; };
+    fit();
+    vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+    return () => { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); };
+  }, []);
+  return <div className="note-editor-overlay" ref={ref}>{children}</div>;
 }
 
-// --- New-note composer: click to expand, auto-grows, has a category
-// picker, and only saves when you click "เสร็จสิ้น" or click away. ---
+// --- New-note composer: opened ONLY by a deliberate tap on the list page (the "＋ จดโน้ตใหม่"
+// bar, the round ＋ button, or the one-shot ?new=1 shortcut) — never as a side effect of coming
+// back to this page. Saves on ✓ or when you click away. ---
 function Composer({ onCreate, onEditingChange, categories, openSignal }) {
   const [open, setOpen] = useState(false);
-  // The mobile "+" button (and ?new=1) bump openSignal to open this.
-  useEffect(() => { if (openSignal) setOpen(true); }, [openSignal]);
+  // Open when the signal CHANGES while this is mounted. The old version opened whenever the signal
+  // was non-zero, so remounting the composer (e.g. leaving the archive view) popped a new note open.
+  const seenSignal = useRef(openSignal);
+  useEffect(() => {
+    if (openSignal !== seenSignal.current) { seenSignal.current = openSignal; setOpen(true); }
+  }, [openSignal]);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('general');
+  const [pinned, setPinned] = useState(false);
+  const [color, setColor] = useState('default');
   const imgState = useNoteImages([]);
   const { images, setImages, uploadingRef } = imgState;
   const ref = useRef(null);
 
   useEffect(() => { onEditingChange(open); }, [open, onEditingChange]);
 
+  function reset() { finished.current = true; setTitle(''); setContent(''); setCategory('general'); setPinned(false); setColor('default'); setImages([]); setOpen(false); }
+
+  const draft = useRef({});
+  draft.current = { title, content, category, images, pinned, color };
+  const finished = useRef(false);        // set once the draft was saved or discarded on purpose
+  useEffect(() => { if (open) finished.current = false; }, [open]);
+
   async function commit() {
     if (uploadingRef.current) return; // wait for the in-flight photo upload
-    if (!title.trim() && !content.trim() && images.length === 0) { setOpen(false); return; }
-    await onCreate({ title, content, category, images });
-    setTitle(''); setContent(''); setCategory('general'); setImages([]); setOpen(false);
+    if (!title.trim() && !content.trim() && images.length === 0) { finished.current = true; setOpen(false); return; }
+    finished.current = true;
+    await onCreate({ title, content, category, images, pinned, color });
+    reset();
   }
+  // A draft with something in it is never thrown away by accident (page hidden, Back, navigating off).
+  const saveDraftRef = useRef(null);
+  saveDraftRef.current = () => {
+    const d = draft.current;
+    if (finished.current || uploadingRef.current) return;
+    if (!d.title.trim() && !d.content.trim() && d.images.length === 0) return;
+    finished.current = true;
+    onCreate(d);
+  };
+  useEffect(() => {
+    if (!open) return undefined;
+    const flush = () => saveDraftRef.current();
+    const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', flush);
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush); flush(); };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -335,7 +122,7 @@ function Composer({ onCreate, onEditingChange, categories, openSignal }) {
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, title, content, category, images]);
+  }, [open, title, content, category, images, pinned, color]);
 
   if (!open) {
     return (
@@ -347,18 +134,12 @@ function Composer({ onCreate, onEditingChange, categories, openSignal }) {
   }
   return (
     <EditorOverlay>
-      <div className="note-editor-modal note-composer" ref={ref}>
-        <input className="note-title-input" placeholder="หัวข้อ" value={title}
-          onChange={e => setTitle(e.target.value)} autoFocus />
-        <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content}
-          onChange={e => setContent(e.target.value)} />
-        <NoteImagesEditor state={imgState} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', gap: '0.5rem' }}>
-          <div style={{ flex: 1, maxWidth: 180 }} onMouseDown={e => e.stopPropagation()}>
-            <CategorySelect options={categories} value={category} onChange={setCategory} />
-          </div>
-          <button onClick={commit} disabled={imgState.uploading > 0} className="glass-btn" style={{ padding: '0.35rem 0.9rem', fontSize: '0.78rem', flex: '0 0 auto' }}>เสร็จสิ้น</button>
-        </div>
+      <div className="note-editor-modal note-composer" ref={ref} style={{ '--tint': colorBg(color) }}>
+        <NoteEditorPanel isNew
+          titleValue={title} onTitle={setTitle} initialContent="" onContent={setContent}
+          imgState={imgState} categories={categories} category={category} onCategory={setCategory}
+          pinned={pinned} onPin={() => setPinned(v => !v)} color={color} onColor={setColor}
+          onDelete={reset} onDone={commit} doneDisabled={imgState.uploading > 0} />
       </div>
     </EditorOverlay>
   );
@@ -371,12 +152,10 @@ function Composer({ onCreate, onEditingChange, categories, openSignal }) {
 // category select, full toolbar — instead of editing cramped inside
 // the small row. Saves on "เสร็จสิ้น" or clicking away. ---
 function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDown, isDragging, autoEditId, categories }) {
-  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [category, setCategory] = useState(note.category || 'general');
-  const [pickerOpen, setPickerOpen] = useState(false);
   const imgState = useNoteImages(note.images || []);
   const { images, setImages, uploadingRef } = imgState;
   const ref = useRef(null);
@@ -395,14 +174,53 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
   useEffect(() => { if (!editing) { setTitle(note.title); setContent(note.content); setCategory(note.category || 'general'); setImages(note.images || []); } }, [note.title, note.content, note.category, note.images, editing]);
   useEffect(() => { onEditingChange(note.id, editing); }, [editing, note.id, onEditingChange]);
 
-  function saveEdit() {
-    if (uploadingRef.current) return; // wait for the in-flight photo upload
-    setEditing(false);
-    const imagesChanged = JSON.stringify(images) !== JSON.stringify(note.images || []);
-    if (title !== note.title || content !== note.content || category !== note.category || imagesChanged) {
-      onUpdate(note.id, { title, content, category, ...(imagesChanged ? { images } : {}) });
-    }
+  // What was last sent to the server, so ✓, click-away, the autosave timer and "page is going away"
+  // can all call persist() without ever sending the same edit twice.
+  const sent = useRef(null);
+  const latest = useRef({});
+  latest.current = { title, content, category, images };
+  useEffect(() => {
+    if (editing) sent.current = { title: note.title, content: note.content, category: note.category || 'general', images: JSON.stringify(note.images || []) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  function persist() {
+    if (!sent.current || uploadingRef.current) return false;   // wait for the in-flight photo upload
+    const cur = latest.current;
+    const imagesJson = JSON.stringify(cur.images);
+    const patch = {};
+    if (cur.title !== sent.current.title) patch.title = cur.title;
+    if (cur.content !== sent.current.content) patch.content = cur.content;
+    if (cur.category !== sent.current.category) patch.category = cur.category;
+    if (imagesJson !== sent.current.images) patch.images = cur.images;
+    if (Object.keys(patch).length === 0) return true;
+    sent.current = { title: cur.title, content: cur.content, category: cur.category, images: imagesJson };
+    onUpdate(note.id, { title: cur.title, content: cur.content, category: cur.category, ...(patch.images ? { images: cur.images } : {}) });
+    return true;
   }
+  const persistRef = useRef(persist); persistRef.current = persist;
+
+  function saveEdit() {
+    if (uploadingRef.current) return;
+    persist();
+    setEditing(false);
+  }
+
+  // Like Keep: nothing typed is lost — saved shortly after you stop typing, and when the page is
+  // hidden/closed or you press Back (the editor is full-screen on a phone, there is no "outside" to tap).
+  useEffect(() => {
+    if (!editing) return undefined;
+    const t = setTimeout(() => persistRef.current(), 1500);
+    return () => clearTimeout(t);
+  }, [editing, title, content, category, images]);
+  useEffect(() => {
+    if (!editing) return undefined;
+    const flush = () => persistRef.current();
+    const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', flush);
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush); flush(); };
+  }, [editing]);
 
   useEffect(() => {
     if (!editing) return;
@@ -419,46 +237,15 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
   if (editing) {
     return (
       <EditorOverlay>
-        <div className="note-editor-modal note-composer" ref={ref} data-note-id={note.id}>
-          <input className="note-title-input" placeholder="หัวข้อ" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
-          <AutoGrowTextarea className="note-content-textarea" placeholder="พิมพ์โน้ต..." value={content} onChange={e => setContent(e.target.value)} />
-          <NoteImagesEditor state={imgState} />
-          <div style={{ marginTop: '0.5rem', maxWidth: 220 }} onMouseDown={e => e.stopPropagation()}>
-            <CategorySelect options={categories} value={category} onChange={setCategory} />
-          </div>
-
-          <div className="note-toolbar">
-            <button className="note-icon-btn" title="ปักหมุด" onMouseDown={e => e.stopPropagation()}
-              onClick={() => onUpdate(note.id, { pinned: !note.pinned })}>
-              {note.pinned ? '📌' : '📍'}
-            </button>
-            <button className="note-icon-btn" title="สี" onMouseDown={e => e.stopPropagation()}
-              onClick={() => setPickerOpen(v => !v)}>🎨</button>
-            {isArchived ? (
-              <button className="note-icon-btn" title="ย้ายกลับไปโน้ตปกติ" onMouseDown={e => e.stopPropagation()}
-                onClick={() => onUpdate(note.id, { archived: false })}>↩️</button>
-            ) : (
-              <button className="note-icon-btn" title="เก็บเข้าคลัง" onMouseDown={e => e.stopPropagation()}
-                onClick={() => onUpdate(note.id, { archived: true })}>🗄️</button>
-            )}
-            <button className="note-icon-btn" title="แชร์/คัดลอกข้อความ" onMouseDown={e => e.stopPropagation()}
-              onClick={() => shareText({ title, text: content }, toast)}>📤</button>
-            <button className="note-icon-btn" title="ลบ (เลิกทำได้)" onMouseDown={e => e.stopPropagation()}
-              onClick={() => onDelete(note.id)}>🗑️</button>
-            <button onClick={saveEdit} disabled={imgState.uploading > 0} className="glass-btn" style={{ marginLeft: 'auto', padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>เสร็จสิ้น</button>
-          </div>
-
-          {pickerOpen && (
-            <div className="note-swatch-row">
-              {COLORS.map(c => (
-                <span key={c.key} title={c.label}
-                  className={`note-swatch${note.color === c.key ? ' active' : ''}`}
-                  style={{ background: colorBg(c.key) }}
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={() => { onUpdate(note.id, { color: c.key }); setPickerOpen(false); }} />
-              ))}
-            </div>
-          )}
+        <div className="note-editor-modal note-composer" ref={ref} data-note-id={note.id} style={{ '--tint': colorBg(note.color) }}>
+          <NoteEditorPanel
+            titleValue={title} onTitle={setTitle} initialContent={note.content || ''} onContent={setContent}
+            imgState={imgState} categories={categories} category={category} onCategory={setCategory}
+            pinned={!!note.pinned} onPin={() => onUpdate(note.id, { pinned: !note.pinned })}
+            archived={!!isArchived} onArchive={() => onUpdate(note.id, { archived: !isArchived })}
+            onDelete={() => onDelete(note.id)}
+            color={note.color || 'default'} onColor={key => onUpdate(note.id, { color: key })}
+            onDone={saveEdit} doneDisabled={imgState.uploading > 0} />
         </div>
       </EditorOverlay>
     );
@@ -473,7 +260,7 @@ function NoteCard({ note, onUpdate, onDelete, onEditingChange, onHandlePointerDo
       <div style={{ flex: 1, minWidth: 0 }}>
         {note.title && <div style={{ fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note.title}</div>}
         <div className="muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {note.content || (note.images?.length ? 'รูปภาพ' : 'โน้ตว่างเปล่า')}
+          {previewText(note.content) || (note.images?.length ? 'รูปภาพ' : 'โน้ตว่างเปล่า')}
         </div>
       </div>
       {note.images?.length > 0 && <span title={`มีรูป ${note.images.length} รูป`} style={{ fontSize: '0.75rem', flex: '0 0 auto' }}>📷{note.images.length}</span>}
@@ -620,7 +407,13 @@ function NotesPageInner() {
   }, [showArchived]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (searchParams.get('new') === '1') setOpenSignal(n => n + 1); }, [searchParams]);
+  // ?new=1 (Today's quick-add button, the installed app's "จดโน้ต" shortcut) opens the composer ONCE and
+  // is then removed from the address, so reloading / coming back never re-opens it.
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return;
+    setOpenSignal(n => n + 1);
+    window.history.replaceState(null, '', '/dashboard');
+  }, [searchParams]);
 
   // Auto-refresh — a note added via the LINE bot shows up here without
   // a manual reload. Paused while the composer or any card is being
@@ -638,10 +431,10 @@ function NotesPageInner() {
     if (isEditing) editingIds.current.add(id); else editingIds.current.delete(id);
   }, []);
 
-  async function createNote({ title, content, category, images }) {
+  async function createNote({ title, content, category, images, pinned, color }) {
     const res = await fetch('/api/notes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, content, category, images }),
+      body: JSON.stringify({ title, content, category, images, pinned, color }),
     });
     if (res.ok) { load(); return; }
     const data = await res.json().catch(() => ({}));
