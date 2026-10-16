@@ -2,6 +2,7 @@
 // app/dashboard/_components.jsx
 
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -72,6 +73,19 @@ function AccountMenu() {
   const [theme, setThemeState] = useState('auto');
   const [fs, setFsState] = useState('md');
   const boxRef = useRef(null);
+  const sheetRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, right: 8 });
+
+  // The sheet is drawn in <body> (position: fixed). Inside the nav it was clipped, because the nav
+  // scrolls sideways (overflow-x) and that also clips anything hanging below it; and the due-tasks
+  // banner (sticky, above the nav) would cover it.
+  function toggle() {
+    if (!open && boxRef.current) {
+      const r = boxRef.current.getBoundingClientRect();
+      setPos({ top: Math.round(r.bottom + 6), right: Math.max(8, Math.round(window.innerWidth - r.right)) });
+    }
+    setOpen(o => !o);
+  }
 
   useEffect(() => {
     fetch('/api/me').then(r => r.ok ? r.json() : null).then(setMe).catch(() => {});
@@ -83,10 +97,19 @@ function AccountMenu() {
 
   useEffect(() => {
     if (!open) return;
-    function onClickOutside(e) { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
+    function onClickOutside(e) {
+      if (boxRef.current?.contains(e.target) || sheetRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
+    const close = () => setOpen(false);
     document.addEventListener('mousedown', onClickOutside);
     document.addEventListener('touchstart', onClickOutside);
-    return () => { document.removeEventListener('mousedown', onClickOutside); document.removeEventListener('touchstart', onClickOutside); };
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside); document.removeEventListener('touchstart', onClickOutside);
+      window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true);
+    };
   }, [open]);
 
   function pickTheme(t) { applyTheme(t); setThemeState(t); }
@@ -100,14 +123,14 @@ function AccountMenu() {
 
   return (
     <div ref={boxRef} style={{ position: 'relative', flexShrink: 0 }}>
-      <button type="button" onClick={() => setOpen(o => !o)} className="account-btn" aria-label="บัญชีและการตั้งค่า">
+      <button type="button" onClick={toggle} className="account-btn" aria-label="บัญชีและการตั้งค่า">
         {me?.pictureUrl
           ? <img src={me.pictureUrl} alt="" style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0 }} />
           : <span className="avatar-fallback">{Array.from(me?.displayName || '👤')[0]}</span>}
         <span className="account-name">{me?.displayName || ''}</span>
       </button>
-      {open && (
-        <div className="account-sheet">
+      {open && createPortal(
+        <div className="account-sheet" ref={sheetRef} style={{ top: pos.top, right: pos.right }}>
           <div className="account-sheet-label">ธีม</div>
           <div style={{ display: 'flex', gap: '0.35rem' }}>
             {THEMES.map(([k, l]) => <button key={k} type="button" style={chip(theme === k)} onClick={() => pickTheme(k)}>{l}</button>)}
@@ -121,7 +144,8 @@ function AccountMenu() {
           <form action="/api/auth/logout" method="POST" style={{ marginTop: '0.5rem' }}>
             <button type="submit" className="glass-btn-danger" style={{ width: '100%', minHeight: 44 }}>ออกจากระบบ</button>
           </form>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
