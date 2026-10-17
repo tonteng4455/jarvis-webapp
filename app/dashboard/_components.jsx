@@ -98,6 +98,13 @@ function AccountMenu() {
     } catch (e) { /* ignore */ }
   }, []);
 
+  // the Today page's setup checklist asks for this menu to open (card colour step)
+  useEffect(() => {
+    const openIt = () => { if (boxRef.current) { const r = boxRef.current.getBoundingClientRect(); setPos({ top: Math.round(r.bottom + 6), right: Math.max(8, Math.round(window.innerWidth - r.right)) }); } setOpen(true); };
+    window.addEventListener('jarvis:open-account', openIt);
+    return () => window.removeEventListener('jarvis:open-account', openIt);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     function onClickOutside(e) {

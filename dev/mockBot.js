@@ -28,6 +28,7 @@ export async function mockBotInternal(path, payload) {
       const { data } = await mockSupabase().from('push_subscriptions').select('id').eq('user_id', payload.userId);
       return (data || []).length ? { ok: true, sent: data.length } : { ok: false, error: 'no_subscription' };
     }
+    case '/internal/google-status': return payload.userId === 'mock-nodrive' ? { ok: true, connected: false, connectUrl: 'https://example.invalid/google/connect?mock=1' } : { ok: true, connected: true, connectUrl: null };
     case '/internal/calendar-reconcile': return { ok: true };
     case '/internal/calendar-cancel': {
       // The real Worker soft-cancels the row (and removes the Google event).

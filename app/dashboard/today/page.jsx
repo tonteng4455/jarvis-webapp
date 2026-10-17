@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { DashNav } from '../_components';
 import { apiGet, ErrorState, ListSkeleton, useToast } from '../_ui';
 import { DueChip } from '../_due';
+import SetupChecklist from '../_setup';
 import { sortTasks } from '../../../lib/taskDue';
 
 const LINE_OA_URL = process.env.NEXT_PUBLIC_LINE_OA_URL || '';
@@ -99,6 +100,8 @@ export default function TodayPage() {
 
       <input className="glass-input" type="search" placeholder="🔍 ค้นหาทุกอย่าง — โน้ต งาน นัดหมาย เงิน ไฟล์" value={q}
         onChange={e => setQ(e.target.value)} style={{ marginBottom: '0.8rem' }} />
+
+      {!query && <SetupChecklist />}
 
       {!query && (
         <div className="quick-row">
