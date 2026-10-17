@@ -24,6 +24,10 @@ export async function mockBotInternal(path, payload) {
     case '/internal/expense-sheet-export':
       if (payload.userId === 'mock-nodrive') return { ok: false, error: 'not_connected', connectUrl: 'https://example.invalid/google/connect?mock=1' };
       return { url: 'https://example.invalid/sheet', count: 2 };
+    case '/internal/push-test': {
+      const { data } = await mockSupabase().from('push_subscriptions').select('id').eq('user_id', payload.userId);
+      return (data || []).length ? { ok: true, sent: data.length } : { ok: false, error: 'no_subscription' };
+    }
     case '/internal/calendar-reconcile': return { ok: true };
     case '/internal/calendar-cancel': {
       // The real Worker soft-cancels the row (and removes the Google event).

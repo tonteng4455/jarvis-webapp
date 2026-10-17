@@ -172,6 +172,7 @@ function AccountMenu() {
             <div className="card-preview-body"><span className="card-preview-btn">เสร็จแล้ว</span><span className="card-preview-btn alt">แก้ไข</span></div>
           </div>
           {themeNote && <div className="account-sheet-label" style={{ marginTop: '0.4rem', textTransform: 'none' }}>{themeNote}</div>}
+          <Link href="/dashboard/notifications" onClick={() => setOpen(false)} className="glass-btn-outline" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, marginTop: '0.8rem', textDecoration: 'none' }}>🔔 การแจ้งเตือน</Link>
           <Link href="/dashboard/guide" onClick={() => setOpen(false)} className="glass-btn-outline" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, marginTop: '0.8rem', textDecoration: 'none' }}>📖 คู่มือการใช้งาน</Link>
           <Link href="/dashboard/memory" onClick={() => setOpen(false)} className="glass-btn-outline" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, marginTop: '0.5rem', textDecoration: 'none' }}>🧠 สิ่งที่ Jarvis จำได้</Link>
           <form action="/api/auth/logout" method="POST" style={{ marginTop: '0.5rem' }}>
