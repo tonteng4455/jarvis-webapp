@@ -9,6 +9,8 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, formatDate } from '../_components';
+import { ConvertToTaskSheet } from '../_taskEditor';
+import { dueInputs } from '../../../lib/taskDue';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from '../_ui';
 
 const REMINDER_OPTIONS = [
@@ -50,7 +52,7 @@ function monthGrid(cursor) {
   return { days, start, end };
 }
 
-function EventEditor({ event, onSave, onCancel }) {
+function EventEditor({ event, onSave, onCancel, onConvert }) {
   const initial = splitDateTime(event.start_time);
   const [title, setTitle] = useState(event.title || '');
   const [date, setDate] = useState(initial.date);
@@ -102,7 +104,8 @@ function EventEditor({ event, onSave, onCancel }) {
         <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>รายละเอียด</label>
         <textarea className="glass-input" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="ไม่บังคับ" style={{ resize: 'vertical' }} />
       </div>
-      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        {!isNew && onConvert && <button className="glass-btn-outline" style={{ marginRight: 'auto' }} onClick={() => onConvert(event)}>🔄 เปลี่ยนเป็นงาน</button>}
         <button className="glass-btn-outline" onClick={onCancel}>ยกเลิก</button>
         <button className="glass-btn" onClick={save} disabled={saving || !title.trim()}>{saving ? 'กำลังบันทึก...' : isNew ? '➕ เพิ่มนัดหมาย' : '✅ บันทึก'}</button>
       </div>
@@ -110,7 +113,7 @@ function EventEditor({ event, onSave, onCancel }) {
   );
 }
 
-function EventCard({ e, onEdit, onCancel, showDate }) {
+function EventCard({ e, onEdit, onCancel, onConvert, showDate }) {
   return (
     <div className="glass-card" style={{ opacity: e.status === 'pending' ? 0.7 : 1, cursor: 'pointer' }} onClick={() => onEdit(e.id)}>
       <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{e.title}</div>
@@ -124,6 +127,8 @@ function EventCard({ e, onEdit, onCancel, showDate }) {
         {reminderLabel(e.reminder_minutes) && <span className="muted">{reminderLabel(e.reminder_minutes)}</span>}
         {e.google_event_id && <span className="muted">🔗 ซิงก์ Google Calendar แล้ว</span>}
         <button className="note-icon-btn" style={{ marginLeft: 'auto' }}
+          onClick={(ev) => { ev.stopPropagation(); onConvert(e); }}>🔄 เปลี่ยนเป็นงาน</button>
+        <button className="note-icon-btn"
           onClick={(ev) => { ev.stopPropagation(); onCancel(e); }}>🗑️ ยกเลิก</button>
       </div>
     </div>
@@ -153,6 +158,7 @@ function CalendarPageInner() {
   const [editingId, setEditingId] = useState(deepLinkId || null);
   const [creating, setCreating] = useState(wantsNew);
   const [showPast, setShowPast] = useState(false);
+  const [converting, setConverting] = useState(null);
   const touch = useRef(null);
 
   // Remember the user's preferred view across visits.
@@ -228,6 +234,38 @@ function CalendarPageInner() {
       restore: () => setEvents(prev => prev ? [...prev, ev].sort((a, b) => a.start_time.localeCompare(b.start_time)) : prev),
     });
   }
+
+  // Appointment → task: create the task (title, place + description as details, the start as due),
+  // then cancel the appointment (also from Google Calendar) with the usual 6-second undo.
+  async function convertToTask(ev, payload) {
+    let res;
+    try {
+      res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    } catch { toast.show('❌ สร้างงานไม่สำเร็จ', { tone: 'error' }); return false; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.task) { toast.show(data.error === 'quota_reached' ? '❌ งานครบจำนวนที่สร้างได้แล้ว' : '❌ สร้างงานไม่สำเร็จ', { tone: 'error' }); return false; }
+    const taskId = data.task.id;
+    toast.undoableDelete({
+      id: ev.id,
+      label: `เปลี่ยนนัดเป็นงาน “${payload.task_name.slice(0, 24)}” แล้ว`,
+      remove: () => { setEvents(prev => prev?.filter(x => x.id !== ev.id)); setEditingId(null); },
+      commit: async () => {
+        try {
+          const r = await fetch(`/api/calendar/${ev.id}`, { method: 'DELETE', keepalive: true });
+          if (!r.ok) throw new Error(String(r.status));
+        } catch { toast.show('❌ ยกเลิกนัดเดิมไม่สำเร็จ', { tone: 'error' }); load(); }
+      },
+      restore: () => {
+        fetch(`/api/tasks/${taskId}`, { method: 'DELETE' }).catch(() => {});
+        setEvents(prev => prev ? [...prev, ev].sort((a, b) => a.start_time.localeCompare(b.start_time)) : prev);
+      },
+    });
+    return true;
+  }
+  const eventAsTask = ev => ({
+    name: ev.title || '',
+    details: [ev.location && `📍 ${ev.location}`, ev.description].filter(Boolean).join('\n'),
+  });
 
   function shiftMonth(delta) {
     setCursor(c => new Date(c.getFullYear(), c.getMonth() + delta, 1));
@@ -314,8 +352,8 @@ function CalendarPageInner() {
           {events && dayEvents.length === 0 && !creating && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>ไม่มีนัดหมายในวันนี้ครับ</p></div>}
           <div className="list-stack">
             {dayEvents.map(e => editingId === e.id
-              ? <EventEditor key={e.id} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} />
-              : <EventCard key={e.id} e={e} onEdit={setEditingId} onCancel={cancelEvent} />)}
+              ? <EventEditor key={e.id} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={setConverting} />
+              : <EventCard key={e.id} e={e} onEdit={setEditingId} onCancel={cancelEvent} onConvert={setConverting} />)}
           </div>
         </>
       )}
@@ -336,12 +374,19 @@ function CalendarPageInner() {
           {events?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showPast ? 'ยังไม่มีนัดหมายที่ผ่านมาแล้วครับ' : 'ไม่มีนัดหมายที่กำลังจะถึงครับ'}</p></div>}
           <div className="list-stack">
             {events?.map(e => editingId === e.id
-              ? <EventEditor key={e.id} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} />
-              : <EventCard key={e.id} e={e} showDate onEdit={setEditingId} onCancel={cancelEvent} />)}
+              ? <EventEditor key={e.id} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={setConverting} />
+              : <EventCard key={e.id} e={e} showDate onEdit={setEditingId} onCancel={cancelEvent} onConvert={setConverting} />)}
           </div>
         </>
       )}
 
+      {converting && (
+        <ConvertToTaskSheet source={eventAsTask(converting)} initialDue={dueInputs({ due_at: converting.start_time, due_all_day: false })}
+          heading="✅ เปลี่ยนนัดหมายเป็นงาน" detailsLabel="รายละเอียด (จากนัดหมาย)"
+          footnote="นัดเดิมจะถูกยกเลิก (รวมถึงใน Google Calendar) หลังสร้างงาน — กด “เลิกทำ” ได้ 6 วินาที"
+          onCancel={() => setConverting(null)}
+          onConfirm={async payload => { const ok = await convertToTask(converting, payload); if (ok) setConverting(null); return ok; }} />
+      )}
       {!creating && !editingId && <Fab onClick={startCreate} label="เพิ่มนัดหมาย" />}
     </main>
   );

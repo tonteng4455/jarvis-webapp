@@ -17,7 +17,7 @@ export function DueChip({ task }) {
 }
 
 // Date + time inputs with quick chips. `value` = { date: 'YYYY-MM-DD' | '', time: 'HH:MM' | '' }
-export function DueFields({ value, onChange }) {
+export function DueFields({ value, onChange, dateLabel = 'วันที่สิ้นสุด', timeLabel = 'เวลา (ไม่ใส่ = ทั้งวัน)', clearable = true }) {
   const today = thaiDateKey(Date.now());
   const quick = [['วันนี้', today], ['พรุ่งนี้', thaiDateKey(Date.now() + DAY)], ['สัปดาห์หน้า', thaiDateKey(Date.now() + 7 * DAY)]];
   return (
@@ -26,12 +26,12 @@ export function DueFields({ value, onChange }) {
         {quick.map(([label, d]) => (
           <button key={label} type="button" className={`chip${value.date === d ? ' active' : ''}`} onClick={() => onChange({ ...value, date: d })}>{label}</button>
         ))}
-        {value.date && <button type="button" className="chip" onClick={() => onChange({ date: '', time: '' })}>ไม่กำหนด</button>}
+        {clearable && value.date && <button type="button" className="chip" onClick={() => onChange({ date: '', time: '' })}>ไม่กำหนด</button>}
       </div>
       <div className="due-inputs">
-        <label><span className="muted">วันที่สิ้นสุด</span>
+        <label><span className="muted">{dateLabel}</span>
           <input type="date" className="glass-input" value={value.date} min={today} onChange={e => onChange({ ...value, date: e.target.value })} /></label>
-        <label><span className="muted">เวลา (ไม่ใส่ = ทั้งวัน)</span>
+        <label><span className="muted">{timeLabel}</span>
           <input type="time" className="glass-input" value={value.time} disabled={!value.date} onChange={e => onChange({ ...value, time: e.target.value })} /></label>
       </div>
     </div>

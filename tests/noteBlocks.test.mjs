@@ -1,7 +1,7 @@
 // node --test tests/   — the note-body logic (no browser needed)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, cycleList, pasteInto, rowInfo, previewText } from '../lib/noteBlocks.js';
+import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, cycleList, pasteInto, rowInfo, previewText, plainText } from '../lib/noteBlocks.js';
 
 const types = blocks => blocks.map(b => `${b.type}${b.indent ? '@' + b.indent : ''}${b.checked ? '✓' : ''}:${JSON.stringify(b.text)}`);
 const idOf = (blocks, n) => blocks[n].id;
@@ -315,4 +315,9 @@ test('calculator: Enter in a list row finishes the sum then adds the next row', 
   const r = enterInList(b, b[0].id, 5);
   assert.deepEqual(r.blocks.map(x => x.text), ['36', '']);
   assert.equal(r.blocks[1].type, 'bullet');
+});
+
+test('plainText: glyphs per line, indent kept, blank lines dropped', () => {
+  assert.equal(plainText('- นม\n  - นมจืด\n\n[x] เสร็จ\n1. หนึ่ง\nข้อความ'), '• นม\n  • นมจืด\n☑ เสร็จ\n1. หนึ่ง\nข้อความ');
+  assert.equal(previewText('- a\n- b'), '• a  • b');
 });

@@ -11,6 +11,7 @@ const KINDS = [
   { key: 'expense', label: '💸 หมวดรายจ่าย', kind: 'category', scope: 'expense', hint: 'ข้อความรายจ่ายที่มีคำนี้ จะลงหมวดที่เลือก', ph: 'เช่น ทางด่วน' },
   { key: 'note', label: '📝 หมวดโน้ต', kind: 'category', scope: 'note', hint: 'โน้ตที่มีคำนี้ จะลงหมวดที่เลือก', ph: 'เช่น ลูกค้า' },
   { key: 'reminder', label: '⏰ เตือนล่วงหน้า', kind: 'reminder', scope: 'event', hint: 'นัดหมายที่มีคำนี้ จะตั้งเตือนล่วงหน้าตามที่เลือก (ถ้าไม่ได้ระบุเอง)', ph: 'เช่น ประชุมใหญ่' },
+  { key: 'create', label: '🔀 งาน / นัดหมาย', kind: 'create', scope: '', hint: 'ข้อความที่มีคำนี้ (แม้มีวัน-เวลา) จะสร้างเป็นงานหรือนัดหมายตามที่เลือก — ถ้าไม่ได้พิมพ์นำหน้าว่า “เพิ่มงาน” หรือ “นัด”', ph: 'เช่น ส่งรายงาน' },
   { key: 'location', label: '📍 สถานที่', kind: 'location', scope: 'event', hint: 'นัดหมายที่มีคำนี้ จะใส่สถานที่นี้ให้ (ถ้าไม่ได้ระบุเอง)', ph: 'เช่น ประชุมใหญ่' },
 ];
 const REMINDERS = [[10, '10 นาที'], [30, '30 นาที'], [60, '1 ชั่วโมง'], [180, '3 ชั่วโมง'], [1440, '1 วัน'], [2880, '2 วัน'], [10080, '1 สัปดาห์']];
@@ -20,6 +21,7 @@ const minutesLabel = n => REMINDERS.find(r => r[0] === +n)?.[1] || (+n % 1440 ==
 function describe(e) {
   if (e.kind === 'category') return <>หมวด {catLabel(e.scope, e.value)} <span className="muted">· {e.scope === 'note' ? 'โน้ต' : 'รายจ่าย'}</span></>;
   if (e.kind === 'reminder') return <>เตือนก่อน {minutesLabel(e.value)} <span className="muted">· นัดหมาย</span></>;
+  if (e.kind === 'create') return <>สร้างเป็น{e.value === 'task' ? 'งาน' : 'นัดหมาย'}</>;
   return <>สถานที่ {e.value} <span className="muted">· นัดหมาย</span></>;
 }
 
@@ -43,7 +45,7 @@ export default function MemoryPage() {
 
   function pickKind(k) {
     setKindKey(k);
-    setValue(k === 'expense' ? 'food' : k === 'note' ? 'work' : k === 'reminder' ? '60' : '');
+    setValue(k === 'expense' ? 'food' : k === 'note' ? 'work' : k === 'reminder' ? '60' : k === 'create' ? 'task' : '');
   }
 
   async function add(ev) {
@@ -103,6 +105,11 @@ export default function MemoryPage() {
           {def.kind === 'reminder' && (
             <select className="glass-input" style={{ flex: '1 1 160px' }} value={value} onChange={e => setValue(e.target.value)}>
               {REMINDERS.map(([m, l]) => <option key={m} value={m}>{l}</option>)}
+            </select>
+          )}
+          {def.kind === 'create' && (
+            <select className="glass-input" style={{ flex: '1 1 160px' }} value={value} onChange={e => setValue(e.target.value)}>
+              <option value="task">✅ สร้างเป็นงาน</option><option value="event">📅 สร้างเป็นนัดหมาย</option>
             </select>
           )}
           {def.kind === 'location' && <input className="glass-input" style={{ flex: '1 1 160px' }} value={value} onChange={e => setValue(e.target.value)} placeholder="เช่น ห้องประชุม 5" maxLength={80} />}

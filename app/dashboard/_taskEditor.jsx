@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
 import { BlockEditor, ToolBtn, EditorOverlay } from './_noteEditor';
 import { DueFields } from './_due';
 import { buildDue, dueInputs } from '../../lib/taskDue';
-import { previewText } from '../../lib/noteBlocks';
+import { previewText, plainText } from '../../lib/noteBlocks';
 
 export const PRIORITY_COLOR = { high: 'var(--danger)', medium: 'var(--warning)', low: 'var(--success)' };
 export const PRIORITY_LABEL = { high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' };
@@ -31,7 +31,7 @@ export function PriorityChips({ value, onChange }) {
 // ---- the editor panel (inside <EditorOverlay><div className="note-editor-modal note-composer">) ----
 export function TaskEditorPanel({
   isNew, name, onName, details, onDetails, due, onDue, priority, onPriority,
-  archived, onArchive, onDelete, onDone, doneDisabled,
+  archived, onArchive, onDelete, onConvert, onDone, doneDisabled,
 }) {
   const [info, setInfo] = useState({ list: false, type: 'text', canIndent: false, canOutdent: false });
   const bodyRef = useRef(null);
@@ -39,6 +39,7 @@ export function TaskEditorPanel({
     <>
       <div className="ne-toolbar" role="toolbar" aria-label="เครื่องมืองาน">
         {onArchive && <ToolBtn title={archived ? 'ย้ายกลับไปงานปกติ' : 'เก็บเข้าคลัง'} onClick={onArchive}>{archived ? '↩️' : '🗄️'}</ToolBtn>}
+        {onConvert && <ToolBtn title="เปลี่ยนเป็นนัดหมาย" onClick={onConvert}>🔄</ToolBtn>}
         {onDelete && <ToolBtn title={isNew ? 'ทิ้งร่างนี้' : 'ลบ (เลิกทำได้)'} onClick={onDelete}>🗑️</ToolBtn>}
         <span className="ne-spacer" />
         <ToolBtn title={`รายการ: กดเพื่อสลับ เลขข้อ → จุด → ช่องติ๊ก → ข้อความ (ตอนนี้: ${LIST_LABEL[info.type] || 'ข้อความ'})`} active={info.list} className="ne-list" onClick={() => bodyRef.current?.cycle()}>{LIST_GLYPH[info.type] || '☰'}</ToolBtn>
@@ -73,8 +74,9 @@ export function TaskEditorPanel({
 // ---- the editor as a full-screen modal: opens for an existing task or a new one ----
 // Existing task: saved shortly after you stop typing, on ✓, on click-away and when the page is hidden.
 // New task: created on ✓ / click-away / page hidden once it has a name; 🗑️ throws the draft away.
-export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, onArchive }) {
+export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, onArchive, onConvertToEvent }) {
   const isNew = !task;
+  const [converting, setConverting] = useState(false);
   const [name, setName] = useState(task?.task_name || '');
   const [details, setDetails] = useState(task?.details || '');
   const [due, setDue] = useState(() => dueInputs(task));
@@ -137,8 +139,13 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, o
           archived={!!task?.archived}
           onArchive={!isNew ? () => { finished.current = true; persistRef.current(); onArchive(task); } : undefined}
           onDelete={isNew ? discard : () => { finished.current = true; onDelete(task); }}
+          onConvert={!isNew && onConvertToEvent ? () => { persistRef.current(); setConverting(true); } : undefined}
           onDone={done} />
       </div>
+      {converting && (
+        <ConvertToEventSheet task={{ ...task, task_name: name, details, ...(buildDue(due.date, due.time) || {}) }} onCancel={() => setConverting(false)}
+          onConfirm={async payload => { const ok = await onConvertToEvent(task, payload); if (ok) { finished.current = true; setConverting(false); onClose(); } }} />
+      )}
     </EditorOverlay>
   );
 }
@@ -156,10 +163,11 @@ export function splitNoteForTask(note) {
   return { name: first.slice(0, 120), details: lines.slice(i + 1).join('\n').replace(/^\n+/, '') };
 }
 
-export function ConvertToTaskSheet({ note, onCancel, onConfirm }) {
-  const init = splitNoteForTask(note);
+// Also used for appointment → task: pass `source` ({ name, details }), `initialDue` and the wording instead of a note.
+export function ConvertToTaskSheet({ note, source, initialDue, heading = '✅ เปลี่ยนโน้ตเป็นงาน', detailsLabel = 'รายละเอียด (จากเนื้อหาโน้ต)', footnote = 'โน้ตเดิมจะถูกลบหลังสร้างงาน (กด “เลิกทำ” ได้ 6 วินาที)', onCancel, onConfirm }) {
+  const init = source || splitNoteForTask(note);
   const [name, setName] = useState(init.name);
-  const [due, setDue] = useState({ date: '', time: '' });
+  const [due, setDue] = useState(initialDue || { date: '', time: '' });
   const [priority, setPriority] = useState('medium');
   const [busy, setBusy] = useState(false);
   const d = buildDue(due.date, due.time);
@@ -172,8 +180,8 @@ export function ConvertToTaskSheet({ note, onCancel, onConfirm }) {
   }
   return createPortal(
     <div className="convert-overlay" onMouseDown={e => e.stopPropagation()}>
-      <div className="convert-sheet" role="dialog" aria-label="เปลี่ยนโน้ตเป็นงาน">
-        <h2 className="convert-title">✅ เปลี่ยนโน้ตเป็นงาน</h2>
+      <div className="convert-sheet" role="dialog" aria-label={heading}>
+        <h2 className="convert-title">{heading}</h2>
         <label className="te-label">ชื่องาน</label>
         <input className="glass-input" value={name} onChange={e => setName(e.target.value)} placeholder="ชื่องาน" autoFocus />
         <div className="te-section">
@@ -186,16 +194,84 @@ export function ConvertToTaskSheet({ note, onCancel, onConfirm }) {
         </div>
         {init.details.trim() && (
           <div className="te-section">
-            <div className="te-label">รายละเอียด (จากเนื้อหาโน้ต)</div>
+            <div className="te-label">{detailsLabel}</div>
             <div className="convert-preview">{previewText(init.details) || init.details}</div>
           </div>
         )}
-        <p className="muted" style={{ margin: '0.6rem 0 0' }}>โน้ตเดิมจะถูกลบหลังสร้างงาน (กด “เลิกทำ” ได้ 6 วินาที)</p>
+        <p className="muted" style={{ margin: '0.6rem 0 0' }}>{footnote}</p>
         <div className="convert-actions">
           <button type="button" className="glass-btn-outline" onClick={onCancel} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)', background: 'var(--surface-muted)' }}>ยกเลิก</button>
           <button type="button" className="glass-btn" onClick={go} disabled={!ready}>{busy ? 'กำลังสร้าง...' : 'สร้างงาน'}</button>
         </div>
         {!d && <p className="muted" style={{ margin: '0.4rem 0 0', textAlign: 'right' }}>เลือกวันที่ก่อนจึงสร้างงานได้</p>}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ---- task → appointment ----
+// An appointment needs a start TIME, so the date AND the time are both required here
+// (prefilled from the task's due date when it has one).
+const EVENT_REMINDERS = [
+  { value: '', label: '⚙️ ค่าเริ่มต้นของปฏิทิน' }, { value: '-1', label: '🔕 ไม่เตือน' }, { value: '10', label: '⏰ 10 นาทีก่อน' },
+  { value: '30', label: '⏰ 30 นาทีก่อน' }, { value: '60', label: '⏰ 1 ชม.ก่อน' }, { value: '1440', label: '⏰ 1 วันก่อน' },
+];
+
+export function ConvertToEventSheet({ task, onCancel, onConfirm }) {
+  const pre = dueInputs(task);
+  const [title, setTitle] = useState(task.task_name || '');
+  const [date, setDate] = useState(pre.date);
+  const [time, setTime] = useState(pre.time);
+  const [reminder, setReminder] = useState('');
+  const [location, setLocation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const d = buildDue(date, time);
+  const ready = !!title.trim() && !!date && !!time && !!d && !busy;
+  const description = plainText(task.details || '').trim();
+  async function go() {
+    if (!ready) return;
+    setBusy(true);
+    const start = new Date(d.due_at);
+    await onConfirm({
+      title: title.trim(), start_time: start.toISOString(), end_time: new Date(start.getTime() + 3600000).toISOString(),
+      location: location.trim() || null, description: description || null,
+      reminder_minutes: reminder === '' ? null : parseInt(reminder, 10),
+    });
+    setBusy(false);
+  }
+  return createPortal(
+    <div className="convert-overlay" onMouseDown={e => e.stopPropagation()}>
+      <div className="convert-sheet" role="dialog" aria-label="เปลี่ยนงานเป็นนัดหมาย">
+        <h2 className="convert-title">📅 เปลี่ยนงานเป็นนัดหมาย</h2>
+        <label className="te-label">หัวเรื่อง</label>
+        <input className="glass-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="หัวเรื่องนัด" autoFocus />
+        <div className="te-section">
+          <div className="te-label">🕐 วันและเวลานัด <span style={{ color: 'var(--danger)' }}>*</span></div>
+          <DueFields value={{ date, time }} onChange={v => { setDate(v.date); setTime(v.time); }} dateLabel="วันที่นัด" timeLabel="เวลานัด" clearable={false} />
+          {!!date && !time && <p className="muted" style={{ margin: '0.3rem 0 0', color: 'var(--danger)' }}>นัดหมายต้องมีเวลา — เลือกเวลาด้วยครับ</p>}
+        </div>
+        <div className="te-section">
+          <div className="te-label">การแจ้งเตือน</div>
+          <select className="glass-input" value={reminder} onChange={e => setReminder(e.target.value)}>
+            {EVENT_REMINDERS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div className="te-section">
+          <div className="te-label">สถานที่</div>
+          <input className="glass-input" value={location} onChange={e => setLocation(e.target.value)} placeholder="ไม่บังคับ" />
+        </div>
+        {description && (
+          <div className="te-section">
+            <div className="te-label">รายละเอียด (จากงาน)</div>
+            <div className="convert-preview">{description}</div>
+          </div>
+        )}
+        <p className="muted" style={{ margin: '0.6rem 0 0' }}>งานเดิมจะถูกลบหลังสร้างนัด (กด “เลิกทำ” ได้ 6 วินาที) และนัดจะถูกส่งไป Google Calendar</p>
+        <div className="convert-actions">
+          <button type="button" className="glass-btn-outline" onClick={onCancel} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)', background: 'var(--surface-muted)' }}>ยกเลิก</button>
+          <button type="button" className="glass-btn" onClick={go} disabled={!ready}>{busy ? 'กำลังสร้าง...' : 'สร้างนัดหมาย'}</button>
+        </div>
       </div>
     </div>,
     document.body
