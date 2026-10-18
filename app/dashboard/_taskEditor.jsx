@@ -159,6 +159,18 @@ export function splitNoteForTask(note) {
 }
 
 // Also used for appointment → task: pass `source` ({ name, details }), `initialDue` and the wording instead of a note.
+// Notes keep photos only as Drive references; when a note becomes a task/appointment they travel along as links.
+export function noteImageLines(note) {
+  return (Array.isArray(note?.images) ? note.images : []).filter(i => i?.drive_file_id)
+    .map(i => `📷 ${i.name || 'รูปภาพ'} — https://drive.google.com/file/d/${i.drive_file_id}/view`);
+}
+export function noteSource(note) {
+  const src = splitNoteForTask(note);
+  const pics = noteImageLines(note).join('\n');
+  return { name: src.name, details: [src.details, pics].filter(s => s && s.trim()).join('\n\n') };
+}
+export const TASK_DETAILS_MAX = 20000, EVENT_DESCRIPTION_MAX = 2000;   // keep in sync with /api/tasks and /api/calendar
+
 export function ConvertToTaskSheet({ note, source, initialDue, heading = '✅ เปลี่ยนโน้ตเป็นงาน', detailsLabel = 'รายละเอียด (จากเนื้อหาโน้ต)', footnote = 'โน้ตเดิมจะถูกลบหลังสร้างงาน (กด “เลิกทำ” ได้ 6 วินาที)', onCancel, onConfirm }) {
   const init = source || splitNoteForTask(note);
   const [name, setName] = useState(init.name);
@@ -166,7 +178,8 @@ export function ConvertToTaskSheet({ note, source, initialDue, heading = '✅ �
   const [priority, setPriority] = useState('medium');
   const [busy, setBusy] = useState(false);
   const d = buildDue(due.date, due.time);
-  const ready = !!name.trim() && !!d && !busy;
+  const tooLong = (init.details || '').length > TASK_DETAILS_MAX;
+  const ready = !!name.trim() && !!d && !busy && !tooLong;
   async function go() {
     if (!ready) return;
     setBusy(true);
@@ -198,6 +211,7 @@ export function ConvertToTaskSheet({ note, source, initialDue, heading = '✅ �
           <button type="button" className="glass-btn-outline" onClick={onCancel} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)', background: 'var(--surface-muted)' }}>ยกเลิก</button>
           <button type="button" className="glass-btn" onClick={go} disabled={!ready}>{busy ? 'กำลังสร้าง...' : 'สร้างงาน'}</button>
         </div>
+        {tooLong && <p style={{ margin: '0.4rem 0 0', color: 'var(--danger)', textAlign: 'right' }}>ข้อความยาวเกิน {TASK_DETAILS_MAX.toLocaleString()} ตัวอักษร — ย่อก่อนจึงจะเปลี่ยนเป็นงานได้ (ไม่ตัดข้อความทิ้งให้)</p>}
         {!d && <p className="muted" style={{ margin: '0.4rem 0 0', textAlign: 'right' }}>เลือกวันที่ก่อนจึงสร้างงานได้</p>}
       </div>
     </div>,
@@ -225,8 +239,9 @@ export function ConvertToEventSheet({ task, source, heading = '📅 เปลี
   const [location, setLocation] = useState('');
   const [busy, setBusy] = useState(false);
   const d = buildDue(date, time);
-  const ready = !!title.trim() && !!date && !!time && !!d && !busy;
   const description = plainText(src.details || '').trim();
+  const tooLong = description.length > EVENT_DESCRIPTION_MAX;
+  const ready = !!title.trim() && !!date && !!time && !!d && !busy && !tooLong;
   async function go() {
     if (!ready) return;
     setBusy(true);
@@ -265,6 +280,7 @@ export function ConvertToEventSheet({ task, source, heading = '📅 เปลี
             <div className="convert-preview">{description}</div>
           </div>
         )}
+        {tooLong && <p style={{ margin: '0.5rem 0 0', color: 'var(--danger)' }}>รายละเอียดยาว {description.length.toLocaleString()} ตัวอักษร เกินที่นัดหมายเก็บได้ ({EVENT_DESCRIPTION_MAX.toLocaleString()}) — เปลี่ยนเป็นงานหรือโน้ตแทน หรือย่อก่อน (จะไม่ตัดข้อความทิ้งให้)</p>}
         <p className="muted" style={{ margin: '0.6rem 0 0' }}>{footnote}</p>
         <div className="convert-actions">
           <button type="button" className="glass-btn-outline" onClick={onCancel} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)', background: 'var(--surface-muted)' }}>ยกเลิก</button>

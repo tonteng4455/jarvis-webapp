@@ -9,7 +9,7 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, NOTE_CATEGORIES } from './_components';
 import { NoteEditorPanel, EditorOverlay, useNoteImages, COLORS, colorBg } from './_noteEditor';
-import { ConvertToTaskSheet, ConvertToEventSheet, splitNoteForTask } from './_taskEditor';
+import { ConvertToTaskSheet, ConvertToEventSheet, noteSource } from './_taskEditor';
 import { ConvertChooser, convertItem } from './_convert';
 import { previewText } from '../../lib/noteBlocks';
 import { noteToMarkdown, notesToMarkdownFiles, notesToCombinedMarkdown, safeFileName } from '../../lib/noteMarkdown';
@@ -230,11 +230,11 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
           <ConvertChooser from="note" onCancel={() => setConverting(null)} onPick={to => setConverting(to)} />
         )}
         {converting === 'task' && (
-          <ConvertToTaskSheet note={{ ...note, title, content }} onCancel={() => setConverting(null)}
+          <ConvertToTaskSheet source={noteSource({ ...note, title, content })} onCancel={() => setConverting(null)}
             onConfirm={async payload => { const ok = await onConvert(note, 'task', payload, payload.task_name); if (ok) { setConverting(null); setEditing(false); } }} />
         )}
         {converting === 'event' && (() => {
-          const src = splitNoteForTask({ ...note, title, content });
+          const src = noteSource({ ...note, title, content });
           return (
             <ConvertToEventSheet source={{ title: src.name, details: src.details, due: { date: '', time: '' } }}
               heading="📅 เปลี่ยนโน้ตเป็นนัดหมาย" detailsLabel="รายละเอียด (จากเนื้อหาโน้ต)"
@@ -591,7 +591,7 @@ function NotesPageInner() {
             <div className="file-selbar" role="toolbar" aria-label="เลือกหลายโน้ต">
               <button type="button" className="fsb-x" onClick={exitSelect} aria-label="ยกเลิกการเลือก">✕</button>
               <b className="fsb-count">เลือก {sel.size}</b>
-              <button type="button" className="fsb-btn" onClick={() => setSel(new Set(sel.size === filtered.length ? [] : filtered.map(n => n.id)))}>{sel.size === filtered.length && filtered.length > 0 ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
+              <button type="button" className="fsb-btn" onClick={() => setSel(prev => { const next = new Set(prev); const all = filtered.length > 0 && filtered.every(n => next.has(n.id)); filtered.forEach(n => (all ? next.delete(n.id) : next.add(n.id))); return next; })}>{filtered.length > 0 && filtered.every(n => sel.has(n.id)) ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
               <span style={{ flex: 1 }} />
               <button type="button" className="fsb-btn" disabled={!sel.size} onClick={() => (sel.size === 1 ? downloadMd('one') : setMdChoice(true))}>⬇️ .md</button>
               <button type="button" className="fsb-btn danger" disabled={!sel.size} onClick={deleteSelected}>🗑️ ลบ</button>

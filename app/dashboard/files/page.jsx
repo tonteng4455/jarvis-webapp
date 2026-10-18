@@ -235,7 +235,7 @@ export default function FilesPage() {
         <div className="file-selbar" role="toolbar" aria-label="เลือกหลายไฟล์">
           <button type="button" className="fsb-x" onClick={exitSelect} aria-label="ยกเลิกการเลือก">✕</button>
           <b className="fsb-count">เลือก {sel.size}</b>
-          <button type="button" className="fsb-btn" onClick={() => setSel(new Set(sel.size === shown.length ? [] : shown.map(x => x.id)))}>{sel.size === shown.length && shown.length > 0 ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
+          <button type="button" className="fsb-btn" onClick={() => setSel(prev => { const next = new Set(prev); const all = shown.length > 0 && shown.every(x => next.has(x.id)); shown.forEach(x => (all ? next.delete(x.id) : next.add(x.id))); return next; })}>{shown.length > 0 && shown.every(x => sel.has(x.id)) ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
           <span style={{ flex: 1 }} />
           <button type="button" className="fsb-btn" disabled={!sel.size || busy} onClick={downloadSelected}>⬇️ ดาวน์โหลด</button>
           <button type="button" className="fsb-btn danger" disabled={!sel.size || busy} onClick={deleteSelected}>🗑️ ลบ</button>

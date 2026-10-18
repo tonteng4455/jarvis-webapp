@@ -74,8 +74,12 @@ export async function POST(request) {
   const due = validDue(due_at, due_all_day);
   const text = typeof details === 'string' && details.trim() ? details.slice(0, 20000) : null;
   let { data, error } = await supabase.from('tasks').insert({ ...row, ...(due || {}), ...(text ? { details: text } : {}) }).select().single();
-  if (error && (due || text)) ({ data, error } = await supabase.from('tasks').insert(row).select().single());   // columns not created yet
+  let dropped = null;
+  if (error && (due || text)) {                      // columns not created yet → saved without them, and we say so
+    ({ data, error } = await supabase.from('tasks').insert(row).select().single());
+    dropped = [...(due ? ['due_at'] : []), ...(text ? ['details'] : [])];
+  }
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
-  return NextResponse.json({ task: data });
+  return NextResponse.json({ task: data, ...(dropped ? { dropped } : {}) });
 }

@@ -44,6 +44,10 @@ async function createItem(kind, payload) {
   catch { return { ok: false }; }
   const data = await res.json().catch(() => ({}));
   const id = data?.[CREATED_KEY[kind]]?.id;
+  if (res.ok && id && data.dropped?.length) {      // the database lacks the due/details columns: do not delete the original over a half-saved copy
+    removeItem(kind, id).catch(() => {});
+    return { ok: false, error: 'columns_missing' };
+  }
   return res.ok && id ? { ok: true, id } : { ok: false, error: data?.error };
 }
 const removeItem = (kind, id, opts = {}) => fetch(`${ENDPOINT[kind]}/${id}`, { method: 'DELETE', ...opts });
@@ -52,7 +56,7 @@ const removeItem = (kind, id, opts = {}) => fetch(`${ENDPOINT[kind]}/${id}`, { m
 export async function convertItem({ toast, fromKind, toKind, item, title, payload, removeLocal, restoreLocal, reload }) {
   const made = await createItem(toKind, payload);
   if (!made.ok) {
-    toast.show(made.error === 'quota_reached' ? `❌ ${KIND_WORD[toKind]}ครบจำนวนที่สร้างได้แล้ว` : `❌ สร้าง${KIND_WORD[toKind]}ไม่สำเร็จ`, { tone: 'error' });
+    toast.show(made.error === 'columns_missing' ? '❌ ฐานข้อมูลยังไม่มีคอลัมน์รายละเอียด/กำหนดส่งของงาน (ต้องรัน tasks_due.sql และ tasks_details.sql) — ของเดิมยังอยู่ครบ' : made.error === 'quota_reached' ? `❌ ${KIND_WORD[toKind]}ครบจำนวนที่สร้างได้แล้ว` : `❌ สร้าง${KIND_WORD[toKind]}ไม่สำเร็จ`, { tone: 'error' });
     return false;
   }
   toast.undoableDelete({

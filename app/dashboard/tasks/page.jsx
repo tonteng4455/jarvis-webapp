@@ -147,7 +147,11 @@ function TasksPageInner() {
 
   async function createTask(payload) {
     const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (res.ok) { load(); return; }
+    if (res.ok) {
+      const d = await res.clone().json().catch(() => ({}));
+      if (d.dropped?.length) toast.show('⚠️ บันทึกงานแล้ว แต่ยังเก็บกำหนดส่ง/รายละเอียดไม่ได้ (ต้องรัน tasks_due.sql และ tasks_details.sql ใน Supabase)', { tone: 'warn', duration: 8000 });
+      load(); return;
+    }
     const data = await res.json().catch(() => ({}));
     if (data.error === 'quota_reached') {
       setStatus(`✅ คุณมีงานครบ ${data.limit} รายการแล้วครับ (สูงสุดสำหรับ Free) ลองลบงานเก่าที่ไม่ใช้แล้ว หรืออัปเกรด Premium เพื่อเพิ่มได้ไม่จำกัด`);
