@@ -6,7 +6,7 @@
 // there — no upload button here, matching how notes/calendar/etc. are
 // also created via the bot and only edited/managed here.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { DashNav } from '../_components';
 import { apiGet, ErrorState, ListSkeleton, useToast } from '../_ui';
@@ -48,15 +48,36 @@ function previewSources(f, size) {
   }
   return list;
 }
-function Tile({ f, onOpen }) {
+// Long-press (or the "เลือก" button) starts multi-select; in select mode a tap toggles a tile.
+function Tile({ f, selecting, selected, onOpen, onToggle, onStartSelect }) {
   const [failed, setFailed] = useState(false);
+  const press = useRef(null);
+  const longFired = useRef(false);
   const canPreview = previewSources(f, 300).length > 0 && !failed;
+
+  function down(e) {
+    if (selecting || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    longFired.current = false;
+    press.current = { x: e.clientX, y: e.clientY, t: setTimeout(() => { longFired.current = true; press.current = null; try { navigator.vibrate?.(18); } catch { /* ignore */ } onStartSelect(f); }, 450) };
+  }
+  function move(e) { const p = press.current; if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) cancel(); }
+  function cancel() { if (press.current) { clearTimeout(press.current.t); press.current = null; } }
+  useEffect(() => cancel, []);
+
+  function click(e) {
+    if (longFired.current) { longFired.current = false; e.preventDefault(); return; }   // the long-press itself must not also "tap"
+    if (selecting) onToggle(f); else onOpen(f);
+  }
+
   return (
-    <button type="button" className={`file-tile${canPreview ? '' : ' is-doc'}${canPreview && f.kind !== 'image' ? ' is-page' : ''}`} onClick={() => onOpen(f)} title={f.file_name} aria-label={f.file_name}>
+    <button type="button" className={`file-tile${canPreview ? '' : ' is-doc'}${canPreview && f.kind !== 'image' ? ' is-page' : ''}${selected ? ' is-selected' : ''}`}
+      onPointerDown={down} onPointerMove={move} onPointerUp={cancel} onPointerCancel={cancel} onPointerLeave={cancel}
+      onContextMenu={e => e.preventDefault()} onClick={click} title={f.file_name} aria-label={f.file_name} aria-pressed={selecting ? !!selected : undefined}>
       {canPreview
         ? <FallbackImg f={f} onAllFailed={() => setFailed(true)} />
         : <span className="ft-icon">{KIND_ICON[f.kind] || '📄'}{extOf(f.file_name) && <small>{extOf(f.file_name)}</small>}</span>}
-      {canPreview && f.kind !== 'image' && <span className="ft-badge">{extOf(f.file_name) || KIND_ICON[f.kind]}</span>}
+      {canPreview && f.kind !== 'image' && !selecting && <span className="ft-badge">{extOf(f.file_name) || KIND_ICON[f.kind]}</span>}
+      {selecting && <span className={`ft-check${selected ? ' on' : ''}`} aria-hidden>{selected ? '✓' : ''}</span>}
       <span className="ft-name">{f.file_name}</span>
     </button>
   );
@@ -112,6 +133,18 @@ function formatDate(iso) {
   try { return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return '-'; }
 }
 
+
+// Download = Drive's direct-download address in a hidden frame (the browser saves it, the page stays put).
+// One file at a time with a short gap — phones allow several downloads in a row after one "allow" prompt.
+const downloadUrl = f => { const id = driveId(f); return id ? `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}` : null; };
+function triggerDownload(url) {
+  const fr = document.createElement('iframe');
+  fr.style.display = 'none'; fr.src = url;
+  document.body.appendChild(fr);
+  setTimeout(() => fr.remove(), 120000);
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 export default function FilesPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
@@ -119,6 +152,8 @@ export default function FilesPage() {
   const [filterKind, setFilterKind] = useState('all');
   const [cols, setCols] = useState(3);
   const [open, setOpen] = useState(null);
+  const [sel, setSel] = useState(null);          // null = normal; Set of ids = select mode
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => { try { const c = parseInt(localStorage.getItem('jarvis-file-cols'), 10); if (c === 3 || c === 4) setCols(c); } catch { /* ignore */ } }, []);
   function chooseCols(c) { setCols(c); try { localStorage.setItem('jarvis-file-cols', String(c)); } catch { /* ignore */ } }
@@ -139,6 +174,45 @@ export default function FilesPage() {
     setOpen(null);
   }
 
+  function startSelect(f) { selectButtonMode.current = !f; setSel(new Set(f ? [f.id] : [])); }
+  function toggle(f) {
+    setSel(prev => {
+      const next = new Set(prev); next.has(f.id) ? next.delete(f.id) : next.add(f.id);
+      return next.size === 0 && !selectButtonMode.current ? null : next;
+    });
+  }
+  const selectButtonMode = useRef(false);
+  const exitSelect = () => { selectButtonMode.current = false; setSel(null); };
+
+  async function deleteSelected() {
+    const ids = [...sel]; if (!ids.length || busy) return;
+    if (!confirm(`ลบ ${ids.length} ไฟล์ถาวรใช่ไหมครับ? กู้คืนไม่ได้แล้ว`)) return;
+    setBusy(true);
+    const done = [];
+    for (let i = 0; i < ids.length; i += 3) {
+      await Promise.all(ids.slice(i, i + 3).map(async id => {
+        try { const r = await fetch(`/api/files/${id}`, { method: 'DELETE' }); if (r.ok) done.push(id); } catch { /* counted as failed */ }
+      }));
+    }
+    setData(prev => ({ ...prev, files: prev.files.filter(x => !done.includes(x.id)) }));
+    setBusy(false); exitSelect();
+    toast.show(done.length === ids.length ? `🗑️ ลบ ${done.length} ไฟล์แล้ว` : `ลบได้ ${done.length} จาก ${ids.length} ไฟล์ — ที่เหลือลบไม่สำเร็จ`, done.length === ids.length ? undefined : { tone: 'error' });
+  }
+
+  async function downloadSelected() {
+    const chosen = (data?.files || []).filter(x => sel?.has(x.id)); if (!chosen.length || busy) return;
+    setBusy(true);
+    let n = 0, skipped = 0;
+    for (const f of chosen) {
+      const url = downloadUrl(f);
+      if (!url) { skipped++; continue; }
+      triggerDownload(url); n++;
+      await sleep(900);
+    }
+    setBusy(false);
+    toast.show(n ? `⬇️ เริ่มดาวน์โหลด ${n} ไฟล์ — ดูในแถบแจ้งเตือนหรือโฟลเดอร์ดาวน์โหลด${skipped ? ` (ข้าม ${skipped} ไฟล์ที่ไม่มีลิงก์)` : ''}` : 'ไฟล์ที่เลือกไม่มีลิงก์ดาวน์โหลด', n ? undefined : { tone: 'error' });
+  }
+
   const files = data?.files || [];
   const shown = filterKind === 'all' ? files : files.filter(f => f.kind === filterKind);
   const kindCounts = files.reduce((acc, f) => { acc[f.kind] = (acc[f.kind] || 0) + 1; return acc; }, {});
@@ -148,11 +222,25 @@ export default function FilesPage() {
       <DashNav />
       <div className="page-head">
         <h1 className="page-title" style={{ marginBottom: 0 }}>📁 ไฟล์ของฉัน</h1>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        {sel === null && files.length > 0 && <button type="button" className="glass-btn-outline" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => { selectButtonMode.current = true; startSelect(null); }}>☑️ เลือก</button>}
         <div className="seg" role="group" aria-label="จำนวนต่อแถว">
           <button type="button" className={cols === 3 ? 'active' : ''} onClick={() => chooseCols(3)} aria-label="3 ต่อแถว">▦ 3</button>
           <button type="button" className={cols === 4 ? 'active' : ''} onClick={() => chooseCols(4)} aria-label="4 ต่อแถว">▦ 4</button>
         </div>
+        </div>
       </div>
+
+      {sel !== null && (
+        <div className="file-selbar" role="toolbar" aria-label="เลือกหลายไฟล์">
+          <button type="button" className="fsb-x" onClick={exitSelect} aria-label="ยกเลิกการเลือก">✕</button>
+          <b className="fsb-count">เลือก {sel.size}</b>
+          <button type="button" className="fsb-btn" onClick={() => setSel(new Set(sel.size === shown.length ? [] : shown.map(x => x.id)))}>{sel.size === shown.length && shown.length > 0 ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
+          <span style={{ flex: 1 }} />
+          <button type="button" className="fsb-btn" disabled={!sel.size || busy} onClick={downloadSelected}>⬇️ ดาวน์โหลด</button>
+          <button type="button" className="fsb-btn danger" disabled={!sel.size || busy} onClick={deleteSelected}>🗑️ ลบ</button>
+        </div>
+      )}
 
       {error && <ErrorState onRetry={() => { setData(null); load(); }} />}
       {!error && data === null && <ListSkeleton rows={3} height={110} />}
@@ -173,7 +261,7 @@ export default function FilesPage() {
           {shown.length === 0 && <div className="glass-card"><p className="muted">ยังไม่มีไฟล์ครับ ส่งรูปหรือไฟล์เข้าแชทกับ Jarvis ได้เลย</p></div>}
 
           <div className="file-grid" style={{ '--cols': cols, '--cols-wide': cols + 2 }}>
-            {shown.map(f => <Tile key={f.id} f={f} onOpen={setOpen} />)}
+            {shown.map(f => <Tile key={f.id} f={f} selecting={sel !== null} selected={!!sel?.has(f.id)} onOpen={setOpen} onToggle={toggle} onStartSelect={startSelect} />)}
           </div>
         </>
       )}
