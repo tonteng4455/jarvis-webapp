@@ -62,7 +62,14 @@ export function seed() {
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', kind: 'reminder', scope: 'event', trigger: 'ประชุมใหญ่', value: '1440', source: 'taught', created_at: now },
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', kind: 'category', scope: 'note', trigger: 'ลูกค้า', value: 'work', source: 'learned', created_at: now },
     ],
-    user_files: [],
+    user_files: [
+      ...['icon-512.png', 'apple-touch-icon.png', 'icon-192.png', 'logo-head.png', 'icon-maskable-512.png', 'favicon-48.png', 'icon-512.png', 'icon-192.png'].map((n, i) => (
+        { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', file_name: `image_17921523${i}0.jpg`, kind: 'image', mime_type: 'image/jpeg', size_bytes: 150000 + i * 9000, storage: 'r2', public_url: '/' + n, created_at: now }
+      )),
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', file_name: 'รูปที่โหลดไม่ได้.jpg', kind: 'image', mime_type: 'image/jpeg', size_bytes: 99000, storage: 'drive', drive_file_id: 'nope', public_url: 'https://drive.google.com/uc?export=view&id=nope', created_at: now },
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', file_name: 'ใบเสนอราคา-ตุลาคม.pdf', kind: 'file', mime_type: 'application/pdf', size_bytes: 420000, storage: 'drive', public_url: 'https://example.invalid/doc', created_at: now },
+      { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', file_name: 'รายชื่อ.xlsx', kind: 'file', mime_type: 'application/vnd.ms-excel', size_bytes: 62000, storage: 'drive', public_url: 'https://example.invalid/xls', created_at: now },
+    ],
     waitlist: [],
   };
 }

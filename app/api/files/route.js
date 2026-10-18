@@ -16,7 +16,7 @@ export async function GET() {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from('user_files')
-    .select('id, file_name, kind, mime_type, size_bytes, storage, public_url, created_at')
+    .select('id, file_name, kind, mime_type, size_bytes, storage, public_url, drive_file_id, created_at')
     .eq('user_id', session.lineUserId)
     .order('created_at', { ascending: false })
     .limit(500);
