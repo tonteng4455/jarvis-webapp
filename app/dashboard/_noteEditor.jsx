@@ -723,7 +723,7 @@ export function NoteEditorPanel({
         <div className="ne-cat"><CategorySelect options={categories} value={category} onChange={onCategory} /></div>
         <ToolBtn className="ne-push" title="เลิกทำ (Ctrl+Z)" disabled={!info.canUndo} onClick={() => bodyRef.current?.undo()}>↶</ToolBtn>
         <ToolBtn title="ทำซ้ำ (Ctrl+Shift+Z)" disabled={!info.canRedo} onClick={() => bodyRef.current?.redo()}>↷</ToolBtn>
-        {onConvert && <ToolBtn title="เปลี่ยนโน้ตนี้เป็นงาน (ตั้งกำหนดส่ง)" onClick={onConvert}>✅</ToolBtn>}
+        {onConvert && <ToolBtn title="เปลี่ยนโน้ตนี้เป็นงานหรือนัดหมาย" onClick={onConvert}>🔄</ToolBtn>}
         <ToolBtn title="สี" onClick={() => setPickerOpen(v => !v)} active={pickerOpen}>🎨</ToolBtn>
         <ToolBtn title="แชร์/คัดลอกข้อความ" onClick={() => shareText({ title: titleValue, text: contentRef.current }, toast)}>📤</ToolBtn>
       </div>

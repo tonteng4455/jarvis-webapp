@@ -819,3 +819,11 @@ html[data-fs="lg"] { font-size: 18px; }
 .file-selbar .fsb-btn { border: 1px solid var(--border-strong); background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: 0.78rem; font-weight: 600; min-height: 38px; padding: 0 0.7rem; border-radius: 10px; cursor: pointer; white-space: nowrap; }
 .file-selbar .fsb-btn.danger { color: var(--danger); }
 .file-selbar .fsb-btn:disabled { opacity: 0.45; cursor: default; }
+.convert-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 0.8rem 1rem; border-radius: 14px; border: 1px solid var(--border-strong); background: var(--surface-muted); color: var(--text-primary); font: inherit; cursor: pointer; }
+.convert-choice b { font-size: 1rem; }
+.convert-choice span { font-size: 0.8rem; }
+.convert-choice:hover { border-color: var(--accent); }
+.note-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.note-row.is-selected { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-soft); }
+.note-check { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 0.8rem; font-weight: 800; }
+.note-check.on { background: var(--accent); border-color: var(--accent); }

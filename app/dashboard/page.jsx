@@ -9,8 +9,11 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, NOTE_CATEGORIES } from './_components';
 import { NoteEditorPanel, EditorOverlay, useNoteImages, COLORS, colorBg } from './_noteEditor';
-import { ConvertToTaskSheet } from './_taskEditor';
+import { ConvertToTaskSheet, ConvertToEventSheet, splitNoteForTask } from './_taskEditor';
+import { ConvertChooser, convertItem } from './_convert';
 import { previewText } from '../../lib/noteBlocks';
+import { noteToMarkdown, notesToMarkdownFiles, notesToCombinedMarkdown, safeFileName } from '../../lib/noteMarkdown';
+import { createZip } from '../../lib/zip';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from './_ui';
 
 
@@ -109,9 +112,11 @@ function Composer({ onCreate, onEditingChange, categories, openSignal }) {
 // used for creating a new note — big title input, auto-grow textarea,
 // category select, full toolbar — instead of editing cramped inside
 // the small row. Saves on "เสร็จสิ้น" or clicking away. ---
-function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHandlePointerDown, isDragging, autoEditId, categories }) {
+function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHandlePointerDown, isDragging, autoEditId, categories, selection }) {
   const [editing, setEditing] = useState(false);
-  const [converting, setConverting] = useState(false);
+  const [converting, setConverting] = useState(null);   // null | 'choose' | 'task' | 'event'
+  const press = useRef(null);
+  const longFired = useRef(false);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [category, setCategory] = useState(note.category || 'general');
@@ -193,6 +198,20 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
 
   const isArchived = note.archived;
 
+  // Long-press a row (or use the "เลือก" button) to select several notes; while selecting, a tap toggles.
+  function rowDown(e) {
+    if (!selection || selection.active || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    longFired.current = false;
+    press.current = { x: e.clientX, y: e.clientY, t: setTimeout(() => { longFired.current = true; press.current = null; try { navigator.vibrate?.(18); } catch { /* ignore */ } selection.start(note); }, 450) };
+  }
+  function rowMove(e) { const p = press.current; if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) rowCancel(); }
+  function rowCancel() { if (press.current) { clearTimeout(press.current.t); press.current = null; } }
+  useEffect(() => rowCancel, []);
+  function rowClick() {
+    if (longFired.current) { longFired.current = false; return; }
+    if (selection?.active) selection.toggle(note); else setEditing(true);
+  }
+
   if (editing) {
     return (
       <EditorOverlay>
@@ -203,23 +222,40 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
             pinned={!!note.pinned} onPin={() => onUpdate(note.id, { pinned: !note.pinned })}
             archived={!!isArchived} onArchive={() => onUpdate(note.id, { archived: !isArchived })}
             onDelete={() => onDelete(note.id)}
-            onConvert={onConvert ? () => { persist(); setConverting(true); } : undefined}
+            onConvert={onConvert ? () => { persist(); setConverting('choose'); } : undefined}
             color={note.color || 'default'} onColor={key => onUpdate(note.id, { color: key })}
             onDone={saveEdit} doneDisabled={imgState.uploading > 0} />
         </div>
-        {converting && (
-          <ConvertToTaskSheet note={{ ...note, title, content }} onCancel={() => setConverting(false)}
-            onConfirm={async payload => { const ok = await onConvert(note, payload); if (ok) { setConverting(false); setEditing(false); } }} />
+        {converting === 'choose' && (
+          <ConvertChooser from="note" onCancel={() => setConverting(null)} onPick={to => setConverting(to)} />
         )}
+        {converting === 'task' && (
+          <ConvertToTaskSheet note={{ ...note, title, content }} onCancel={() => setConverting(null)}
+            onConfirm={async payload => { const ok = await onConvert(note, 'task', payload, payload.task_name); if (ok) { setConverting(null); setEditing(false); } }} />
+        )}
+        {converting === 'event' && (() => {
+          const src = splitNoteForTask({ ...note, title, content });
+          return (
+            <ConvertToEventSheet source={{ title: src.name, details: src.details, due: { date: '', time: '' } }}
+              heading="📅 เปลี่ยนโน้ตเป็นนัดหมาย" detailsLabel="รายละเอียด (จากเนื้อหาโน้ต)"
+              footnote="โน้ตเดิมจะถูกลบหลังสร้างนัด (กด “เลิกทำ” ได้ 6 วินาที) และนัดจะถูกส่งไป Google Calendar"
+              onCancel={() => setConverting(null)}
+              onConfirm={async payload => { const ok = await onConvert(note, 'event', payload, payload.title); if (ok) { setConverting(null); setEditing(false); } }} />
+          );
+        })()}
       </EditorOverlay>
     );
   }
 
   return (
-    <div className="note-row" ref={ref} data-note-id={note.id}
-      onClick={() => setEditing(true)} style={{ opacity: isDragging ? 0.4 : 1 }}>
-      <span className="note-drag-handle" title="ลากเพื่อสลับตำแหน่ง"
-        onPointerDown={onHandlePointerDown} onClick={e => e.stopPropagation()}>⠿</span>
+    <div className={`note-row${selection?.ids?.has(note.id) ? ' is-selected' : ''}`} ref={ref} data-note-id={note.id}
+      onPointerDown={rowDown} onPointerMove={rowMove} onPointerUp={rowCancel} onPointerCancel={rowCancel} onPointerLeave={rowCancel}
+      onContextMenu={e => { if (selection) e.preventDefault(); }}
+      onClick={rowClick} style={{ opacity: isDragging ? 0.4 : 1 }}>
+      {selection?.active
+        ? <span className={`note-check${selection.ids.has(note.id) ? ' on' : ''}`} aria-hidden>{selection.ids.has(note.id) ? '✓' : ''}</span>
+        : <span className="note-drag-handle" title="ลากเพื่อสลับตำแหน่ง"
+        onPointerDown={e => { e.stopPropagation(); rowCancel(); onHandlePointerDown(e); }} onClick={e => e.stopPropagation()}>⠿</span>}
       <div className="note-row-accent" style={{ background: colorBg(note.color) === 'var(--note-default)' ? 'var(--border-strong)' : colorBg(note.color) }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         {note.title && <div style={{ fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note.title}</div>}
@@ -245,7 +281,7 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
 // vertical stack (rather than the earlier masonry grid) also makes
 // target-index detection unambiguous — no column-jumping to reason
 // about, just "which row am I closest to vertically".
-function DraggableSection({ notes, onUpdate, onDelete, onConvert, onEditingChange, onReorder, onDragStateChange, autoEditId, categories }) {
+function DraggableSection({ notes, onUpdate, onDelete, onConvert, onEditingChange, onReorder, onDragStateChange, autoEditId, categories, selection }) {
   const containerRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
   const dragState = useRef(null); // { fromIndex, pointerId }
@@ -307,7 +343,7 @@ function DraggableSection({ notes, onUpdate, onDelete, onConvert, onEditingChang
     <div className="list-stack" ref={containerRef}
       onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}>
       {notes.map((n, i) => (
-        <NoteCard onConvert={onConvert}
+        <NoteCard onConvert={onConvert} selection={selection}
           key={n.id}
           note={n}
           onUpdate={onUpdate}
@@ -436,32 +472,61 @@ function NotesPageInner() {
     });
   }
 
-  // Note → task: create the task (name, details, due date), then remove the note with the usual
-  // 6-second undo — undoing brings the note back AND removes the task again.
-  async function convertToTask(note, payload) {
-    let res;
-    try {
-      res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    } catch { toast.show('❌ สร้างงานไม่สำเร็จ', { tone: 'error' }); return false; }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.task) { toast.show(data.error === 'quota_reached' ? '❌ งานครบจำนวนที่สร้างได้แล้ว' : '❌ สร้างงานไม่สำเร็จ', { tone: 'error' }); return false; }
-    const taskId = data.task.id;
-    toast.undoableDelete({
-      id: note.id,
-      label: `เปลี่ยนโน้ตเป็นงาน “${payload.task_name.slice(0, 24)}” แล้ว`,
-      remove: () => setNotes(prev => prev?.filter(n => n.id !== note.id)),
-      commit: async () => {
-        try {
-          const r = await fetch(`/api/notes/${note.id}`, { method: 'DELETE', keepalive: true });
-          if (!r.ok) throw new Error(String(r.status));
-        } catch { toast.show('❌ ลบโน้ตเดิมไม่สำเร็จ', { tone: 'error' }); load(); }
-      },
-      restore: () => {
-        fetch(`/api/tasks/${taskId}`, { method: 'DELETE' }).catch(() => {});
-        setNotes(prev => prev ? [...prev, note].sort((a, b) => (b.pinned - a.pinned) || ((a.sort_order ?? 1e9) - (b.sort_order ?? 1e9))) : prev);
-      },
+  // Note → task / appointment: create the new item, then remove the note with the usual 6-second undo —
+  // undoing brings the note back AND removes what was just created.
+  function convertNote(note, toKind, payload, title) {
+    return convertItem({
+      toast, fromKind: 'note', toKind, item: note, title, payload,
+      removeLocal: () => setNotes(prev => prev?.filter(n => n.id !== note.id)),
+      restoreLocal: () => setNotes(prev => prev ? [...prev, note].sort((a, b) => (b.pinned - a.pinned) || ((a.sort_order ?? 1e9) - (b.sort_order ?? 1e9))) : prev),
+      reload: load,
     });
-    return true;
+  }
+
+  // ---- select several notes → download as .md / delete ----
+  const [sel, setSel] = useState(null);          // null = normal; Set of ids = select mode
+  const [mdChoice, setMdChoice] = useState(false);
+  const selButton = useRef(false);
+  const selection = {
+    active: sel !== null, ids: sel,
+    start: note => { selButton.current = !note; setSel(new Set(note ? [note.id] : [])); },
+    toggle: note => setSel(prev => { const next = new Set(prev); next.has(note.id) ? next.delete(note.id) : next.add(note.id); return next.size === 0 && !selButton.current ? null : next; }),
+  };
+  const exitSelect = () => { selButton.current = false; setSel(null); setMdChoice(false); };
+  const chosenNotes = () => (notes || []).filter(n => sel?.has(n.id));
+
+  function saveBlob(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  }
+  function downloadMd(mode) {
+    const list = chosenNotes(); if (!list.length) return;
+    const enc = new TextEncoder();
+    if (list.length === 1) {
+      const f = notesToMarkdownFiles(list)[0];
+      saveBlob(new Blob([f.text], { type: 'text/markdown;charset=utf-8' }), f.name);
+    } else if (mode === 'zip') {
+      const files = notesToMarkdownFiles(list).map(f => ({ name: f.name, data: enc.encode(f.text) }));
+      saveBlob(new Blob([createZip(files)], { type: 'application/zip' }), `jarvis-notes-${new Date().toISOString().slice(0, 10)}.zip`);
+    } else {
+      saveBlob(new Blob([notesToCombinedMarkdown(list)], { type: 'text/markdown;charset=utf-8' }), `jarvis-notes-${new Date().toISOString().slice(0, 10)}.md`);
+    }
+    toast.show(`⬇️ ดาวน์โหลด ${list.length} โน้ตเป็น Markdown แล้ว`);
+    exitSelect();
+  }
+  async function deleteSelected() {
+    const ids = [...(sel || [])]; if (!ids.length) return;
+    if (!confirm(`ลบ ${ids.length} โน้ตใช่ไหมครับ? (ลบแล้วกู้คืนไม่ได้)`)) return;
+    const done = [];
+    for (let i = 0; i < ids.length; i += 3) {
+      await Promise.all(ids.slice(i, i + 3).map(async id => {
+        try { const r = await fetch(`/api/notes/${id}`, { method: 'DELETE' }); if (r.ok) done.push(id); } catch { /* counted as failed */ }
+      }));
+    }
+    setNotes(prev => prev?.filter(n => !done.includes(n.id)));
+    exitSelect();
+    toast.show(done.length === ids.length ? `🗑️ ลบ ${done.length} โน้ตแล้ว` : `ลบได้ ${done.length} จาก ${ids.length} โน้ต — ที่เหลือลบไม่สำเร็จ`, done.length === ids.length ? undefined : { tone: 'error' });
   }
 
   async function reorderSection(reordered, sectionIds, opts = {}) {
@@ -516,10 +581,34 @@ function NotesPageInner() {
               <span className={`dash-nav-item${viewMode === 'all' ? ' active' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setViewMode('all')}>📌 ทั้งหมด</span>
               <span className={`dash-nav-item${viewMode === 'grouped' ? ' active' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setViewMode('grouped')}>🗂️ แยกตามหมวด</span>
             </div>
+            {sel === null && (notes?.length || 0) > 0 && <button className="glass-btn-outline" onClick={() => selection.start(null)}>☑️ เลือก</button>}
             <button className="glass-btn-outline" onClick={() => { const v = !showArchived; setShowArchived(v); load(v); }}>
               {showArchived ? '⬅️ กลับไปโน้ตปกติ' : '🗄️ ดูคลังเก็บ'}
             </button>
           </div>
+
+          {sel !== null && (
+            <div className="file-selbar" role="toolbar" aria-label="เลือกหลายโน้ต">
+              <button type="button" className="fsb-x" onClick={exitSelect} aria-label="ยกเลิกการเลือก">✕</button>
+              <b className="fsb-count">เลือก {sel.size}</b>
+              <button type="button" className="fsb-btn" onClick={() => setSel(new Set(sel.size === filtered.length ? [] : filtered.map(n => n.id)))}>{sel.size === filtered.length && filtered.length > 0 ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
+              <span style={{ flex: 1 }} />
+              <button type="button" className="fsb-btn" disabled={!sel.size} onClick={() => (sel.size === 1 ? downloadMd('one') : setMdChoice(true))}>⬇️ .md</button>
+              <button type="button" className="fsb-btn danger" disabled={!sel.size} onClick={deleteSelected}>🗑️ ลบ</button>
+            </div>
+          )}
+          {mdChoice && (
+            <div className="convert-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setMdChoice(false); }}>
+              <div className="convert-sheet" role="dialog" aria-label="ดาวน์โหลดเป็น Markdown">
+                <h2 className="convert-title">⬇️ ดาวน์โหลด {sel.size} โน้ตเป็น .md</h2>
+                <div style={{ display: 'grid', gap: '0.6rem' }}>
+                  <button type="button" className="convert-choice" data-mode="one" onClick={() => downloadMd('one')}><b>📄 รวมเป็นไฟล์เดียว</b><span className="muted">ทุกโน้ตอยู่ในไฟล์ .md เดียว คั่นด้วยเส้น</span></button>
+                  <button type="button" className="convert-choice" data-mode="zip" onClick={() => downloadMd('zip')}><b>🗜️ แยกไฟล์ (บีบเป็น .zip)</b><span className="muted">โน้ตละไฟล์ ตั้งชื่อตามหัวข้อ</span></button>
+                </div>
+                <button type="button" className="glass-btn-outline" style={{ width: '100%', marginTop: '0.8rem' }} onClick={() => setMdChoice(false)}>ยกเลิก</button>
+              </div>
+            </div>
+          )}
 
           {!showArchived && <Composer onCreate={createNote} onEditingChange={setComposerEditing} categories={categoryOptions} openSignal={openSignal} />}
 
@@ -532,13 +621,13 @@ function NotesPageInner() {
               {pinned.length > 0 && (
                 <>
                   <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>📌 ปักหมุด</div>
-                  <DraggableSection notes={pinned} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertToTask} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
+                  <DraggableSection notes={pinned} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={selection} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                     onDragStateChange={(v) => { draggingRef.current = v; }}
                     onReorder={(r, opts) => reorderSection(r, new Set(pinned.map(n => n.id)), opts)} />
                   {others.length > 0 && <div className="text-white-muted" style={{ margin: '1rem 0 0.5rem', fontWeight: 600 }}>อื่นๆ</div>}
                 </>
               )}
-              <DraggableSection notes={others} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertToTask} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
+              <DraggableSection notes={others} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={selection} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                 onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r, opts) => reorderSection(r, new Set(others.map(n => n.id)), opts)} />
             </>
@@ -549,7 +638,7 @@ function NotesPageInner() {
               <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>
                 🏷️ {categoryLabel(category)} <span style={{ opacity: 0.7 }}>({catNotes.length})</span>
               </div>
-              <DraggableSection notes={catNotes} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertToTask} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
+              <DraggableSection notes={catNotes} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={selection} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                 onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r, opts) => reorderSection(r, new Set(catNotes.map(n => n.id)), opts)} />
             </div>

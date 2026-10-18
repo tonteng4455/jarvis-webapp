@@ -9,6 +9,7 @@ import { DashNav } from '../_components';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from '../_ui';
 import { DueChip, DuePicker } from '../_due';
 import { TaskEditorModal, ConvertToEventSheet, PRIORITY_COLOR, PRIORITY_LABEL } from '../_taskEditor';
+import { ConvertChooser, convertItem, taskToNotePayload } from '../_convert';
 import { previewText } from '../../../lib/noteBlocks';
 import { dueState, sortTasks } from '../../../lib/taskDue';
 
@@ -101,7 +102,7 @@ function TaskRow({ task, onUpdate, onDelete, onOpen, onConvert, autoEditId }) {
         ) : (
           <button className="note-icon-btn" onClick={() => onUpdate(task.id, { archived: true })}>🗄️ เก็บ</button>
         )}
-        {!task.archived && <button className="note-icon-btn" onClick={() => onConvert(task)}>🔄 เป็นนัด</button>}
+        {!task.archived && <button className="note-icon-btn" onClick={() => onConvert(task)}>🔄 เปลี่ยนเป็น…</button>}
         <button className="note-icon-btn" onClick={() => onDelete(task)}>🗑️ ลบ</button>
       </div>
       {dueOpen && <DuePicker task={task} onSave={patch => onUpdate(task.id, patch)} onClose={() => setDueOpen(false)} />}
@@ -124,7 +125,7 @@ function TasksPageInner() {
   const [error, setError] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [status, setStatus] = useState(null);
-  const [convertingTask, setConvertingTask] = useState(null);
+  const [convert, setConvert] = useState(null);     // { task, to: null | 'event' } — the "เปลี่ยนเป็น…" flow
   const [editor, setEditor] = useState(null);          // null | 'new' | the task being edited
   const searchParams = useSearchParams();
   const autoEditId = searchParams.get('id');
@@ -182,32 +183,15 @@ function TasksPageInner() {
     });
   }
 
-  // Task → appointment: create the event (the server syncs it to Google), then remove the task with the usual
-  // 6-second undo — undoing brings the task back AND cancels the new appointment again.
-  async function convertToEvent(task, payload) {
-    let res;
-    try {
-      res = await fetch('/api/calendar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    } catch { toast.show('❌ สร้างนัดหมายไม่สำเร็จ', { tone: 'error' }); return false; }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.event) { toast.show('❌ สร้างนัดหมายไม่สำเร็จ', { tone: 'error' }); return false; }
-    const eventId = data.event.id;
-    toast.undoableDelete({
-      id: task.id,
-      label: `เปลี่ยนงานเป็นนัด “${payload.title.slice(0, 24)}” แล้ว`,
-      remove: () => setTasks(prev => prev?.filter(t => t.id !== task.id)),
-      commit: async () => {
-        try {
-          const r = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE', keepalive: true });
-          if (!r.ok) throw new Error(String(r.status));
-        } catch { toast.show('❌ ลบงานเดิมไม่สำเร็จ', { tone: 'error' }); load(); }
-      },
-      restore: () => {
-        fetch(`/api/calendar/${eventId}`, { method: 'DELETE' }).catch(() => {});
-        setTasks(prev => prev ? sortTasks([...prev, task]) : prev);
-      },
+  // Task → appointment / note: create the new item, then remove the task with the usual 6-second undo —
+  // undoing brings the task back AND removes what was just created.
+  function convertTask(task, toKind, payload, title) {
+    return convertItem({
+      toast, fromKind: 'task', toKind, item: task, title, payload,
+      removeLocal: () => setTasks(prev => prev?.filter(t => t.id !== task.id)),
+      restoreLocal: () => setTasks(prev => prev ? sortTasks([...prev, task]) : prev),
+      reload: load,
     });
-    return true;
   }
 
   return (
@@ -225,7 +209,7 @@ function TasksPageInner() {
       {!error && tasks === null && <ListSkeleton />}
       {tasks?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showArchived ? 'ยังไม่มีงานในคลังเก็บ' : 'ไม่มีงานค้างครับ 🎉'}</p></div>}
       <div className="list-stack">
-        {tasks?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} onOpen={setEditor} onConvert={setConvertingTask} autoEditId={autoEditId} />)}
+        {tasks?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} onOpen={setEditor} onConvert={t => setConvert({ task: t, to: null })} autoEditId={autoEditId} />)}
       </div>
       {!showArchived && <Fab onClick={() => setEditor('new')} label="เพิ่มงาน" />}
       {editor && (
@@ -233,11 +217,18 @@ function TasksPageInner() {
           onCreate={createTask} onUpdate={updateTask} onClose={() => setEditor(null)}
           onArchive={t => { updateTask(t.id, { archived: !t.archived }); setEditor(null); }}
           onDelete={t => { setEditor(null); deleteTask(t); }}
-          onConvertToEvent={convertToEvent} />
+          onConvert={t => setConvert({ task: t, to: null })} />
       )}
-      {convertingTask && (
-        <ConvertToEventSheet task={convertingTask} onCancel={() => setConvertingTask(null)}
-          onConfirm={async payload => { const ok = await convertToEvent(convertingTask, payload); if (ok) setConvertingTask(null); return ok; }} />
+      {convert && !convert.to && (
+        <ConvertChooser from="task" onCancel={() => setConvert(null)}
+          onPick={async to => {
+            if (to === 'note') { const ok = await convertTask(convert.task, 'note', taskToNotePayload(convert.task), convert.task.task_name); setConvert(null); return ok; }
+            setConvert({ ...convert, to });
+          }} />
+      )}
+      {convert?.to === 'event' && (
+        <ConvertToEventSheet task={convert.task} onCancel={() => setConvert(null)}
+          onConfirm={async payload => { const ok = await convertTask(convert.task, 'event', payload, payload.title); if (ok) setConvert(null); return ok; }} />
       )}
     </main>
   );

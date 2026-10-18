@@ -39,7 +39,7 @@ export function TaskEditorPanel({
     <>
       <div className="ne-toolbar" role="toolbar" aria-label="เครื่องมืองาน">
         {onArchive && <ToolBtn title={archived ? 'ย้ายกลับไปงานปกติ' : 'เก็บเข้าคลัง'} onClick={onArchive}>{archived ? '↩️' : '🗄️'}</ToolBtn>}
-        {onConvert && <ToolBtn title="เปลี่ยนเป็นนัดหมาย" onClick={onConvert}>🔄</ToolBtn>}
+        {onConvert && <ToolBtn title="เปลี่ยนงานนี้เป็นนัดหมายหรือโน้ต" onClick={onConvert}>🔄</ToolBtn>}
         {onDelete && <ToolBtn title={isNew ? 'ทิ้งร่างนี้' : 'ลบ (เลิกทำได้)'} onClick={onDelete}>🗑️</ToolBtn>}
         <span className="ne-spacer" />
         <ToolBtn title={`รายการ: กดเพื่อสลับ เลขข้อ → จุด → ช่องติ๊ก → ข้อความ (ตอนนี้: ${LIST_LABEL[info.type] || 'ข้อความ'})`} active={info.list} className="ne-list" onClick={() => bodyRef.current?.cycle()}>{LIST_GLYPH[info.type] || '☰'}</ToolBtn>
@@ -74,9 +74,8 @@ export function TaskEditorPanel({
 // ---- the editor as a full-screen modal: opens for an existing task or a new one ----
 // Existing task: saved shortly after you stop typing, on ✓, on click-away and when the page is hidden.
 // New task: created on ✓ / click-away / page hidden once it has a name; 🗑️ throws the draft away.
-export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, onArchive, onConvertToEvent }) {
+export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, onArchive, onConvert }) {
   const isNew = !task;
-  const [converting, setConverting] = useState(false);
   const [name, setName] = useState(task?.task_name || '');
   const [details, setDetails] = useState(task?.details || '');
   const [due, setDue] = useState(() => dueInputs(task));
@@ -139,13 +138,9 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, o
           archived={!!task?.archived}
           onArchive={!isNew ? () => { finished.current = true; persistRef.current(); onArchive(task); } : undefined}
           onDelete={isNew ? discard : () => { finished.current = true; onDelete(task); }}
-          onConvert={!isNew && onConvertToEvent ? () => { persistRef.current(); setConverting(true); } : undefined}
+          onConvert={!isNew && onConvert ? () => { persistRef.current(); finished.current = true; onClose(); onConvert({ ...task, task_name: name.trim() || task.task_name, details, ...(buildDue(due.date, due.time) || { due_at: null, due_all_day: false }) }); } : undefined}
           onDone={done} />
       </div>
-      {converting && (
-        <ConvertToEventSheet task={{ ...task, task_name: name, details, ...(buildDue(due.date, due.time) || {}) }} onCancel={() => setConverting(false)}
-          onConfirm={async payload => { const ok = await onConvertToEvent(task, payload); if (ok) { finished.current = true; setConverting(false); onClose(); } }} />
-      )}
     </EditorOverlay>
   );
 }
@@ -218,9 +213,12 @@ const EVENT_REMINDERS = [
   { value: '30', label: '⏰ 30 นาทีก่อน' }, { value: '60', label: '⏰ 1 ชม.ก่อน' }, { value: '1440', label: '⏰ 1 วันก่อน' },
 ];
 
-export function ConvertToEventSheet({ task, onCancel, onConfirm }) {
-  const pre = dueInputs(task);
-  const [title, setTitle] = useState(task.task_name || '');
+// `source` = { title, details, due: { date, time } } — from a task (prefilled from its due date) or from a note.
+export function eventSourceFromTask(task) { return { title: task.task_name || '', details: task.details || '', due: dueInputs(task) }; }
+export function ConvertToEventSheet({ task, source, heading = '📅 เปลี่ยนงานเป็นนัดหมาย', detailsLabel = 'รายละเอียด (จากงาน)', footnote = 'งานเดิมจะถูกลบหลังสร้างนัด (กด “เลิกทำ” ได้ 6 วินาที) และนัดจะถูกส่งไป Google Calendar', onCancel, onConfirm }) {
+  const src = source || eventSourceFromTask(task);
+  const pre = src.due;
+  const [title, setTitle] = useState(src.title || '');
   const [date, setDate] = useState(pre.date);
   const [time, setTime] = useState(pre.time);
   const [reminder, setReminder] = useState('');
@@ -228,7 +226,7 @@ export function ConvertToEventSheet({ task, onCancel, onConfirm }) {
   const [busy, setBusy] = useState(false);
   const d = buildDue(date, time);
   const ready = !!title.trim() && !!date && !!time && !!d && !busy;
-  const description = plainText(task.details || '').trim();
+  const description = plainText(src.details || '').trim();
   async function go() {
     if (!ready) return;
     setBusy(true);
@@ -242,8 +240,8 @@ export function ConvertToEventSheet({ task, onCancel, onConfirm }) {
   }
   return createPortal(
     <div className="convert-overlay" onMouseDown={e => e.stopPropagation()}>
-      <div className="convert-sheet" role="dialog" aria-label="เปลี่ยนงานเป็นนัดหมาย">
-        <h2 className="convert-title">📅 เปลี่ยนงานเป็นนัดหมาย</h2>
+      <div className="convert-sheet" role="dialog" aria-label={heading}>
+        <h2 className="convert-title">{heading}</h2>
         <label className="te-label">หัวเรื่อง</label>
         <input className="glass-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="หัวเรื่องนัด" autoFocus />
         <div className="te-section">
@@ -263,11 +261,11 @@ export function ConvertToEventSheet({ task, onCancel, onConfirm }) {
         </div>
         {description && (
           <div className="te-section">
-            <div className="te-label">รายละเอียด (จากงาน)</div>
+            <div className="te-label">{detailsLabel}</div>
             <div className="convert-preview">{description}</div>
           </div>
         )}
-        <p className="muted" style={{ margin: '0.6rem 0 0' }}>งานเดิมจะถูกลบหลังสร้างนัด (กด “เลิกทำ” ได้ 6 วินาที) และนัดจะถูกส่งไป Google Calendar</p>
+        <p className="muted" style={{ margin: '0.6rem 0 0' }}>{footnote}</p>
         <div className="convert-actions">
           <button type="button" className="glass-btn-outline" onClick={onCancel} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)', background: 'var(--surface-muted)' }}>ยกเลิก</button>
           <button type="button" className="glass-btn" onClick={go} disabled={!ready}>{busy ? 'กำลังสร้าง...' : 'สร้างนัดหมาย'}</button>

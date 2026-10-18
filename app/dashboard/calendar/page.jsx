@@ -10,6 +10,7 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, formatDate } from '../_components';
 import { ConvertToTaskSheet } from '../_taskEditor';
+import { ConvertChooser, convertItem, eventToNotePayload } from '../_convert';
 import { dueInputs } from '../../../lib/taskDue';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from '../_ui';
 
@@ -105,7 +106,7 @@ function EventEditor({ event, onSave, onCancel, onConvert }) {
         <textarea className="glass-input" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="ไม่บังคับ" style={{ resize: 'vertical' }} />
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-        {!isNew && onConvert && <button className="glass-btn-outline" style={{ marginRight: 'auto' }} onClick={() => onConvert(event)}>🔄 เปลี่ยนเป็นงาน</button>}
+        {!isNew && onConvert && <button className="glass-btn-outline" style={{ marginRight: 'auto' }} onClick={() => onConvert(event)}>🔄 เปลี่ยนเป็น…</button>}
         <button className="glass-btn-outline" onClick={onCancel}>ยกเลิก</button>
         <button className="glass-btn" onClick={save} disabled={saving || !title.trim()}>{saving ? 'กำลังบันทึก...' : isNew ? '➕ เพิ่มนัดหมาย' : '✅ บันทึก'}</button>
       </div>
@@ -127,7 +128,7 @@ function EventCard({ e, onEdit, onCancel, onConvert, showDate }) {
         {reminderLabel(e.reminder_minutes) && <span className="muted">{reminderLabel(e.reminder_minutes)}</span>}
         {e.google_event_id && <span className="muted">🔗 ซิงก์ Google Calendar แล้ว</span>}
         <button className="note-icon-btn" style={{ marginLeft: 'auto' }}
-          onClick={(ev) => { ev.stopPropagation(); onConvert(e); }}>🔄 เปลี่ยนเป็นงาน</button>
+          onClick={(ev) => { ev.stopPropagation(); onConvert(e); }}>🔄 เปลี่ยนเป็น…</button>
         <button className="note-icon-btn"
           onClick={(ev) => { ev.stopPropagation(); onCancel(e); }}>🗑️ ยกเลิก</button>
       </div>
@@ -158,7 +159,7 @@ function CalendarPageInner() {
   const [editingId, setEditingId] = useState(deepLinkId || null);
   const [creating, setCreating] = useState(wantsNew);
   const [showPast, setShowPast] = useState(false);
-  const [converting, setConverting] = useState(null);
+  const [convert, setConvert] = useState(null);   // { ev, to: null | 'task' } — the "เปลี่ยนเป็น…" flow
   const touch = useRef(null);
 
   // Remember the user's preferred view across visits.
@@ -235,32 +236,15 @@ function CalendarPageInner() {
     });
   }
 
-  // Appointment → task: create the task (title, place + description as details, the start as due),
-  // then cancel the appointment (also from Google Calendar) with the usual 6-second undo.
-  async function convertToTask(ev, payload) {
-    let res;
-    try {
-      res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    } catch { toast.show('❌ สร้างงานไม่สำเร็จ', { tone: 'error' }); return false; }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.task) { toast.show(data.error === 'quota_reached' ? '❌ งานครบจำนวนที่สร้างได้แล้ว' : '❌ สร้างงานไม่สำเร็จ', { tone: 'error' }); return false; }
-    const taskId = data.task.id;
-    toast.undoableDelete({
-      id: ev.id,
-      label: `เปลี่ยนนัดเป็นงาน “${payload.task_name.slice(0, 24)}” แล้ว`,
-      remove: () => { setEvents(prev => prev?.filter(x => x.id !== ev.id)); setEditingId(null); },
-      commit: async () => {
-        try {
-          const r = await fetch(`/api/calendar/${ev.id}`, { method: 'DELETE', keepalive: true });
-          if (!r.ok) throw new Error(String(r.status));
-        } catch { toast.show('❌ ยกเลิกนัดเดิมไม่สำเร็จ', { tone: 'error' }); load(); }
-      },
-      restore: () => {
-        fetch(`/api/tasks/${taskId}`, { method: 'DELETE' }).catch(() => {});
-        setEvents(prev => prev ? [...prev, ev].sort((a, b) => a.start_time.localeCompare(b.start_time)) : prev);
-      },
+  // Appointment → task / note: create the new item, then cancel the appointment (also from Google Calendar)
+  // with the usual 6-second undo — undoing brings the appointment back AND removes what was just created.
+  function convertEvent(ev, toKind, payload, title) {
+    return convertItem({
+      toast, fromKind: 'event', toKind, item: ev, title, payload,
+      removeLocal: () => { setEvents(prev => prev?.filter(x => x.id !== ev.id)); setEditingId(null); },
+      restoreLocal: () => setEvents(prev => prev ? [...prev, ev].sort((a, b) => a.start_time.localeCompare(b.start_time)) : prev),
+      reload: load,
     });
-    return true;
   }
   const eventAsTask = ev => ({
     name: ev.title || '',
@@ -352,8 +336,8 @@ function CalendarPageInner() {
           {events && dayEvents.length === 0 && !creating && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>ไม่มีนัดหมายในวันนี้ครับ</p></div>}
           <div className="list-stack">
             {dayEvents.map(e => editingId === e.id
-              ? <EventEditor key={e.id} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={setConverting} />
-              : <EventCard key={e.id} e={e} onEdit={setEditingId} onCancel={cancelEvent} onConvert={setConverting} />)}
+              ? <EventEditor key={e.id} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} />
+              : <EventCard key={e.id} e={e} onEdit={setEditingId} onCancel={cancelEvent} onConvert={ev => setConvert({ ev, to: null })} />)}
           </div>
         </>
       )}
@@ -374,18 +358,25 @@ function CalendarPageInner() {
           {events?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showPast ? 'ยังไม่มีนัดหมายที่ผ่านมาแล้วครับ' : 'ไม่มีนัดหมายที่กำลังจะถึงครับ'}</p></div>}
           <div className="list-stack">
             {events?.map(e => editingId === e.id
-              ? <EventEditor key={e.id} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={setConverting} />
-              : <EventCard key={e.id} e={e} showDate onEdit={setEditingId} onCancel={cancelEvent} onConvert={setConverting} />)}
+              ? <EventEditor key={e.id} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} />
+              : <EventCard key={e.id} e={e} showDate onEdit={setEditingId} onCancel={cancelEvent} onConvert={ev => setConvert({ ev, to: null })} />)}
           </div>
         </>
       )}
 
-      {converting && (
-        <ConvertToTaskSheet source={eventAsTask(converting)} initialDue={dueInputs({ due_at: converting.start_time, due_all_day: false })}
+      {convert && !convert.to && (
+        <ConvertChooser from="event" onCancel={() => setConvert(null)}
+          onPick={async to => {
+            if (to === 'note') { const ok = await convertEvent(convert.ev, 'note', eventToNotePayload(convert.ev), convert.ev.title); setConvert(null); return ok; }
+            setConvert({ ...convert, to });
+          }} />
+      )}
+      {convert?.to === 'task' && (
+        <ConvertToTaskSheet source={eventAsTask(convert.ev)} initialDue={dueInputs({ due_at: convert.ev.start_time, due_all_day: false })}
           heading="✅ เปลี่ยนนัดหมายเป็นงาน" detailsLabel="รายละเอียด (จากนัดหมาย)"
           footnote="นัดเดิมจะถูกยกเลิก (รวมถึงใน Google Calendar) หลังสร้างงาน — กด “เลิกทำ” ได้ 6 วินาที"
-          onCancel={() => setConverting(null)}
-          onConfirm={async payload => { const ok = await convertToTask(converting, payload); if (ok) setConverting(null); return ok; }} />
+          onCancel={() => setConvert(null)}
+          onConfirm={async payload => { const ok = await convertEvent(convert.ev, 'task', payload, payload.task_name); if (ok) setConvert(null); return ok; }} />
       )}
       {!creating && !editingId && <Fab onClick={startCreate} label="เพิ่มนัดหมาย" />}
     </main>
