@@ -16,23 +16,47 @@ const KIND_ICON = { image: '🖼️', video: '🎬', audio: '🎵', file: '📄'
 // Drive's own thumbnail endpoint works in an <img> for "anyone with the link" files (the old
 // uc?export=view address is increasingly refused when hot-linked). Fall back through the stored URL,
 // then to the plain icon — a tile never shows a broken-image box.
+const DOC_EXT = new Set(['PDF', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'TXT', 'CSV', 'RTF', 'ODT']);
+const extOf = n => { const m = /\.([A-Za-z0-9]{1,5})$/.exec(n || ''); return m ? m[1].toUpperCase() : ''; };
+function driveId(f) {
+  if (f.drive_file_id) return f.drive_file_id;
+  const m = /\/file\/d\/([^/?#]+)/.exec(f.public_url || '') || /[?&]id=([^&#]+)/.exec(f.public_url || '');
+  return m ? m[1] : null;
+}
+// PDF / Word / Excel / PowerPoint / text / video can be shown by Drive's own viewer.
+function isViewable(f) {
+  if (!driveId(f)) return false;
+  if (f.kind === 'video') return true;
+  if (f.kind !== 'file') return false;
+  const m = String(f.mime_type || '');
+  return DOC_EXT.has(extOf(f.file_name)) || /pdf|msword|officedocument|ms-excel|ms-powerpoint|text\//i.test(m);
+}
+const viewerUrl = f => `https://drive.google.com/file/d/${encodeURIComponent(driveId(f))}/preview`;
+
+// Drive's own thumbnail endpoint works in an <img> for "anyone with the link" files (the old
+// uc?export=view address is increasingly refused when hot-linked); it also renders the first page of
+// PDF / Word / Excel / PowerPoint files. Fall back through the stored URL (images only), then to the
+// plain icon — a tile never shows a broken-image box.
 function previewSources(f, size) {
   const list = [];
-  if (f.kind !== 'image') return list;
-  if (f.drive_file_id) list.push(`https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_file_id)}&sz=w${size}`);
-  if (f.url) list.push(f.url);
+  const id = driveId(f);
+  if (f.kind === 'image') {
+    if (id) list.push(`https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${size}`);
+    if (f.url) list.push(f.url);
+  } else if (isViewable(f)) {
+    list.push(`https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${size}`);
+  }
   return list;
 }
-const extOf = n => { const m = /\.([A-Za-z0-9]{1,5})$/.exec(n || ''); return m ? m[1].toUpperCase() : ''; };
-
 function Tile({ f, onOpen }) {
   const [failed, setFailed] = useState(false);
-  const canPreview = f.kind === 'image' && previewSources(f, 300).length > 0 && !failed;
+  const canPreview = previewSources(f, 300).length > 0 && !failed;
   return (
-    <button type="button" className={`file-tile${canPreview ? '' : ' is-doc'}`} onClick={() => onOpen(f)} title={f.file_name} aria-label={f.file_name}>
+    <button type="button" className={`file-tile${canPreview ? '' : ' is-doc'}${canPreview && f.kind !== 'image' ? ' is-page' : ''}`} onClick={() => onOpen(f)} title={f.file_name} aria-label={f.file_name}>
       {canPreview
         ? <FallbackImg f={f} onAllFailed={() => setFailed(true)} />
         : <span className="ft-icon">{KIND_ICON[f.kind] || '📄'}{extOf(f.file_name) && <small>{extOf(f.file_name)}</small>}</span>}
+      {canPreview && f.kind !== 'image' && <span className="ft-badge">{extOf(f.file_name) || KIND_ICON[f.kind]}</span>}
       <span className="ft-name">{f.file_name}</span>
     </button>
   );
@@ -51,7 +75,9 @@ function PreviewSheet({ f, onClose, onDelete }) {
   return createPortal(
     <div className="convert-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="convert-sheet" role="dialog" aria-label={f.file_name}>
-        {f.kind === 'image' && list.length > 0 && !broken
+        {isViewable(f)
+          ? <iframe src={viewerUrl(f)} title={f.file_name} className="file-viewer" allow="autoplay" referrerPolicy="no-referrer" />
+          : f.kind === 'image' && list.length > 0 && !broken
           ? <PreviewChain list={list} onAllFailed={() => setBroken(true)} alt={f.file_name} />
           : <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', background: 'var(--surface-muted)', borderRadius: 12 }}>{KIND_ICON[f.kind] || '📄'}</div>}
         <div style={{ marginTop: '0.7rem', fontWeight: 600, wordBreak: 'break-all' }}>{f.file_name}</div>

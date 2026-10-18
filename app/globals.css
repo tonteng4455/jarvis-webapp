@@ -804,3 +804,6 @@ html[data-fs="lg"] { font-size: 18px; }
 .file-tile .ft-name { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 5px 3px; font-size: 0.62rem; line-height: 1.2; font-weight: 600; color: #fff; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: linear-gradient(to top, rgba(0,0,0,0.62), rgba(0,0,0,0)); }
 .file-tile.is-doc .ft-name { color: var(--text-primary); background: none; }
 .file-preview-img { width: 100%; max-height: 58vh; object-fit: contain; border-radius: 12px; background: var(--surface-muted); display: block; }
+.file-tile.is-page img { object-position: top; background: #fff; }
+.file-tile .ft-badge { position: absolute; top: 5px; left: 5px; padding: 1px 6px; border-radius: 6px; font-size: 0.58rem; font-weight: 800; letter-spacing: 0.03em; background: rgba(0,0,0,0.62); color: #fff; }
+.file-viewer { width: 100%; height: 62vh; min-height: 320px; border: 0; border-radius: 12px; background: var(--surface-muted); display: block; }
