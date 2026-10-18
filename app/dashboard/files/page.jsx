@@ -56,9 +56,9 @@ function Tile({ f, selecting, selected, onOpen, onToggle, onStartSelect }) {
   const canPreview = previewSources(f, 300).length > 0 && !failed;
 
   function down(e) {
+    longFired.current = false;                                   // a long-press whose click never came (Android context menu) must not swallow the next tap
     if (selecting || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    longFired.current = false;
-    press.current = { x: e.clientX, y: e.clientY, t: setTimeout(() => { longFired.current = true; press.current = null; try { navigator.vibrate?.(18); } catch { /* ignore */ } onStartSelect(f); }, 450) };
+    press.current = { x: e.clientX, y: e.clientY, t: setTimeout(() => { longFired.current = true; press.current = null; setTimeout(() => { longFired.current = false; }, 800); try { navigator.vibrate?.(18); } catch { /* ignore */ } onStartSelect(f); }, 450) };
   }
   function move(e) { const p = press.current; if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) cancel(); }
   function cancel() { if (press.current) { clearTimeout(press.current.t); press.current = null; } }
@@ -72,7 +72,7 @@ function Tile({ f, selecting, selected, onOpen, onToggle, onStartSelect }) {
   return (
     <button type="button" className={`file-tile${canPreview ? '' : ' is-doc'}${canPreview && f.kind !== 'image' ? ' is-page' : ''}${selected ? ' is-selected' : ''}`}
       onPointerDown={down} onPointerMove={move} onPointerUp={cancel} onPointerCancel={cancel} onPointerLeave={cancel}
-      onContextMenu={e => e.preventDefault()} onClick={click} title={f.file_name} aria-label={f.file_name} aria-pressed={selecting ? !!selected : undefined}>
+      onContextMenu={e => { if (selecting || longFired.current || press.current) e.preventDefault(); }} onClick={click} title={f.file_name} aria-label={f.file_name} aria-pressed={selecting ? !!selected : undefined}>
       {canPreview
         ? <FallbackImg f={f} onAllFailed={() => setFailed(true)} />
         : <span className="ft-icon">{KIND_ICON[f.kind] || '📄'}{extOf(f.file_name) && <small>{extOf(f.file_name)}</small>}</span>}
@@ -185,7 +185,7 @@ export default function FilesPage() {
   const exitSelect = () => { selectButtonMode.current = false; setSel(null); };
 
   async function deleteSelected() {
-    const ids = [...sel]; if (!ids.length || busy) return;
+    const ids = shown.filter(x => sel?.has(x.id)).map(x => x.id); if (!ids.length || busy) return;
     if (!confirm(`ลบ ${ids.length} ไฟล์ถาวรใช่ไหมครับ? กู้คืนไม่ได้แล้ว`)) return;
     setBusy(true);
     const done = [];
@@ -200,7 +200,7 @@ export default function FilesPage() {
   }
 
   async function downloadSelected() {
-    const chosen = (data?.files || []).filter(x => sel?.has(x.id)); if (!chosen.length || busy) return;
+    const chosen = shown.filter(x => sel?.has(x.id)); if (!chosen.length || busy) return;
     setBusy(true);
     let n = 0, skipped = 0;
     for (const f of chosen) {
@@ -210,11 +210,12 @@ export default function FilesPage() {
       await sleep(900);
     }
     setBusy(false);
-    toast.show(n ? `⬇️ เริ่มดาวน์โหลด ${n} ไฟล์ — ดูในแถบแจ้งเตือนหรือโฟลเดอร์ดาวน์โหลด${skipped ? ` (ข้าม ${skipped} ไฟล์ที่ไม่มีลิงก์)` : ''}` : 'ไฟล์ที่เลือกไม่มีลิงก์ดาวน์โหลด', n ? undefined : { tone: 'error' });
+    toast.show(n ? `⬇️ สั่งดาวน์โหลด ${n} ไฟล์แล้ว — ดูในแถบแจ้งเตือน/โฟลเดอร์ดาวน์โหลด ถ้าไม่ขึ้น (ไฟล์ใหญ่หรือเบราว์เซอร์บล็อก) ให้แตะไฟล์แล้วกด “เปิดไฟล์เต็ม” แล้วบันทึกเอง${skipped ? ` · ข้าม ${skipped} ไฟล์ที่ไม่มีลิงก์` : ''}` : 'ไฟล์ที่เลือกไม่มีลิงก์ดาวน์โหลด', n ? { duration: 7000 } : { tone: 'error' });
   }
 
   const files = data?.files || [];
   const shown = filterKind === 'all' ? files : files.filter(f => f.kind === filterKind);
+  const visibleSelCount = sel ? shown.filter(x => sel.has(x.id)).length : 0;
   const kindCounts = files.reduce((acc, f) => { acc[f.kind] = (acc[f.kind] || 0) + 1; return acc; }, {});
 
   return (
@@ -223,7 +224,7 @@ export default function FilesPage() {
       <div className="page-head">
         <h1 className="page-title" style={{ marginBottom: 0 }}>📁 ไฟล์ของฉัน</h1>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-        {sel === null && files.length > 0 && <button type="button" className="glass-btn-outline" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => { selectButtonMode.current = true; startSelect(null); }}>☑️ เลือก</button>}
+        {files.length > 0 && <button type="button" className="glass-btn-outline" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', ...(sel !== null ? { visibility: 'hidden' } : null) }} tabIndex={sel !== null ? -1 : 0} aria-hidden={sel !== null} onClick={() => { selectButtonMode.current = true; startSelect(null); }}>☑️ เลือก</button>}
         <div className="seg" role="group" aria-label="จำนวนต่อแถว">
           <button type="button" className={cols === 3 ? 'active' : ''} onClick={() => chooseCols(3)} aria-label="3 ต่อแถว">▦ 3</button>
           <button type="button" className={cols === 4 ? 'active' : ''} onClick={() => chooseCols(4)} aria-label="4 ต่อแถว">▦ 4</button>
@@ -234,11 +235,11 @@ export default function FilesPage() {
       {sel !== null && (
         <div className="file-selbar" role="toolbar" aria-label="เลือกหลายไฟล์">
           <button type="button" className="fsb-x" onClick={exitSelect} aria-label="ยกเลิกการเลือก">✕</button>
-          <b className="fsb-count">เลือก {sel.size}</b>
+          <b className="fsb-count">เลือก {visibleSelCount}</b>
           <button type="button" className="fsb-btn" onClick={() => setSel(prev => { const next = new Set(prev); const all = shown.length > 0 && shown.every(x => next.has(x.id)); shown.forEach(x => (all ? next.delete(x.id) : next.add(x.id))); return next; })}>{shown.length > 0 && shown.every(x => sel.has(x.id)) ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
           <span style={{ flex: 1 }} />
-          <button type="button" className="fsb-btn" disabled={!sel.size || busy} onClick={downloadSelected}>⬇️ ดาวน์โหลด</button>
-          <button type="button" className="fsb-btn danger" disabled={!sel.size || busy} onClick={deleteSelected}>🗑️ ลบ</button>
+          <button type="button" className="fsb-btn" disabled={!visibleSelCount || busy} onClick={downloadSelected}>⬇️ ดาวน์โหลด</button>
+          <button type="button" className="fsb-btn danger" disabled={!visibleSelCount || busy} onClick={deleteSelected}>🗑️ ลบ</button>
         </div>
       )}
 

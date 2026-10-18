@@ -17,6 +17,8 @@ import { createZip } from '../../lib/zip';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from './_ui';
 
 
+const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
 function categoryLabel(key) {
   return NOTE_CATEGORIES.find(c => c.key === key)?.label || key || 'ทั่วไป';
 }
@@ -137,6 +139,7 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
 
   useEffect(() => { if (!editing) { setTitle(note.title); setContent(note.content); setCategory(note.category || 'general'); setImages(note.images || []); } }, [note.title, note.content, note.category, note.images, editing]);
   useEffect(() => { onEditingChange(note.id, editing); }, [editing, note.id, onEditingChange]);
+  useEffect(() => () => onEditingChange(note.id, false), [note.id, onEditingChange]);   // a card that unmounts while editing (converted away) must not pause the auto-refresh forever
 
   // What was last sent to the server, so ✓, click-away, the autosave timer and "page is going away"
   // can all call persist() without ever sending the same edit twice.
@@ -200,9 +203,9 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
 
   // Long-press a row (or use the "เลือก" button) to select several notes; while selecting, a tap toggles.
   function rowDown(e) {
+    longFired.current = false;                                   // a long-press whose click never came (Android context menu) must not swallow the next tap
     if (!selection || selection.active || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    longFired.current = false;
-    press.current = { x: e.clientX, y: e.clientY, t: setTimeout(() => { longFired.current = true; press.current = null; try { navigator.vibrate?.(18); } catch { /* ignore */ } selection.start(note); }, 450) };
+    press.current = { x: e.clientX, y: e.clientY, t: setTimeout(() => { longFired.current = true; press.current = null; setTimeout(() => { longFired.current = false; }, 800); try { navigator.vibrate?.(18); } catch { /* ignore */ } selection.start(note); }, 450) };
   }
   function rowMove(e) { const p = press.current; if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) rowCancel(); }
   function rowCancel() { if (press.current) { clearTimeout(press.current.t); press.current = null; } }
@@ -251,9 +254,10 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
     <div className={`note-row${selection?.ids?.has(note.id) ? ' is-selected' : ''}`} ref={ref} data-note-id={note.id}
       onPointerDown={rowDown} onPointerMove={rowMove} onPointerUp={rowCancel} onPointerCancel={rowCancel} onPointerLeave={rowCancel}
       onContextMenu={e => { if (selection) e.preventDefault(); }}
-      onClick={rowClick} style={{ opacity: isDragging ? 0.4 : 1 }}>
+      onClick={rowClick} role="button" tabIndex={0} aria-pressed={selection?.active ? !!selection.ids.has(note.id) : undefined}
+      onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); rowClick(); } }} style={{ opacity: isDragging ? 0.4 : 1 }}>
       {selection?.active
-        ? <span className={`note-check${selection.ids.has(note.id) ? ' on' : ''}`} aria-hidden>{selection.ids.has(note.id) ? '✓' : ''}</span>
+        ? <span className="note-drag-handle is-check" aria-hidden><span className={`note-check${selection.ids.has(note.id) ? ' on' : ''}`}>{selection.ids.has(note.id) ? '✓' : ''}</span></span>   /* same box as the drag handle, so the row does not change size */
         : <span className="note-drag-handle" title="ลากเพื่อสลับตำแหน่ง"
         onPointerDown={e => { e.stopPropagation(); rowCancel(); onHandlePointerDown(e); }} onClick={e => e.stopPropagation()}>⠿</span>}
       <div className="note-row-accent" style={{ background: colorBg(note.color) === 'var(--note-default)' ? 'var(--border-strong)' : colorBg(note.color) }} />
@@ -493,7 +497,13 @@ function NotesPageInner() {
     toggle: note => setSel(prev => { const next = new Set(prev); next.has(note.id) ? next.delete(note.id) : next.add(note.id); return next.size === 0 && !selButton.current ? null : next; }),
   };
   const exitSelect = () => { selButton.current = false; setSel(null); setMdChoice(false); };
-  const chosenNotes = () => (notes || []).filter(n => sel?.has(n.id));
+  useEffect(() => {                                   // Escape: close the .md dialog first, then leave select mode
+    if (sel === null) return undefined;
+    const k = e => { if (e.key !== 'Escape') return; if (mdChoice) setMdChoice(false); else { selButton.current = false; setSel(null); } };
+    document.addEventListener('keydown', k);
+    return () => document.removeEventListener('keydown', k);
+  }, [sel === null, mdChoice]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const chosenNotes = () => filtered.filter(n => sel?.has(n.id));   // only what is on screen: never act on hidden (archived / filtered-out) selections
 
   function saveBlob(blob, name) {
     const a = document.createElement('a');
@@ -508,15 +518,15 @@ function NotesPageInner() {
       saveBlob(new Blob([f.text], { type: 'text/markdown;charset=utf-8' }), f.name);
     } else if (mode === 'zip') {
       const files = notesToMarkdownFiles(list).map(f => ({ name: f.name, data: enc.encode(f.text) }));
-      saveBlob(new Blob([createZip(files)], { type: 'application/zip' }), `jarvis-notes-${new Date().toISOString().slice(0, 10)}.zip`);
+      saveBlob(new Blob([createZip(files)], { type: 'application/zip' }), `jarvis-notes-${localDay()}.zip`);
     } else {
-      saveBlob(new Blob([notesToCombinedMarkdown(list)], { type: 'text/markdown;charset=utf-8' }), `jarvis-notes-${new Date().toISOString().slice(0, 10)}.md`);
+      saveBlob(new Blob([notesToCombinedMarkdown(list)], { type: 'text/markdown;charset=utf-8' }), `jarvis-notes-${localDay()}.md`);
     }
     toast.show(`⬇️ ดาวน์โหลด ${list.length} โน้ตเป็น Markdown แล้ว`);
     exitSelect();
   }
   async function deleteSelected() {
-    const ids = [...(sel || [])]; if (!ids.length) return;
+    const ids = chosenNotes().map(n => n.id); if (!ids.length) return;
     if (!confirm(`ลบ ${ids.length} โน้ตใช่ไหมครับ? (ลบแล้วกู้คืนไม่ได้)`)) return;
     const done = [];
     for (let i = 0; i < ids.length; i += 3) {
@@ -558,6 +568,7 @@ function NotesPageInner() {
   const filtered = notes?.filter(n =>
     !search.trim() || `${n.title} ${n.content}`.toLowerCase().includes(search.toLowerCase())
   ) || [];
+  const visibleSelCount = sel ? filtered.filter(n => sel.has(n.id)).length : 0;
   const pinned = filtered.filter(n => n.pinned);
   const others = filtered.filter(n => !n.pinned);
 
@@ -581,7 +592,7 @@ function NotesPageInner() {
               <span className={`dash-nav-item${viewMode === 'all' ? ' active' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setViewMode('all')}>📌 ทั้งหมด</span>
               <span className={`dash-nav-item${viewMode === 'grouped' ? ' active' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setViewMode('grouped')}>🗂️ แยกตามหมวด</span>
             </div>
-            {sel === null && (notes?.length || 0) > 0 && <button className="glass-btn-outline" onClick={() => selection.start(null)}>☑️ เลือก</button>}
+            {(notes?.length || 0) > 0 && <button className="glass-btn-outline" style={sel !== null ? { visibility: 'hidden' } : undefined} tabIndex={sel !== null ? -1 : 0} aria-hidden={sel !== null} onClick={() => selection.start(null)}>☑️ เลือก</button>}   {/* hidden, not removed: removing it would re-wrap this row and shift the list under a finger that is still down */}
             <button className="glass-btn-outline" onClick={() => { const v = !showArchived; setShowArchived(v); load(v); }}>
               {showArchived ? '⬅️ กลับไปโน้ตปกติ' : '🗄️ ดูคลังเก็บ'}
             </button>
@@ -590,17 +601,17 @@ function NotesPageInner() {
           {sel !== null && (
             <div className="file-selbar" role="toolbar" aria-label="เลือกหลายโน้ต">
               <button type="button" className="fsb-x" onClick={exitSelect} aria-label="ยกเลิกการเลือก">✕</button>
-              <b className="fsb-count">เลือก {sel.size}</b>
+              <b className="fsb-count">เลือก {visibleSelCount}</b>
               <button type="button" className="fsb-btn" onClick={() => setSel(prev => { const next = new Set(prev); const all = filtered.length > 0 && filtered.every(n => next.has(n.id)); filtered.forEach(n => (all ? next.delete(n.id) : next.add(n.id))); return next; })}>{filtered.length > 0 && filtered.every(n => sel.has(n.id)) ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
               <span style={{ flex: 1 }} />
-              <button type="button" className="fsb-btn" disabled={!sel.size} onClick={() => (sel.size === 1 ? downloadMd('one') : setMdChoice(true))}>⬇️ .md</button>
-              <button type="button" className="fsb-btn danger" disabled={!sel.size} onClick={deleteSelected}>🗑️ ลบ</button>
+              <button type="button" className="fsb-btn" disabled={!visibleSelCount} onClick={() => (visibleSelCount === 1 ? downloadMd('one') : setMdChoice(true))}>⬇️ .md</button>
+              <button type="button" className="fsb-btn danger" disabled={!visibleSelCount} onClick={deleteSelected}>🗑️ ลบ</button>
             </div>
           )}
           {mdChoice && (
             <div className="convert-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setMdChoice(false); }}>
-              <div className="convert-sheet" role="dialog" aria-label="ดาวน์โหลดเป็น Markdown">
-                <h2 className="convert-title">⬇️ ดาวน์โหลด {sel.size} โน้ตเป็น .md</h2>
+              <div className="convert-sheet" role="dialog" aria-modal="true" aria-label="ดาวน์โหลดเป็น Markdown">
+                <h2 className="convert-title">⬇️ ดาวน์โหลด {visibleSelCount} โน้ตเป็น .md</h2>
                 <div style={{ display: 'grid', gap: '0.6rem' }}>
                   <button type="button" className="convert-choice" data-mode="one" onClick={() => downloadMd('one')}><b>📄 รวมเป็นไฟล์เดียว</b><span className="muted">ทุกโน้ตอยู่ในไฟล์ .md เดียว คั่นด้วยเส้น</span></button>
                   <button type="button" className="convert-choice" data-mode="zip" onClick={() => downloadMd('zip')}><b>🗜️ แยกไฟล์ (บีบเป็น .zip)</b><span className="muted">โน้ตละไฟล์ ตั้งชื่อตามหัวข้อ</span></button>

@@ -813,7 +813,8 @@ html[data-fs="lg"] { font-size: 18px; }
 .file-tile.is-selected img, .file-tile.is-selected .ft-icon { opacity: 0.72; }
 .file-tile .ft-check { position: absolute; top: 5px; left: 5px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,0.35); color: #fff; font-size: 0.8rem; font-weight: 800; display: flex; align-items: center; justify-content: center; }
 .file-tile .ft-check.on { background: var(--accent); border-color: var(--accent); }
-.file-selbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.6rem; margin: 0 0 0.7rem; border-radius: 14px; background: var(--surface-raised, var(--surface-muted)); border: 1px solid var(--border-strong); box-shadow: var(--shadow-md, 0 4px 14px rgba(0,0,0,0.25)); }
+/* fixed (not in flow): when the bar appears under a finger that is still down, nothing shifts */
+.file-selbar { position: fixed; top: calc(8px + env(safe-area-inset-top, 0px)); left: 8px; right: 8px; max-width: 760px; margin: 0 auto !important; z-index: 450; display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.6rem; margin: 0 0 0.7rem; border-radius: 14px; background: var(--surface-raised, var(--surface-muted)); border: 1px solid var(--border-strong); box-shadow: var(--shadow-md, 0 4px 14px rgba(0,0,0,0.25)); }
 .file-selbar .fsb-x { border: 0; background: transparent; color: var(--text-primary); font-size: 1.1rem; min-width: 36px; min-height: 36px; cursor: pointer; }
 .file-selbar .fsb-count { font-size: 0.9rem; white-space: nowrap; }
 .file-selbar .fsb-btn { border: 1px solid var(--border-strong); background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: 0.78rem; font-weight: 600; min-height: 38px; padding: 0 0.7rem; border-radius: 10px; cursor: pointer; white-space: nowrap; }
@@ -827,3 +828,4 @@ html[data-fs="lg"] { font-size: 18px; }
 .note-row.is-selected { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-soft); }
 .note-check { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 0.8rem; font-weight: 800; }
 .note-check.on { background: var(--accent); border-color: var(--accent); }
+.note-drag-handle.is-check { cursor: pointer; touch-action: auto; }

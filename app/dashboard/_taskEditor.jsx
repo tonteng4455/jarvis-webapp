@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { BlockEditor, ToolBtn, EditorOverlay } from './_noteEditor';
 import { DueFields } from './_due';
+import { useEscape } from './_convert';
 import { buildDue, dueInputs } from '../../lib/taskDue';
 import { previewText, plainText } from '../../lib/noteBlocks';
 
@@ -150,12 +151,18 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, o
 export function splitNoteForTask(note) {
   const title = (note.title || '').trim();
   const content = String(note.content || '');
-  if (title) return { name: title, details: content };
+  if (title) {
+    // bot-made notes use the first 50 characters of the text as the title — do not repeat it in the details
+    const body = content.trim().startsWith(title) ? content.trim().slice(title.length).replace(/^\n+/, '') : content;
+    return { name: title, details: body };
+  }
   const lines = content.split('\n');
   const i = lines.findIndex(l => l.trim());
   if (i < 0) return { name: '', details: '' };
   const first = previewText(lines[i]).replace(/^[•☐☑]\s*/, '').replace(/^\d+\.\s*/, '');
-  return { name: first.slice(0, 120), details: lines.slice(i + 1).join('\n').replace(/^\n+/, '') };
+  // nothing is dropped: what does not fit in the name goes to the start of the details
+  const over = first.slice(200);
+  return { name: first.slice(0, 200), details: [over, lines.slice(i + 1).join('\n').replace(/^\n+/, '')].filter(Boolean).join('\n') };
 }
 
 // Also used for appointment → task: pass `source` ({ name, details }), `initialDue` and the wording instead of a note.
@@ -177,6 +184,7 @@ export function ConvertToTaskSheet({ note, source, initialDue, heading = '✅ �
   const [due, setDue] = useState(initialDue || { date: '', time: '' });
   const [priority, setPriority] = useState('medium');
   const [busy, setBusy] = useState(false);
+  useEscape(onCancel);
   const d = buildDue(due.date, due.time);
   const tooLong = (init.details || '').length > TASK_DETAILS_MAX;
   const ready = !!name.trim() && !!d && !busy && !tooLong;
@@ -188,7 +196,7 @@ export function ConvertToTaskSheet({ note, source, initialDue, heading = '✅ �
   }
   return createPortal(
     <div className="convert-overlay" onMouseDown={e => e.stopPropagation()}>
-      <div className="convert-sheet" role="dialog" aria-label={heading}>
+      <div className="convert-sheet" role="dialog" aria-modal="true" aria-label={heading}>
         <h2 className="convert-title">{heading}</h2>
         <label className="te-label">ชื่องาน</label>
         <input className="glass-input" value={name} onChange={e => setName(e.target.value)} placeholder="ชื่องาน" autoFocus />
@@ -228,7 +236,9 @@ const EVENT_REMINDERS = [
 ];
 
 // `source` = { title, details, due: { date, time } } — from a task (prefilled from its due date) or from a note.
-export function eventSourceFromTask(task) { return { title: task.task_name || '', details: task.details || '', due: dueInputs(task) }; }
+const RECUR = { daily: 'ทุกวัน', weekly: 'ทุกสัปดาห์', monthly: 'ทุกเดือน' };
+export const recurrenceLine = task => task?.recurrence ? `🔁 เดิมเป็นงานทำซ้ำ ${RECUR[task.recurrence] || ''}${task.recurrence_time ? ` เวลา ${task.recurrence_time}` : ''} (การทำซ้ำถูกยกเลิก)` : '';
+export function eventSourceFromTask(task) { return { title: task.task_name || '', details: [task.details || '', recurrenceLine(task)].filter(Boolean).join('\n\n'), due: dueInputs(task) }; }
 export function ConvertToEventSheet({ task, source, heading = '📅 เปลี่ยนงานเป็นนัดหมาย', detailsLabel = 'รายละเอียด (จากงาน)', footnote = 'งานเดิมจะถูกลบหลังสร้างนัด (กด “เลิกทำ” ได้ 6 วินาที) และนัดจะถูกส่งไป Google Calendar', onCancel, onConfirm }) {
   const src = source || eventSourceFromTask(task);
   const pre = src.due;
@@ -238,6 +248,7 @@ export function ConvertToEventSheet({ task, source, heading = '📅 เปลี
   const [reminder, setReminder] = useState('');
   const [location, setLocation] = useState('');
   const [busy, setBusy] = useState(false);
+  useEscape(onCancel);
   const d = buildDue(date, time);
   const description = plainText(src.details || '').trim();
   const tooLong = description.length > EVENT_DESCRIPTION_MAX;
@@ -255,7 +266,7 @@ export function ConvertToEventSheet({ task, source, heading = '📅 เปลี
   }
   return createPortal(
     <div className="convert-overlay" onMouseDown={e => e.stopPropagation()}>
-      <div className="convert-sheet" role="dialog" aria-label={heading}>
+      <div className="convert-sheet" role="dialog" aria-modal="true" aria-label={heading}>
         <h2 className="convert-title">{heading}</h2>
         <label className="te-label">หัวเรื่อง</label>
         <input className="glass-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="หัวเรื่องนัด" autoFocus />

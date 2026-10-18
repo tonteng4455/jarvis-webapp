@@ -10,8 +10,17 @@ import { createZip } from '../lib/zip.js';
 
 test('list markers become GitHub-flavoured Markdown', () => {
   assert.equal(contentToMarkdown('[ ] นม\n[x] ไข่\n- จุด\n  - ย่อย\n1. หนึ่ง\n2. สอง\nข้อความธรรมดา\n'),
-    '- [ ] นม\n- [x] ไข่\n- จุด\n  - ย่อย\n1. หนึ่ง\n2. สอง\nข้อความธรรมดา\n');
-  assert.equal(contentToMarkdown('-5 องศา\n---'), '-5 องศา\n---');   // not lists
+    '- [ ] นม\n- [x] ไข่\n- จุด\n  - ย่อย\n1. หนึ่ง\n2. สอง\n\nข้อความธรรมดา\n');   // blank line: a plain line must not become part of the last bullet
+  assert.equal(contentToMarkdown('-5 องศา\n---'), '-5 องศา\n\n---');   // not a list; a rule under text must not turn the text into a heading
+});
+
+test('Markdown fidelity: hard line breaks, list/paragraph separation, nested numbers', () => {
+  assert.equal(contentToMarkdown('บรรทัด 1\nบรรทัด 2\n\nย่อหน้าใหม่\n- ก\nสรุป'), 'บรรทัด 1  \nบรรทัด 2\n\nย่อหน้าใหม่\n\n- ก\n\nสรุป');
+  assert.equal(contentToMarkdown('1. หนึ่ง\n  1. ย่อย\n  2. ย่อย 2\n2. สอง'), '1. หนึ่ง\n   1. ย่อย\n   2. ย่อย 2\n2. สอง');   // CommonMark needs 3 spaces under "1. "
+});
+
+test('file names for untitled notes whose first line is a checklist item', () => {
+  assert.deepEqual(notesToMarkdownFiles([{ title: '', content: '- [ ] ก\nx' }, { title: '', content: '[x] ข' }, { title: '', content: '1. ค' }]).map(f => f.name), ['ก.md', 'ข.md', 'ค.md']);
 });
 
 test('a note → title heading, body, image links', () => {

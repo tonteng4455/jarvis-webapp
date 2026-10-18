@@ -224,7 +224,7 @@ function TasksPageInner() {
           onConvert={t => setConvert({ task: t, to: null })} />
       )}
       {convert && !convert.to && (
-        <ConvertChooser from="task" onCancel={() => setConvert(null)}
+        <ConvertChooser from="task" recurring={!!(convert.task.recurrence || convert.task.google_event_id)} onCancel={() => setConvert(null)}
           onPick={async to => {
             if (to === 'note') { const ok = await convertTask(convert.task, 'note', taskToNotePayload(convert.task), convert.task.task_name); setConvert(null); return ok; }
             setConvert({ ...convert, to });

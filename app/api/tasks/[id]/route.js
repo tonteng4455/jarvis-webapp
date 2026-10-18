@@ -69,6 +69,12 @@ export async function DELETE(request, { params }) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
+  // a recurring task owns a repeating event in Google Calendar: switch the repeat off first (the Worker then deletes that event)
+  const { data: row } = await supabase.from('tasks').select('id, recurrence, google_event_id').eq('id', id).eq('user_id', session.lineUserId).maybeSingle();
+  if (row?.google_event_id) {
+    await supabase.from('tasks').update({ recurrence: null }).eq('id', id).eq('user_id', session.lineUserId);
+    await callBotInternal('/internal/task-recurrence', { userId: session.lineUserId, taskId: id });
+  }
   const { error } = await supabase.from('tasks').delete().eq('id', id).eq('user_id', session.lineUserId);
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
   return NextResponse.json({ deleted: true });
