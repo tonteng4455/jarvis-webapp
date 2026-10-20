@@ -271,14 +271,14 @@ a { color: inherit; }
 /* ---------- Grids / lists ---------- */
 .grid-cards {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
 }
 @media (min-width: 560px) {
-  .grid-cards { grid-template-columns: repeat(2, 1fr); }
+  .grid-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 900px) {
-  .grid-cards { grid-template-columns: repeat(3, 1fr); }
+  .grid-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 .list-stack { display: flex; flex-direction: column; gap: 0.6rem; }
@@ -594,7 +594,7 @@ html[data-fs="lg"] { font-size: 18px; }
 .exp-amount { font-weight: 700; font-size: 1rem; white-space: nowrap; }
 
 /* ---------- Today page ---------- */
-.quick-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-bottom: 0.9rem; }
+.quick-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; margin-bottom: 0.9rem; }
 .quick-btn { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; padding: 0.7rem 0.2rem; min-height: 64px; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--border); text-decoration: none; font-size: 0.72rem; font-weight: 600; box-shadow: var(--shadow-sm); }
 .quick-btn span { font-size: 1.4rem; }
 .today-card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
@@ -611,10 +611,10 @@ html[data-fs="lg"] { font-size: 18px; }
 .cal-nav-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface-muted); color: var(--text-primary); font-size: 1.4rem; line-height: 1; cursor: pointer; }
 .cal-today-btn { min-height: 40px; }
 .cal-card { padding: 0.5rem; touch-action: pan-y; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
 .cal-weekdays div { text-align: center; font-size: 0.72rem; font-weight: 700; color: var(--text-secondary); padding: 0.3rem 0; }
 .cal-weekdays .sun { color: var(--danger); }
-.cal-day { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; padding: 0.3rem 0.15rem; border: 1px solid transparent; border-radius: 12px; background: transparent; color: var(--text-primary); font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cal-day { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; min-width: 0; overflow: hidden; padding: 0.3rem 0.15rem; border: 1px solid transparent; border-radius: 12px; background: transparent; color: var(--text-primary); font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cal-day.other { opacity: 0.38; }
 .cal-day.selected { background: var(--accent-soft); border-color: var(--accent); }
 .cal-num { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 0.85rem; font-weight: 600; }
@@ -747,7 +747,7 @@ html[data-fs="lg"] { font-size: 18px; }
 .due-fields { display: flex; flex-direction: column; gap: 0.5rem; }
 .due-quick { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .due-quick .chip { min-height: 34px; padding: 0.25rem 0.75rem; font-size: 0.78rem; }
-.due-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.due-inputs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; }
 .due-inputs label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.75rem; min-width: 0; }
 .due-inputs .glass-input { min-width: 0; width: 100%; }
 .due-banner { position: sticky; top: 0; z-index: 65; background-color: var(--editor-bg, #fff); background-image: linear-gradient(var(--warning-soft), var(--warning-soft)); color: var(--warning); border-bottom: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
@@ -791,7 +791,7 @@ html[data-fs="lg"] { font-size: 18px; }
 /* ----- notifications page ----- */
 .push-pref { margin-top: 0.7rem; }
 .push-pref label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--text-secondary); }
-.push-pref.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.push-pref.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.6rem; }
 .push-check { display: flex; align-items: center; gap: 0.7rem; margin-top: 0.7rem; min-height: 44px; font-size: 0.9rem; cursor: pointer; }
 
 /* ----- files: tile grid (3 or 4 per row on a phone) + preview sheet ----- */

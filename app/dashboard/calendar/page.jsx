@@ -287,7 +287,7 @@ function CalendarPageInner() {
   const createDraft = creating === true ? { start_time: new Date(`${selected}T09:00:00`).toISOString() } : creating;
 
   return (
-    <main className="page">
+    <main className="page page-wide">
       <DashNav />
       <div className="page-head">
         <h1 className="page-title" style={{ marginBottom: 0 }}>📅 นัดหมาย</h1>
