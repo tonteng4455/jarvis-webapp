@@ -44,6 +44,8 @@ export async function mockBotInternal(path, payload) {
     case '/internal/calendar-calendars': {
       if (payload.userId === 'mock-nodrive') return { ok: true, connected: false, calendars: [] };
       const st = calState(payload.userId);
+      // 'mock-solo' has only the personal calendar until the work one is "shared in" (3rd look onwards)
+      if (payload.userId === 'mock-solo') { const n = (globalThis.__mockSoloLooks = (globalThis.__mockSoloLooks || 0) + 1); if (n < 3) return { ok: true, connected: true, calendars: [MOCK_CALENDARS[0]], targetCalendarId: 'primary', displayCalendarIds: ['primary'] }; }
       return { ok: true, connected: true, calendars: MOCK_CALENDARS, targetCalendarId: st.target, displayCalendarIds: st.display };
     }
     case '/internal/calendar-settings': {

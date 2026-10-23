@@ -11,6 +11,7 @@ import { createSessionToken, sessionCookieOptions } from '../../../../lib/sessio
 const MOCK_USERS = {
   demo: { lineUserId: 'mock-user', displayName: 'Mock Tester' },
   nodrive: { lineUserId: 'mock-nodrive', displayName: 'Mock (no Drive)' },
+  solo: { lineUserId: 'mock-solo', displayName: 'Mock (one calendar)' },
 };
 
 export async function GET(request) {

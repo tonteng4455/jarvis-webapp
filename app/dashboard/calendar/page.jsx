@@ -84,6 +84,34 @@ function CalendarSettings({ cals, onChange, busy }) {
   );
 }
 
+// Shown when only ONE Google calendar is connected: how to bring the work calendar in (Jarvis links one Google account, so
+// the work calendar is shared INTO it). Dismissible; "ตรวจใหม่" re-reads the account's calendars.
+const TIP_KEY = 'jarvis-work-cal-tip-hidden';
+function WorkCalendarTip({ onRecheck, onHide, checking }) {
+  return (
+    <div className="glass-panel" style={{ marginBottom: '0.8rem' }} aria-label="วิธีเพิ่มปฏิทินที่ทำงาน">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ fontWeight: 700, flex: 1 }}>💼 มีปฏิทินที่ทำงานด้วยไหม? เพิ่มเข้า Jarvis ได้</div>
+        <button type="button" className="note-icon-btn" aria-label="ซ่อนคำแนะนำ" onClick={onHide}>✕</button>
+      </div>
+      <p className="muted" style={{ margin: '0.3rem 0 0.5rem' }}>Jarvis ผูกบัญชี Google ได้บัญชีเดียว จึงใช้วิธี “แชร์ปฏิทินที่ทำงานเข้ามาในบัญชีที่ผูกไว้” (ใช้ได้แม้บัญชีที่ทำงานเป็น Gmail ธรรมดา) ทำครั้งเดียว:</p>
+      <ol style={{ margin: '0 0 0.6rem', paddingLeft: '1.2rem', lineHeight: 1.7, fontSize: '0.9rem' }}>
+        <li>เปิด <b>calendar.google.com</b> บนคอมพิวเตอร์ ล็อกอินบัญชีที่ทำงาน (แอปมือถือแชร์ปฏิทินไม่ได้)</li>
+        <li>ชี้ที่ชื่อปฏิทินทางซ้าย กด <b>⋮ → การตั้งค่าและการแชร์</b></li>
+        <li>ที่ “แชร์กับบุคคลหรือกลุ่มที่ระบุ” กด <b>เพิ่มบุคคลและกลุ่ม</b> ใส่อีเมลส่วนตัวที่ผูกกับ Jarvis</li>
+        <li>ตั้งสิทธิ์ <b>“ทำการเปลี่ยนแปลงกับกิจกรรม”</b> (เลือกแค่ดูก็เห็นนัดได้ แต่สร้างนัดลงปฏิทินนั้นไม่ได้) แล้วกด ส่ง</li>
+        <li>เปิดอีเมลส่วนตัว กดรับคำเชิญจากอีเมลของ Google</li>
+        <li>กลับมาที่นี่ กด <b>ตรวจใหม่</b> — ปฏิทินที่ทำงานจะขึ้นให้เลือก</li>
+      </ol>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button type="button" className="glass-btn" disabled={checking} onClick={onRecheck}>{checking ? 'กำลังตรวจ…' : '🔄 ตรวจใหม่'}</button>
+        <a className="glass-btn-outline" style={{ textDecoration: 'none' }} href="https://calendar.google.com" target="_blank" rel="noopener noreferrer">เปิด Google Calendar</a>
+      </div>
+      <p className="muted" style={{ margin: '0.5rem 0 0' }}>ถ้าที่ทำงานใช้ Google Workspace ของบริษัทแล้วแชร์ออกนอกองค์กรไม่ได้ ให้ถามผู้ดูแลระบบ</p>
+    </div>
+  );
+}
+
 function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
   const initial = splitDateTime(event.start_time);
   const [title, setTitle] = useState(event.title || '');
@@ -221,6 +249,9 @@ function CalendarPageInner() {
   const [cals, setCals] = useState(null);          // { connected, calendars, targetCalendarId, displayCalendarIds }
   const [showCals, setShowCals] = useState(false);
   const [calsBusy, setCalsBusy] = useState(false);
+  const [tipHidden, setTipHidden] = useState(true);   // true until localStorage says otherwise (no flash)
+  const [rechecking, setRechecking] = useState(false);
+  useEffect(() => { try { setTipHidden(localStorage.getItem(TIP_KEY) === '1'); } catch { setTipHidden(false); } }, []);
   const [convert, setConvert] = useState(null);   // { ev, to: null | 'task' } — the "เปลี่ยนเป็น…" flow
   const touch = useRef(null);
 
@@ -250,6 +281,18 @@ function CalendarPageInner() {
 
   useEffect(() => { setEvents(null); load(); }, [load]);
   useEffect(() => { apiGet('/api/calendar/calendars').then(setCals).catch(() => {}); }, []);
+
+  async function recheckCalendars() {
+    setRechecking(true);
+    try {
+      const fresh = await apiGet('/api/calendar/calendars');
+      setCals(fresh);
+      if (fresh.calendars?.length > 1) { setShowCals(true); toast.show(`✅ เจอ ${fresh.calendars.length} ปฏิทินแล้ว เลือกที่จะแสดง/ปลายทางนัดใหม่ได้เลย`); }
+      else toast.show('ยังเห็นปฏิทินเดียว ลองรอ 1–2 นาทีและกดรับคำเชิญในอีเมลส่วนตัว แล้วตรวจใหม่', { tone: 'warn', duration: 6000 });
+    } catch { toast.show('❌ ตรวจปฏิทินไม่สำเร็จ ลองอีกครั้ง', { tone: 'error' }); }
+    setRechecking(false);
+  }
+  function hideTip() { setTipHidden(true); try { localStorage.setItem(TIP_KEY, '1'); } catch {} }
 
   async function changeCalendarSettings(patch) {
     setCalsBusy(true);
@@ -377,6 +420,8 @@ function CalendarPageInner() {
         </div>
         </div>
       </div>
+
+      {cals?.connected && cals.calendars?.length === 1 && !tipHidden && <WorkCalendarTip onRecheck={recheckCalendars} onHide={hideTip} checking={rechecking} />}
 
       {showCals && multi(cals) && <CalendarSettings cals={cals} onChange={changeCalendarSettings} busy={calsBusy} />}
 
