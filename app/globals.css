@@ -829,3 +829,12 @@ html[data-fs="lg"] { font-size: 18px; }
 .note-check { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 0.8rem; font-weight: 800; }
 .note-check.on { background: var(--accent); border-color: var(--accent); }
 .note-drag-handle.is-check { cursor: pointer; touch-action: auto; }
+
+/* ----- several Google calendars ----- */
+.cal-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 0.72rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--surface-muted); color: var(--text-primary); max-width: 100%; }
+.cal-tag i, .cal-set-name i { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; display: inline-block; }
+.cal-set-head, .cal-set-row { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem 6.5rem; align-items: center; gap: 0.4rem; }
+.cal-set-head { font-size: 0.7rem; color: var(--text-secondary); text-align: center; padding-bottom: 0.2rem; }
+.cal-set-row { padding: 0.45rem 0; border-top: 1px solid var(--border); }
+.cal-set-row input { justify-self: center; width: 22px; height: 22px; accent-color: var(--accent); }
+.cal-set-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }

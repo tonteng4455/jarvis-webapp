@@ -81,6 +81,26 @@ export async function GET(request) {
     // list — same as before this feature existed, not a hard failure.
   }
 
+  // ?include=google: events that exist ONLY in Google Calendar (made in the Google app, or by someone who shares the
+  // calendar) for the calendars chosen for display — shown read-only, merged by time with the ones saved here.
+  if (searchParams.get('include') === 'google' && !past) {
+    const rangeFrom = ranged ? from : nowIso;
+    const rangeTo = ranged ? to : new Date(Date.now() + 90 * 86400e3).toISOString();
+    const g = await Promise.race([
+      callBotInternal('/internal/calendar-google-events', { userId: session.lineUserId, from: rangeFrom, to: rangeTo }).catch(() => null),
+      new Promise(r => setTimeout(() => r(null), 7000)),
+    ]);
+    if (g?.ok && Array.isArray(g.events)) {
+      const have = new Set(events.map(e => e.google_event_id).filter(Boolean));
+      const extra = g.events.filter(e => !have.has(e.google_event_id)).map(e => ({
+        id: `g:${e.calendar_id}:${e.google_event_id}`, title: e.title, start_time: e.start_time, end_time: e.end_time, location: e.location,
+        description: null, status: 'scheduled', reminder_minutes: null, google_event_id: e.google_event_id, calendar_id: e.calendar_id,
+        external: true, all_day: !!e.all_day, htmlLink: e.htmlLink || null,
+      }));
+      events = [...events, ...extra].sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
+    }
+  }
+
   return NextResponse.json({ events });
 }
 
@@ -98,6 +118,13 @@ export async function POST(request) {
   const endParsed = body.end_time ? Date.parse(body.end_time) : NaN;
   const end = !Number.isNaN(endParsed) && endParsed >= start ? endParsed : start + 60 * 60 * 1000;
   const reminder = Number.isInteger(body.reminder_minutes) ? body.reminder_minutes : null;
+  let calendarId = null;
+  if (typeof body.calendar_id === 'string' && body.calendar_id.trim()) {
+    const cals = await callBotInternal('/internal/calendar-calendars', { userId: session.lineUserId }).catch(() => null);
+    const c = cals?.ok && cals.connected ? (cals.calendars || []).find(x => x.id === body.calendar_id) : null;
+    if (!c || !c.writable) return NextResponse.json({ error: 'calendar_not_writable' }, { status: 400 });
+    calendarId = c.id;
+  }
 
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
@@ -110,6 +137,7 @@ export async function POST(request) {
       location: body.location ? String(body.location).slice(0, 300) : null,
       description: body.description ? String(body.description).slice(0, 2000) : null,
       reminder_minutes: reminder,
+      ...(calendarId ? { calendar_id: calendarId } : {}),
       status: 'scheduled', // same value the LINE bot writes for a created event
     })
     .select()

@@ -21,24 +21,37 @@ export async function PATCH(request, { params }) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const body = await request.json();
+  const moveTo = typeof body.calendar_id === 'string' && body.calendar_id ? body.calendar_id : null;
   const updates = {};
   for (const key of EDITABLE_FIELDS) {
     if (key in body) updates[key] = body[key];
   }
-  if (Object.keys(updates).length === 0) {
+  if (Object.keys(updates).length === 0 && !moveTo) {
     return NextResponse.json({ error: 'no_fields' }, { status: 400 });
   }
 
   const supabase = supabaseAdmin();
-  const { data, error } = await supabase
-    .from('calendar_events')
-    .update(updates)
-    .eq('id', id)
-    .eq('user_id', session.lineUserId)
-    .select()
-    .single();
+  let data;
+  if (Object.keys(updates).length) {
+    const r = await supabase.from('calendar_events').update(updates).eq('id', id).eq('user_id', session.lineUserId).select().single();
+    if (r.error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+    data = r.data;
+  } else {
+    const r = await supabase.from('calendar_events').select('*').eq('id', id).eq('user_id', session.lineUserId).maybeSingle();
+    if (!r.data) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    data = r.data;
+  }
 
-  if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+  // Moving to another calendar: the Worker creates it on the new calendar first and only then removes it from the old one.
+  // It re-reads the row we just saved, so the edit and the move arrive together; no separate sync is needed then.
+  if (moveTo) {
+    const m = await callBotInternal('/internal/calendar-move', { userId: session.lineUserId, eventId: id, calendarId: moveTo });
+    if (m?.ok && m.moved) return NextResponse.json({ event: m.event || data, syncResult: { synced: true }, moved: true });
+    if (m?.ok) { const syncResult = await callBotInternal('/internal/calendar-sync', { userId: session.lineUserId, eventId: id }); return NextResponse.json({ event: data, syncResult, moved: false }); }   // already there: just sync the edit
+    // the move failed (e.g. no right to write there): the edit is saved, the event stays where it was — and we say so
+    const syncResult = await callBotInternal('/internal/calendar-sync', { userId: session.lineUserId, eventId: id });
+    return NextResponse.json({ event: data, syncResult, moveError: m?.error || 'move_failed' });
+  }
 
   const syncResult = await callBotInternal('/internal/calendar-sync', { userId: session.lineUserId, eventId: id });
   return NextResponse.json({ event: data, syncResult });
