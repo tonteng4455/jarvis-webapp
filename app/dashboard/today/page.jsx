@@ -9,6 +9,7 @@ import { DashNav } from '../_components';
 import { apiGet, ErrorState, ListSkeleton, useToast } from '../_ui';
 import { DueChip } from '../_due';
 import SetupChecklist from '../_setup';
+import { readShare } from '../../../lib/sharePending';
 import { sortTasks } from '../../../lib/taskDue';
 
 const LINE_OA_URL = process.env.NEXT_PUBLIC_LINE_OA_URL || '';
@@ -46,6 +47,8 @@ export default function TodayPage() {
   const [me, setMe] = useState(null);
   const [error, setError] = useState(false);
   const [q, setQ] = useState('');
+  const [pendingShare, setPendingShare] = useState(false);   // text shared in from another app is waiting
+  useEffect(() => { setPendingShare(!!readShare()); }, []);
 
   const load = useCallback(async () => {
     setError(false);
@@ -101,6 +104,13 @@ export default function TodayPage() {
       <input className="glass-input" type="search" placeholder="🔍 ค้นหาทุกอย่าง — โน้ต งาน นัดหมาย เงิน ไฟล์" value={q}
         onChange={e => setQ(e.target.value)} style={{ marginBottom: '0.8rem' }} />
 
+      {!query && pendingShare && (
+        <Link href="/dashboard/share" className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', textDecoration: 'none', marginBottom: '0.8rem', borderLeft: '3px solid var(--accent)' }}>
+          <span style={{ fontSize: '1.4rem' }}>📥</span>
+          <span style={{ flex: 1 }}><b>มีข้อความที่แชร์เข้ามารออยู่</b><br /><span className="muted">แตะเพื่อเก็บเป็นโน้ต งาน หรือนัดหมาย</span></span>
+          <span className="today-link">เปิด ›</span>
+        </Link>
+      )}
       {!query && <SetupChecklist />}
 
       {!query && (
