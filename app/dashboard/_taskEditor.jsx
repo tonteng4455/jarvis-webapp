@@ -75,7 +75,7 @@ export function TaskEditorPanel({
 // ---- the editor as a full-screen modal: opens for an existing task or a new one ----
 // Existing task: saved shortly after you stop typing, on ✓, on click-away and when the page is hidden.
 // New task: created on ✓ / click-away / page hidden once it has a name; 🗑️ throws the draft away.
-export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, onArchive, onConvert }) {
+export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, onDelete, onArchive, onConvert }) {
   const isNew = !task;
   const [name, setName] = useState(task?.task_name || '');
   const [details, setDetails] = useState(task?.details || '');
@@ -87,15 +87,40 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, o
   const cur = useRef({}); cur.current = { name, details, due, priority };
   const sent = useRef({ name: task?.task_name || '', details: task?.details || '', due: JSON.stringify(dueInputs(task)), priority: task?.priority || 'medium' });
 
+  // A NEW task is created ONCE (the first time it has a name) and every later save updates that same task — so the autosave
+  // timer, "page went to the background", ✓ and click-away can fire in any order without making copies. Saves run in order.
+  const created = useRef(null);                  // { id, sent } once the task exists
+  const chain = useRef(Promise.resolve());
+  const discarded = useRef(false);
+  const leaving = useRef(false), leaveTried = useRef(false);
+  const snap = c => ({ name: c.name.trim(), details: c.details, priority: c.priority, due: JSON.stringify(c.due) });
+  const persistNew = useCallback(() => {
+    chain.current = chain.current.then(async () => {
+      if (discarded.current) return;
+      const c = cur.current;
+      if (!created.current) {
+        if (!c.name.trim()) return;
+        if (leaving.current) { if (leaveTried.current) return; leaveTried.current = true; }   // closing the page: one attempt only (a reported failure may still have arrived)
+        const d = buildDue(c.due.date, c.due.time);
+        const made = await onCreate({ task_name: c.name.trim(), details: c.details, priority: c.priority, ...(d || {}) }, { quiet: true });
+        if (made?.id) created.current = { id: made.id, sent: snap(c) };
+        return;
+      }
+      const now = snap(c), sent = created.current.sent, patch = {};
+      if (c.name.trim() && now.name !== sent.name) patch.task_name = now.name;
+      if (now.details !== sent.details) patch.details = c.details;
+      if (now.priority !== sent.priority) patch.priority = c.priority;
+      if (now.due !== sent.due) Object.assign(patch, buildDue(c.due.date, c.due.time) || { due_at: null, due_all_day: false });
+      if (!Object.keys(patch).length) return;
+      created.current.sent = { ...now, name: patch.task_name ?? sent.name };
+      await onUpdate(created.current.id, patch);
+    }).catch(() => {});
+    return chain.current;
+  }, [onCreate, onUpdate]);
+
   const persist = useCallback(() => {
     const c = cur.current;
-    if (isNew) {
-      if (finished.current || !c.name.trim()) return false;
-      finished.current = true;
-      const d = buildDue(c.due.date, c.due.time);
-      onCreate({ task_name: c.name.trim(), details: c.details, priority: c.priority, ...(d || {}) });
-      return true;
-    }
+    if (isNew) { if (discarded.current) return false; persistNew(); return true; }
     const patch = {};
     if (c.name.trim() && c.name !== sent.current.name) patch.task_name = c.name.trim();
     if (c.details !== sent.current.details) patch.details = c.details;
@@ -105,23 +130,28 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onClose, onDelete, o
     sent.current = { name: patch.task_name ?? sent.current.name, details: c.details, due: JSON.stringify(c.due), priority: c.priority };
     onUpdate(task.id, patch);
     return true;
-  }, [isNew, onCreate, onUpdate, task]);
+  }, [isNew, onUpdate, task, persistNew]);
   const persistRef = useRef(persist); persistRef.current = persist;
 
   const done = () => { persistRef.current(); finished.current = true; onClose(); };
-  const discard = () => { finished.current = true; onClose(); };
+  const discard = () => {                         // 🗑️ "ทิ้งร่างนี้" — also removes a copy that was already auto-saved
+    finished.current = true; discarded.current = true; onClose();
+    chain.current = chain.current.then(async () => { const c = created.current; created.current = null; if (c && onDiscard) await onDiscard(c.id); }).catch(() => {});
+  };
 
-  useEffect(() => {
-    if (isNew) return undefined;
+  useEffect(() => {                               // saved shortly after you stop typing (a new task: once it has a name)
     const t = setTimeout(() => persistRef.current(), 1500);
     return () => clearTimeout(t);
   }, [isNew, name, details, due, priority]);
   useEffect(() => {
     const flush = () => persistRef.current();
     const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
+    const onHide = () => { leaving.current = true; flush(); };
+    const onShow = () => { leaving.current = false; leaveTried.current = false; };
     document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('pagehide', flush);
-    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush); flush(); };
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pageshow', onShow);
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', onHide); window.removeEventListener('pageshow', onShow); leaving.current = true; flush(); };
   }, []);
   useEffect(() => {
     function onClickOutside(e) { if (ref.current && !ref.current.contains(e.target)) done(); }

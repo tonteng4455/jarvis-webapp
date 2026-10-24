@@ -4,6 +4,7 @@
 // an error state with retry, the mobile "+" button, and apiGet().
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { loadDraft, saveDraft, clearDraft } from '../../lib/draft';
 
 // ---------- API helper ----------
 // Throws on network failure / non-OK so pages can show <ErrorState>
@@ -14,6 +15,81 @@ export async function apiGet(url) {
   if (res.status === 401) { window.location.href = '/login'; throw new Error('unauthorized'); }
   if (!res.ok) throw new Error(`http_${res.status}`);
   return res.json();
+}
+
+// ---------- Coming back after a pause ----------
+// A phone app is often left for minutes or hours. When it comes back to the foreground (or the connection returns) after
+// `minMs`, reload what the page shows so it is never stale. Forms keep their own state, so nothing being typed is touched.
+export function useRefreshOnReturn(load, minMs = 90 * 1000) {
+  const ref = useRef(load); ref.current = load;
+  const last = useRef(0);
+  useEffect(() => {
+    last.current = Date.now();
+    const run = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - last.current < minMs) return;
+      last.current = Date.now();
+      ref.current();
+    };
+    document.addEventListener('visibilitychange', run);
+    window.addEventListener('online', run);
+    window.addEventListener('pageshow', run);
+    return () => { document.removeEventListener('visibilitychange', run); window.removeEventListener('online', run); window.removeEventListener('pageshow', run); };
+  }, [minMs]);
+}
+
+// ---------- Unsaved form drafts ----------
+// useDraft('expense:new', { type, amount, ... }, saved => { setType(saved.type); ... })
+// Saves the values shortly after each change (and at once when the page is hidden), restores them the next time the same
+// form opens, and removes them when the form equals its starting state or clear() is called (after a save / cancel).
+export function useDraft(key, values, apply) {
+  const [ready, setReady] = useState(false);
+  const [restored, setRestored] = useState(false);
+  const json = JSON.stringify(values);
+  const initial = useRef(json);                 // what an untouched form looks like
+  const applyRef = useRef(apply); applyRef.current = apply;
+  const latest = useRef(json); latest.current = json;
+
+  useEffect(() => {
+    const d = loadDraft(key);
+    if (d && JSON.stringify(d) !== initial.current) { applyRef.current(d); setRestored(true); }
+    setReady(true);
+  }, [key]);
+
+  useEffect(() => {
+    if (!ready) return undefined;
+    const t = setTimeout(() => { if (json === initial.current) clearDraft(key); else saveDraft(key, JSON.parse(json)); }, 300);
+    return () => clearTimeout(t);
+  }, [ready, json, key]);
+
+  useEffect(() => {
+    if (!ready) return undefined;
+    const flush = () => { if (latest.current === initial.current) clearDraft(key); else saveDraft(key, JSON.parse(latest.current)); };
+    const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', flush);
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush); };
+  }, [ready, key]);
+
+  return { restored, clear: () => clearDraft(key) };
+}
+
+// A card on a list page: "you left something half-typed — tap to continue" (shown when a draft of that NEW form exists).
+export function ResumeDraft({ draftKey, active, onResume, label }) {
+  const [has, setHas] = useState(false);
+  useEffect(() => { setHas(!active && !!loadDraft(draftKey)); }, [active, draftKey]);
+  if (!has) return null;
+  return (
+    <button type="button" className="glass-card" onClick={onResume}
+      style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%', textAlign: 'left', marginBottom: '0.8rem', borderLeft: '3px solid var(--accent)', cursor: 'pointer', color: 'inherit' }}>
+      <span style={{ fontSize: '1.3rem' }}>📝</span>
+      <span style={{ flex: 1 }}><b>{label}</b><br /><span className="muted">แตะเพื่อทำต่อ</span></span>
+      <span className="today-link">เปิด ›</span>
+    </button>
+  );
+}
+
+export function DraftNote({ show }) {
+  return show ? <p className="muted" style={{ margin: '0 0 0.5rem', fontSize: '0.8rem' }}>📝 กู้คืนข้อความที่ยังไม่ได้บันทึกให้แล้ว</p> : null;
 }
 
 // ---------- Deferred ("undo-able") deletes ----------

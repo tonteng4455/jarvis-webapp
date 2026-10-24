@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { DashNav, NOTE_CATEGORIES, EXPENSE_CATEGORIES } from '../_components';
-import { apiGet, ErrorState, ListSkeleton, useToast } from '../_ui';
+import { apiGet, ErrorState, ListSkeleton, useRefreshOnReturn, useToast } from '../_ui';
 
 const KINDS = [
   { key: 'expense', label: '💸 หมวดรายจ่าย', kind: 'category', scope: 'expense', hint: 'ข้อความรายจ่ายที่มีคำนี้ จะลงหมวดที่เลือก', ph: 'เช่น ทางด่วน' },
@@ -42,6 +42,7 @@ export default function MemoryPage() {
     catch (e) { if (e.message !== 'unauthorized') setError(true); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useRefreshOnReturn(load);
 
   function pickKind(k) {
     setKindKey(k);

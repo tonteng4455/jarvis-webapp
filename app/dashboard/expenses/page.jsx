@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, CategorySelect, EXPENSE_CATEGORIES } from '../_components';
-import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from '../_ui';
+import { apiGet, DraftNote, ResumeDraft, ErrorState, Fab, ListSkeleton, useDraft, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
 
 export default function ExpensesPage() {
   return (
@@ -38,16 +38,21 @@ function ExpenseEditor({ expense, categories, onSave, onCancel, onDelete }) {
   const [memo, setMemo] = useState(expense.memo || '');
   const [saving, setSaving] = useState(false);
   const valid = parseFloat(amount) > 0;
+  // what is typed here survives a pause, an app switch, or the phone discarding the tab (see useDraft)
+  const draft = useDraft(isNew ? 'expense:new' : `expense:${expense.id}`, { type, amount, category, memo },
+    d => { setType(d.type === 'income' ? 'income' : 'expense'); setAmount(String(d.amount ?? '')); if (d.category) setCategory(d.category); setMemo(d.memo ?? ''); });
 
   async function save() {
-    if (!valid) return;
+    if (!valid || saving) return;
     setSaving(true);
-    await onSave(expense.id, { type, amount: parseFloat(amount), category, memo: memo || null });
-    setSaving(false);
+    let ok = false;
+    try { ok = await onSave(expense.id, { type, amount: parseFloat(amount), category, memo: memo || null }); } finally { setSaving(false); }
+    if (ok) draft.clear();
   }
 
   return (
     <div className="glass-panel">
+      <DraftNote show={draft.restored} />
       <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.6rem' }}>
         {[['expense', '💸 รายจ่าย'], ['income', '💵 รายรับ']].map(([val, label]) => (
           <button key={val} type="button" onClick={() => setType(val)}
@@ -66,7 +71,7 @@ function ExpenseEditor({ expense, categories, onSave, onCancel, onDelete }) {
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between' }}>
         {isNew ? <span /> : <button className="note-icon-btn" onClick={() => onDelete(expense)}>🗑️ ลบ</button>}
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button className="glass-btn-outline" onClick={onCancel}>ยกเลิก</button>
+          <button className="glass-btn-outline" onClick={() => { draft.clear(); onCancel(); }}>ยกเลิก</button>
           <button className="glass-btn" onClick={save} disabled={saving || !valid}>{saving ? 'กำลังบันทึก...' : isNew ? '➕ เพิ่มรายการ' : '✅ บันทึก'}</button>
         </div>
       </div>
@@ -92,6 +97,7 @@ function ExpensesPageInner() {
     } catch (e) { if (e.message !== 'unauthorized') setError(true); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useRefreshOnReturn(load);
 
   async function exportToSheet() {
     setExporting(true);
@@ -121,17 +127,24 @@ function ExpensesPageInner() {
 
   async function saveExpense(id, payload) {
     const isNew = !id;
-    const res = await fetch(isNew ? '/api/expenses' : `/api/expenses/${id}`, {
-      method: isNew ? 'POST' : 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    });
+    let res;
+    try {
+      res = await fetch(isNew ? '/api/expenses' : `/api/expenses/${id}`, {
+        method: isNew ? 'POST' : 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+    } catch {
+      toast.show('📶 ส่งไม่สำเร็จ (อินเทอร์เน็ตหลุด) ข้อมูลที่พิมพ์ยังอยู่ ลองกดบันทึกอีกครั้ง — ถ้าไม่แน่ใจ ดูในรายการก่อนว่าบันทึกไปแล้วหรือยัง', { tone: 'warn', duration: 7000 });
+      return false;
+    }
     if (!res.ok) {
       console.error('saveExpense failed:', await res.json().catch(() => ({})));
-      toast.show(isNew ? '❌ เพิ่มรายการไม่สำเร็จ' : '❌ บันทึกไม่สำเร็จ', { tone: 'error' });
-      return;
+      toast.show(res.status === 401 ? '🔐 เซสชันหมดอายุ ข้อมูลที่พิมพ์ยังอยู่ — เข้าสู่ระบบใหม่แล้วเปิดฟอร์มเดิมจะกู้คืนให้' : isNew ? '❌ เพิ่มรายการไม่สำเร็จ' : '❌ บันทึกไม่สำเร็จ', { tone: 'error', duration: 6000 });
+      return false;
     }
     toast.show(isNew ? '✅ เพิ่มรายการแล้วครับ' : '✅ บันทึกเรียบร้อยแล้วครับ');
     setEditingId(null); setAdding(false);
     load();
+    return true;
   }
 
   function deleteExpense(exp) {
@@ -177,6 +190,7 @@ function ExpensesPageInner() {
         <button type="button" className="glass-btn" onClick={() => { setEditingId(null); setAdding(true); }}>➕ เพิ่ม</button>
       </div>
 
+      <ResumeDraft draftKey="expense:new" active={adding} onResume={() => setAdding(true)} label="มีรายการรายรับ-รายจ่ายที่พิมพ์ค้างไว้" />
       {error && <ErrorState onRetry={() => { setExpenses(null); load(); }} />}
       {!error && expenses === null && <ListSkeleton />}
 

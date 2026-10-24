@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { DashNav } from '../_components';
-import { apiGet, ErrorState, ListSkeleton, useToast } from '../_ui';
+import { apiGet, ErrorState, ListSkeleton, useRefreshOnReturn, useToast } from '../_ui';
 import { DueChip } from '../_due';
 import SetupChecklist from '../_setup';
 import { readShare } from '../../../lib/sharePending';
@@ -78,6 +78,7 @@ export default function TodayPage() {
     setSearching(false);
   }, [toast]);
   useEffect(() => { load(); }, [load]);
+  useRefreshOnReturn(load);
   useEffect(() => { if (q.trim() && data && !full && !searching) loadFull(); }, [q, data, full, searching, loadFull]);
 
   async function toggleTask(t) {

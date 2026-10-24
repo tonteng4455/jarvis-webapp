@@ -12,7 +12,7 @@ import { DashNav, formatDate } from '../_components';
 import { ConvertToTaskSheet } from '../_taskEditor';
 import { ConvertChooser, convertItem, eventToNotePayload } from '../_convert';
 import { dueInputs } from '../../../lib/taskDue';
-import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from '../_ui';
+import { apiGet, DraftNote, ResumeDraft, ErrorState, Fab, ListSkeleton, useDraft, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
 
 const REMINDER_OPTIONS = [
   { value: '', label: '⚙️ ค่าเริ่มต้นของปฏิทิน' },
@@ -126,20 +126,26 @@ function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
   const originalCal = event.calendar_id || cals?.targetCalendarId || '';
   const [calendar, setCalendar] = useState(originalCal);
 
+  // what is typed here survives a pause, an app switch, or the phone discarding the tab (see useDraft)
+  const draft = useDraft(isNew ? 'event:new' : `event:${event.id}`, { title, date, time, reminder, location, description, calendar },
+    d => { setTitle(d.title ?? ''); setDate(d.date ?? ''); setTime(d.time ?? ''); setReminder(d.reminder ?? ''); setLocation(d.location ?? ''); setDescription(d.description ?? ''); if (d.calendar) setCalendar(d.calendar); });
+
   async function save() {
-    if (!title.trim()) return;
+    if (!title.trim() || saving) return;
     setSaving(true);
     const start_time = date && time ? new Date(`${date}T${time}:00`).toISOString() : event.start_time;
-    await onSave(event.id, {
+    let ok = false;
+    try { ok = await onSave(event.id, {
       title: title.trim(), start_time, location: location || null, description: description || null,
       reminder_minutes: reminder === '' ? null : parseInt(reminder, 10),
       ...(multi(cals) && calendar && (isNew || calendar !== originalCal) ? { calendar_id: calendar } : {}),   // new: where it goes · existing: only when moved
-    });
-    setSaving(false);
+    }); } finally { setSaving(false); }
+    if (ok) draft.clear();
   }
 
   return (
     <div className="glass-panel">
+      <DraftNote show={draft.restored} />
       <div style={{ marginBottom: '0.6rem' }}>
         <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>หัวเรื่อง</label>
         <input className="glass-input" value={title} onChange={e => setTitle(e.target.value)} autoFocus={isNew} placeholder="เช่น ประชุมทีม" />
@@ -179,7 +185,7 @@ function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         {!isNew && onConvert && <button className="glass-btn-outline" style={{ marginRight: 'auto' }} onClick={() => onConvert(event)}>🔄 เปลี่ยนเป็น…</button>}
-        <button className="glass-btn-outline" onClick={onCancel}>ยกเลิก</button>
+        <button className="glass-btn-outline" onClick={() => { draft.clear(); onCancel(); }}>ยกเลิก</button>
         <button className="glass-btn" onClick={save} disabled={saving || !title.trim()}>{saving ? 'กำลังบันทึก...' : isNew ? '➕ เพิ่มนัดหมาย' : '✅ บันทึก'}</button>
       </div>
     </div>
@@ -280,6 +286,7 @@ function CalendarPageInner() {
   }, [view, cursor, showPast]);
 
   useEffect(() => { setEvents(null); load(); }, [load]);
+  useRefreshOnReturn(load);
   useEffect(() => { apiGet('/api/calendar/calendars').then(setCals).catch(() => {}); }, []);
 
   async function recheckCalendars() {
@@ -305,16 +312,23 @@ function CalendarPageInner() {
     if (patch.displayCalendarIds) { setEvents(null); load(); }
   }
 
+  // → true when saved (the editor closes and its draft is dropped), false when not (the editor stays open with everything typed)
   async function saveEvent(id, patch) {
     const isNew = !id;
-    const res = await fetch(isNew ? '/api/calendar' : `/api/calendar/${id}`, {
-      method: isNew ? 'POST' : 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
-    });
+    let res;
+    try {
+      res = await fetch(isNew ? '/api/calendar' : `/api/calendar/${id}`, {
+        method: isNew ? 'POST' : 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+      });
+    } catch {
+      toast.show('📶 ส่งไม่สำเร็จ (อินเทอร์เน็ตหลุด) ข้อมูลที่พิมพ์ยังอยู่ ลองกดบันทึกอีกครั้ง — ถ้าไม่แน่ใจ ดูในรายการก่อนว่าบันทึกไปแล้วหรือยัง', { tone: 'warn', duration: 7000 });
+      return false;
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       console.error('saveEvent failed:', data);
-      toast.show(isNew ? '❌ เพิ่มนัดหมายไม่สำเร็จ' : '❌ บันทึกไม่สำเร็จ', { tone: 'error' });
-      return;
+      toast.show(res.status === 401 ? '🔐 เซสชันหมดอายุ ข้อมูลที่พิมพ์ยังอยู่ — เข้าสู่ระบบใหม่แล้วเปิดฟอร์มเดิมจะกู้คืนให้' : isNew ? '❌ เพิ่มนัดหมายไม่สำเร็จ' : '❌ บันทึกไม่สำเร็จ', { tone: 'error', duration: 6000 });
+      return false;
     }
     if (data.moveError) {
       toast.show('⚠️ บันทึกแล้ว แต่ย้ายไปปฏิทินนั้นไม่ได้ (อาจไม่มีสิทธิ์เขียน) นัดยังอยู่ที่ปฏิทินเดิม', { tone: 'warn', duration: 7000 });
@@ -336,6 +350,7 @@ function CalendarPageInner() {
     setEditingId(null);
     setCreating(false);
     load();
+    return true;
   }
 
   function cancelEvent(ev) {
@@ -425,6 +440,7 @@ function CalendarPageInner() {
 
       {showCals && multi(cals) && <CalendarSettings cals={cals} onChange={changeCalendarSettings} busy={calsBusy} />}
 
+      <ResumeDraft draftKey="event:new" active={!!creating} onResume={startCreate} label="มีนัดหมายที่พิมพ์ค้างไว้" />
       {error && <ErrorState onRetry={() => { setEvents(null); load(); }} />}
 
       {!error && view === 'month' && (

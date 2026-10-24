@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { DashNav } from '../_components';
-import { apiGet, ErrorState, ListSkeleton, useToast } from '../_ui';
+import { apiGet, ErrorState, ListSkeleton, useRefreshOnReturn, useToast } from '../_ui';
 
 const KIND_ICON = { image: '🖼️', video: '🎬', audio: '🎵', file: '📄' };
 
@@ -165,6 +165,7 @@ export default function FilesPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useRefreshOnReturn(load);
 
   async function deleteFile(f) {
     if (!confirm('ลบไฟล์นี้ถาวรใช่ไหมครับ? กู้คืนไม่ได้แล้ว')) return;

@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav } from '../_components';
-import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from '../_ui';
+import { apiGet, ErrorState, Fab, ListSkeleton, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
 import { DueChip, DuePicker } from '../_due';
 import { TaskEditorModal, ConvertToEventSheet, PRIORITY_COLOR, PRIORITY_LABEL } from '../_taskEditor';
 import { ConvertChooser, convertItem, taskToNotePayload } from '../_convert';
@@ -139,25 +139,40 @@ function TasksPageInner() {
   }, [showArchived]);
 
   useEffect(() => { load(); }, [load]);
+  useRefreshOnReturn(load);
   useEffect(() => {
     if (searchParams.get('new') !== '1') return;
     setEditor('new');
     window.history.replaceState(null, '', '/dashboard/tasks');
   }, [searchParams]);
 
-  async function createTask(payload) {
-    const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  // → the created task (so the editor can keep updating THAT task instead of making another), or null.
+  // quiet: an automatic save in the background does not pop up errors on every pause in typing.
+  async function createTask(payload, { quiet = false } = {}) {
+    let res;
+    try {
+      const body = JSON.stringify(payload);
+      res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: body.length < 60000 });
+    } catch { if (!quiet) toast.show('📶 ส่งไม่สำเร็จ (อินเทอร์เน็ตหลุด) ลองอีกครั้ง', { tone: 'warn' }); return null; }
     if (res.ok) {
-      const d = await res.clone().json().catch(() => ({}));
+      const d = await res.json().catch(() => ({}));
       if (d.dropped?.length) toast.show('⚠️ บันทึกงานแล้ว แต่ยังเก็บกำหนดส่ง/รายละเอียดไม่ได้ (ต้องรัน tasks_due.sql และ tasks_details.sql ใน Supabase)', { tone: 'warn', duration: 8000 });
-      load(); return;
+      load(); return d.task || null;
     }
     const data = await res.json().catch(() => ({}));
+    if (quiet) return null;
     if (data.error === 'quota_reached') {
       setStatus(`✅ คุณมีงานครบ ${data.limit} รายการแล้วครับ (สูงสุดสำหรับ Free) ลองลบงานเก่าที่ไม่ใช้แล้ว หรืออัปเกรด Premium เพื่อเพิ่มได้ไม่จำกัด`);
     } else {
       toast.show('❌ เพิ่มงานไม่สำเร็จ', { tone: 'error' });
     }
+    return null;
+  }
+
+  // a draft that was already auto-saved and then thrown away: remove that copy too
+  async function discardTask(id) {
+    setTasks(prev => prev?.filter(t => t.id !== id));
+    try { await fetch(`/api/tasks/${id}`, { method: 'DELETE', keepalive: true }); } catch { load(); }
   }
 
   async function updateTask(id, patch) {
@@ -218,7 +233,7 @@ function TasksPageInner() {
       {!showArchived && <Fab onClick={() => setEditor('new')} label="เพิ่มงาน" />}
       {editor && (
         <TaskEditorModal key={editor === 'new' ? 'new' : editor.id} task={editor === 'new' ? null : editor}
-          onCreate={createTask} onUpdate={updateTask} onClose={() => setEditor(null)}
+          onCreate={createTask} onUpdate={updateTask} onDiscard={discardTask} onClose={() => setEditor(null)}
           onArchive={t => { updateTask(t.id, { archived: !t.archived }); setEditor(null); }}
           onDelete={t => { setEditor(null); deleteTask(t); }}
           onConvert={t => setConvert({ task: t, to: null })} />
