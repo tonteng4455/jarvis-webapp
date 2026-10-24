@@ -26,7 +26,7 @@ function categoryLabel(key) {
 // --- New-note composer: opened ONLY by a deliberate tap on the list page (the "＋ จดโน้ตใหม่"
 // bar, the round ＋ button, or the one-shot ?new=1 shortcut) — never as a side effect of coming
 // back to this page. Saves on ✓ or when you click away. ---
-function Composer({ onCreate, onEditingChange, categories, openSignal }) {
+function Composer({ onCreate, onUpdate, onDiscard, onEditingChange, categories, openSignal }) {
   const [open, setOpen] = useState(false);
   // Open when the signal CHANGES while this is mounted. The old version opened whenever the signal
   // was non-zero, so remounting the composer (e.g. leaving the archive view) popped a new note open.
@@ -45,37 +45,81 @@ function Composer({ onCreate, onEditingChange, categories, openSignal }) {
 
   useEffect(() => { onEditingChange(open); }, [open, onEditingChange]);
 
-  function reset() { finished.current = true; setTitle(''); setContent(''); setCategory('general'); setPinned(false); setColor('default'); setImages([]); setOpen(false); }
-
   const draft = useRef({});
   draft.current = { title, content, category, images, pinned, color };
-  const finished = useRef(false);        // set once the draft was saved or discarded on purpose
-  useEffect(() => { if (open) finished.current = false; }, [open]);
 
-  async function commit() {
-    if (uploadingRef.current) return; // wait for the in-flight photo upload
-    if (!title.trim() && !content.trim() && images.length === 0) { finished.current = true; setOpen(false); return; }
-    finished.current = true;
-    await onCreate({ title, content, category, images, pinned, color });
-    reset();
+  // The draft is saved ONCE (POST) the first time it has something in it, and every later save is an update (PATCH) of that
+  // same note — so the autosave timer, "page went to the background", ✓ and click-away can all fire in any order without
+  // ever making a second copy. Saves run one after another (never two creates racing each other).
+  const created = useRef(null);          // { id, sent } once the note exists on the server
+  const leaving = useRef(false), leaveTried = useRef(false);
+  const chain = useRef(Promise.resolve());
+  const snapshot = d => ({ title: d.title, content: d.content, category: d.category, pinned: d.pinned, color: d.color, images: JSON.stringify(d.images) });
+  const isEmpty = d => !d.title.trim() && !d.content.trim() && d.images.length === 0;
+  function persistDraft({ quiet = true } = {}) {
+    chain.current = chain.current.then(async () => {
+      const d = draft.current;
+      if (uploadingRef.current) return;                      // wait for the in-flight photo upload
+      if (!created.current) {
+        if (isEmpty(d)) return;
+        // While the page is being closed / left, the one create request that goes out may report "failed" to this page even
+        // though the server received it — sending it again would make a second copy. So: one attempt only.
+        if (leaving.current) { if (leaveTried.current) return; leaveTried.current = true; }
+        const note = await onCreate(d, { quiet });
+        if (note?.id) created.current = { id: note.id, sent: snapshot(d) };
+        return;
+      }
+      const now = snapshot(d), sent = created.current.sent, patch = {};
+      for (const k of ['title', 'content', 'category', 'pinned', 'color']) if (now[k] !== sent[k]) patch[k] = d[k];
+      if (now.images !== sent.images) patch.images = d.images;
+      if (Object.keys(patch).length === 0) return;
+      created.current.sent = now;
+      await onUpdate(created.current.id, patch);
+    }).catch(() => {});
+    return chain.current;
   }
-  // A draft with something in it is never thrown away by accident (page hidden, Back, navigating off).
-  const saveDraftRef = useRef(null);
-  saveDraftRef.current = () => {
-    const d = draft.current;
-    if (finished.current || uploadingRef.current) return;
-    if (!d.title.trim() && !d.content.trim() && d.images.length === 0) return;
-    finished.current = true;
-    onCreate(d);
-  };
+
+  const committing = useRef(false);
+  const resetUi = () => { setTitle(''); setContent(''); setCategory('general'); setPinned(false); setColor('default'); setImages([]); setOpen(false); };
+  async function commit() {
+    if (uploadingRef.current || committing.current) return;       // a second click-away / double tap must not save twice
+    committing.current = true;
+    try {
+      if (isEmpty(draft.current)) {                               // nothing left (or emptied after it was auto-saved)
+        await chain.current;
+        if (created.current) await onDiscard(created.current.id);
+      } else await persistDraft({ quiet: false });
+      created.current = null;
+      resetUi();
+    } finally { committing.current = false; }
+  }
+  function discard() {                                              // 🗑️ "ทิ้งร่างนี้" — also removes a copy that was already auto-saved
+    resetUi();
+    chain.current = chain.current.then(async () => { const c = created.current; created.current = null; if (c) await onDiscard(c.id); }).catch(() => {});
+  }
+
+  // Like Keep: saved shortly after you stop typing, and when the page is hidden / closed / Back is pressed.
+  const persistRef = useRef(null);
+  persistRef.current = () => { if (!committing.current) persistDraft(); };
   useEffect(() => {
     if (!open) return undefined;
-    const flush = () => saveDraftRef.current();
+    const t = setTimeout(() => persistRef.current(), 1500);
+    return () => clearTimeout(t);
+  }, [open, title, content, category, images, pinned, color]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const flush = () => persistRef.current();
     const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
+    const onHide = () => { leaving.current = true; flush(); };
+    const onShow = () => { leaving.current = false; leaveTried.current = false; };   // came back from the back/forward cache
     document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('pagehide', flush);
-    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush); flush(); };
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pageshow', onShow);
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', onHide); window.removeEventListener('pageshow', onShow); };
   }, [open]);
+  // leaving the page (Back, navigating away) with a draft open: it is saved, never thrown away
+  const openRef = useRef(false); openRef.current = open;
+  useEffect(() => () => { if (openRef.current) { leaving.current = true; persistRef.current(); } }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -102,7 +146,7 @@ function Composer({ onCreate, onEditingChange, categories, openSignal }) {
           titleValue={title} onTitle={setTitle} initialContent="" onContent={setContent}
           imgState={imgState} categories={categories} category={category} onCategory={setCategory}
           pinned={pinned} onPin={() => setPinned(v => !v)} color={color} onColor={setColor}
-          onDelete={reset} onDone={commit} doneDisabled={imgState.uploading > 0} />
+          onDelete={discard} onDone={commit} doneDisabled={imgState.uploading > 0} />
       </div>
     </EditorOverlay>
   );
@@ -450,25 +494,40 @@ function NotesPageInner() {
     if (isEditing) editingIds.current.add(id); else editingIds.current.delete(id);
   }, []);
 
-  async function createNote({ title, content, category, images, pinned, color }) {
-    const res = await fetch('/api/notes', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, content, category, images, pinned, color }),
-    });
-    if (res.ok) { load(); return; }
+  // → the created note (so the composer can keep updating THAT note instead of making another), or null.
+  // quiet: an automatic save in the background does not pop up errors on every pause in typing.
+  async function createNote({ title, content, category, images, pinned, color }, { quiet = false } = {}) {
+    let res;
+    try {
+      const body = JSON.stringify({ title, content, category, images, pinned, color });
+      res = await fetch('/api/notes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+        keepalive: body.length < 60000,           // still delivered if the page is being closed / left (the draft is saved on pagehide)
+      });
+    } catch { if (!quiet) toast.show('❌ บันทึกไม่สำเร็จ', { tone: 'error' }); return null; }
+    if (res.ok) { const d = await res.json().catch(() => ({})); load(); return d.note || null; }
     const data = await res.json().catch(() => ({}));
+    if (quiet) return null;
     if (data.error === 'quota_reached') {
       setStatus(`📝 คุณมีโน้ตครบ ${data.limit} รายการแล้วครับ (สูงสุดสำหรับ Free) ลองลบโน้ตเก่าที่ไม่ใช้แล้ว หรืออัปเกรด Premium เพื่อจดได้ไม่จำกัด`);
     } else {
       toast.show('❌ บันทึกไม่สำเร็จ', { tone: 'error' });
     }
+    return null;
+  }
+
+  // A draft that was already auto-saved and then thrown away (🗑️, or everything deleted): remove that copy too.
+  async function discardNote(id) {
+    setNotes(prev => prev?.filter(n => n.id !== id));
+    try { await fetch(`/api/notes/${id}`, { method: 'DELETE', keepalive: true }); } catch { load(); }
   }
 
   async function updateNote(id, patch) {
     setNotes(prev => prev?.map(n => n.id === id ? { ...n, ...patch } : n));
+    const body = JSON.stringify(patch);
     const res = await fetch(`/api/notes/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body,
+      keepalive: body.length < 60000,
     });
     if (!res.ok) load();
     else if ('archived' in patch || 'pinned' in patch) load();
@@ -636,7 +695,7 @@ function NotesPageInner() {
             </div>
           )}
 
-          {!showArchived && <Composer onCreate={createNote} onEditingChange={setComposerEditing} categories={categoryOptions} openSignal={openSignal} />}
+          {!showArchived && <Composer onCreate={createNote} onUpdate={updateNote} onDiscard={discardNote} onEditingChange={setComposerEditing} categories={categoryOptions} openSignal={openSignal} />}
 
           {error && <ErrorState onRetry={() => { setError(false); load(); }} />}
           {!error && notes === null && <ListSkeleton rows={4} height={72} />}
