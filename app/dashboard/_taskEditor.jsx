@@ -127,8 +127,12 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, 
     if (c.priority !== sent.current.priority) patch.priority = c.priority;
     if (JSON.stringify(c.due) !== sent.current.due) Object.assign(patch, buildDue(c.due.date, c.due.time) || { due_at: null, due_all_day: false });
     if (!Object.keys(patch).length) return true;
-    sent.current = { name: patch.task_name ?? sent.current.name, details: c.details, due: JSON.stringify(c.due), priority: c.priority };
-    onUpdate(task.id, patch);
+    const before = sent.current;
+    const mine = { name: patch.task_name ?? sent.current.name, details: c.details, due: JSON.stringify(c.due), priority: c.priority };
+    sent.current = mine;
+    Promise.resolve(onUpdate(task.id, patch))
+      .then(okSent => { if (okSent === false && sent.current === mine) sent.current = before; })      // could not be sent: retry on the next save
+      .catch(() => { if (sent.current === mine) sent.current = before; });
     return true;
   }, [isNew, onUpdate, task, persistNew]);
   const persistRef = useRef(persist); persistRef.current = persist;
@@ -151,7 +155,8 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, 
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('pagehide', onHide);
     window.addEventListener('pageshow', onShow);
-    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', onHide); window.removeEventListener('pageshow', onShow); leaving.current = true; flush(); };
+    window.addEventListener('online', flush);            // the connection came back: send what could not go out
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', onHide); window.removeEventListener('pageshow', onShow); window.removeEventListener('online', flush); leaving.current = true; flush(); };
   }, []);
   useEffect(() => {
     function onClickOutside(e) { if (ref.current && !ref.current.contains(e.target)) done(); }

@@ -205,8 +205,12 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
     if (cur.category !== sent.current.category) patch.category = cur.category;
     if (imagesJson !== sent.current.images) patch.images = cur.images;
     if (Object.keys(patch).length === 0) return true;
+    const before = sent.current;
     sent.current = { title: cur.title, content: cur.content, category: cur.category, images: imagesJson };
-    onUpdate(note.id, { title: cur.title, content: cur.content, category: cur.category, ...(patch.images ? { images: cur.images } : {}) });
+    // if it could not be sent, mark it unsent again so the next save retries it
+    Promise.resolve(onUpdate(note.id, { title: cur.title, content: cur.content, category: cur.category, ...(patch.images ? { images: cur.images } : {}) }))
+      .then(okSent => { if (okSent === false && sent.current && sent.current.title === cur.title && sent.current.content === cur.content) sent.current = before; })
+      .catch(() => { sent.current = before; });
     return true;
   }
   const persistRef = useRef(persist); persistRef.current = persist;
@@ -230,7 +234,8 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
     const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('pagehide', flush);
-    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush); flush(); };
+    window.addEventListener('online', flush);            // the connection came back: send what could not go out
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush); window.removeEventListener('online', flush); flush(); };
   }, [editing]);
 
   useEffect(() => {
@@ -522,15 +527,25 @@ function NotesPageInner() {
     try { await fetch(`/api/notes/${id}`, { method: 'DELETE', keepalive: true }); } catch { load(); }
   }
 
+  // → true when the server has it. false when it could not be sent (connection dropped) — the caller keeps the change
+  // marked "unsent" so the next save (✓, click-away, the connection coming back) sends it again instead of losing it.
+  const offlineToastAt = useRef(0);
   async function updateNote(id, patch) {
     setNotes(prev => prev?.map(n => n.id === id ? { ...n, ...patch } : n));
     const body = JSON.stringify(patch);
-    const res = await fetch(`/api/notes/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body,
-      keepalive: body.length < 60000,
-    });
-    if (!res.ok) load();
-    else if ('archived' in patch || 'pinned' in patch) load();
+    let res;
+    try {
+      res = await fetch(`/api/notes/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body,
+        keepalive: body.length < 60000,
+      });
+    } catch {
+      if (Date.now() - offlineToastAt.current > 20000) { offlineToastAt.current = Date.now(); toast.show('📶 อินเทอร์เน็ตหลุด — ที่แก้ไว้ยังอยู่ในหน้านี้ จะบันทึกให้เมื่อกลับมาออนไลน์ (หรือกด ✓)', { tone: 'warn', duration: 6000 }); }
+      return false;
+    }
+    if (!res.ok) { load(); return false; }
+    if ('archived' in patch || 'pinned' in patch) load();
+    return true;
   }
 
   function deleteNote(id) {

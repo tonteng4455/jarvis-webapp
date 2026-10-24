@@ -175,16 +175,25 @@ function TasksPageInner() {
     try { await fetch(`/api/tasks/${id}`, { method: 'DELETE', keepalive: true }); } catch { load(); }
   }
 
+  // → true when the server has it, false when it could not be sent (the editor then keeps the change marked "unsent" and retries)
+  const offlineToastAt = useRef(0);
   async function updateTask(id, patch) {
     setTasks(prev => prev && ('due_at' in patch ? sortTasks(prev.map(t => t.id === id ? { ...t, ...patch } : t)) : prev.map(t => t.id === id ? { ...t, ...patch } : t)));
-    const res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    let res;
+    try { res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), keepalive: true }); }
+    catch {
+      if (Date.now() - offlineToastAt.current > 20000) { offlineToastAt.current = Date.now(); toast.show('📶 อินเทอร์เน็ตหลุด — ที่แก้ไว้ยังอยู่ในหน้านี้ จะบันทึกให้เมื่อกลับมาออนไลน์ (หรือกด ✓)', { tone: 'warn', duration: 6000 }); }
+      return false;
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       toast.show(err.error === 'due_unsupported' ? '❌ ยังตั้งวัน-เวลาไม่ได้ (ต้องรัน tasks_due.sql ใน Supabase ก่อน)'
         : err.error === 'details_unsupported' ? '❌ ยังบันทึกรายละเอียดไม่ได้ (ต้องรัน tasks_details.sql ใน Supabase ก่อน)' : '❌ บันทึกไม่สำเร็จ', { tone: 'error' });
       load();
+      return false;
     }
-    else if ('archived' in patch) load();
+    if ('archived' in patch) load();
+    return true;
   }
 
   function deleteTask(task) {
