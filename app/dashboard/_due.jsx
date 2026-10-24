@@ -80,7 +80,7 @@ export function DueBanner() {
   const load = useCallback(async () => {
     last.current = Date.now();
     try {
-      const res = await fetch('/api/tasks?archived=false');
+      const res = await fetch('/api/tasks?due=1');
       if (!res.ok) return;
       const data = await res.json();
       setTasks(data.tasks || []);

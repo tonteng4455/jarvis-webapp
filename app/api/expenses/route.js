@@ -5,15 +5,21 @@ import { getPremiumSession } from '../../../lib/premium';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 
 
-export async function GET() {
+export async function GET(request) {
   const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
+  // ?from=ISO — only entries since then (Today's "วันนี้" card needs just today's).
+  const from = new URL(request.url).searchParams.get('from');
+  const fromOk = from && !Number.isNaN(Date.parse(from));
+
   const supabase = supabaseAdmin();
-  const { data, error } = await supabase
+  let q = supabase
     .from('expenses')
     .select('id, type, amount, category, memo, created_at')
-    .eq('user_id', session.lineUserId)
+    .eq('user_id', session.lineUserId);
+  if (fromOk) q = q.gte('created_at', new Date(Date.parse(from)).toISOString());
+  const { data, error } = await q
     .order('created_at', { ascending: false })
     .limit(500);
 

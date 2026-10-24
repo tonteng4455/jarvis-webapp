@@ -79,6 +79,7 @@ class Query {
   delete() { this.op = 'delete'; return this; }
   eq(col, val) { this.filters.push(r => r[col] === val); return this; }
   neq(col, val) { this.filters.push(r => r[col] !== val); return this; }
+  not(col, op, val) { if (op === 'is' && val === null) this.filters.push(r => r[col] != null); else if (op === 'eq') this.filters.push(r => r[col] !== val); return this; }
   lt(col, val) { this.filters.push(r => r[col] < val); return this; }
   gte(col, val) { this.filters.push(r => r[col] >= val); return this; }
   or(clause) { const c = parseOrClause(clause); this.filters.push(r => matchesOr(r, c)); return this; }

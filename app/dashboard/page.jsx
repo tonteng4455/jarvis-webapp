@@ -399,10 +399,12 @@ function NotesPageInner() {
   const [error, setError] = useState(false);
   const [openSignal, setOpenSignal] = useState(0);
 
+  const stampRef = useRef(null);       // fingerprint of the list on screen (see /api/notes?stamp=1)
   const load = useCallback(async (archived = showArchived) => {
     try {
       const data = await apiGet(`/api/notes?archived=${archived}`);
       setError(false);
+      stampRef.current = data.stamp ?? null;
       setNotes(withoutPending(data.notes));
     } catch (e) {
       // A failed background refresh must not wipe notes already on screen.
@@ -423,13 +425,26 @@ function NotesPageInner() {
   // a manual reload. Paused while the composer or any card is being
   // edited, or a drag is in progress — a poll mid-drag or mid-typing
   // would clobber unsaved local state.
+  // Egress: this used to re-download EVERY note (text included) every 8 s. Now it asks for a tiny fingerprint (ids +
+  // timestamps only), reloads the list only when that changed, and does nothing while the tab is in the background.
   useEffect(() => {
-    const timer = setInterval(() => {
+    let busy = false;
+    const check = async () => {
+      if (busy || document.visibilityState !== 'visible') return;
       if (composerEditing || editingIds.current.size > 0 || draggingRef.current) return;
-      load();
-    }, 8000);
-    return () => clearInterval(timer);
-  }, [load, composerEditing]);
+      busy = true;
+      try {
+        const { stamp } = await apiGet(`/api/notes?stamp=1&archived=${showArchived}`);
+        if (stampRef.current === null) stampRef.current = stamp;                       // (old server without a stamp) just remember it
+        else if (stamp !== stampRef.current) await load();
+      } catch { /* offline / signed out: try again next time */ }
+      busy = false;
+    };
+    const timer = setInterval(check, 10000);
+    const onVis = () => { if (document.visibilityState === 'visible') check(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVis); };
+  }, [load, composerEditing, showArchived]);
 
   const setCardEditing = useCallback((id, isEditing) => {
     if (isEditing) editingIds.current.add(id); else editingIds.current.delete(id);

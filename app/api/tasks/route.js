@@ -28,6 +28,23 @@ export async function GET(request) {
   const showArchived = searchParams.get('archived') === 'true';
 
   const supabase = supabaseAdmin();
+
+  // ?due=1 — only what the "ครบกำหนด" banner needs: open tasks due within ~2 days (or already overdue), a few columns.
+  // The banner used to download the whole task list (with details) on every page change.
+  if (searchParams.get('due') === '1') {
+    const soon = new Date(Date.now() + 2 * 86400000).toISOString();
+    const { data: due, error: dueErr } = await supabase
+      .from('tasks')
+      .select('id, task_name, due_at, due_all_day, is_done, archived')
+      .eq('user_id', session.lineUserId)
+      .eq('is_done', false).eq('archived', false)
+      .not('due_at', 'is', null).lt('due_at', soon)
+      .order('due_at', { ascending: true })
+      .limit(100);
+    if (dueErr) return NextResponse.json({ tasks: [] });          // due columns not created yet → no banner
+    return NextResponse.json({ tasks: due });
+  }
+
   const query = (cols) => supabase
     .from('tasks')
     .select(cols)

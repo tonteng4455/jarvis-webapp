@@ -50,18 +50,35 @@ export default function TodayPage() {
   const [pendingShare, setPendingShare] = useState(false);   // text shared in from another app is waiting
   useEffect(() => { setPendingShare(!!readShare()); }, []);
 
+  // Opening Today used to download every note, task, appointment, expense and file (hundreds of KB). It now loads only
+  // what the cards show; the full lists are fetched once, the first time something is typed in the search box.
+  const [full, setFull] = useState(false);
+  const [searching, setSearching] = useState(false);
   const load = useCallback(async () => {
-    setError(false);
+    setError(false); setFull(false);
     try {
-      const [notes, tasks, cal, exp, files, meRes] = await Promise.all([
-        apiGet('/api/notes?archived=false'), apiGet('/api/tasks?archived=false'), apiGet('/api/calendar?past=false'),
-        apiGet('/api/expenses'), apiGet('/api/files'), apiGet('/api/me').catch(() => null),
+      const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+      const [notes, tasks, cal, exp, meRes] = await Promise.all([
+        apiGet('/api/notes?recent=3'), apiGet('/api/tasks?archived=false'), apiGet('/api/calendar?past=false&limit=10'),
+        apiGet(`/api/expenses?from=${encodeURIComponent(d0.toISOString())}`), apiGet('/api/me').catch(() => null),
       ]);
       setMe(meRes);
-      setData({ notes: notes.notes, tasks: tasks.tasks, events: cal.events, expenses: exp.expenses, files: files.files });
+      setData({ notes: notes.notes, tasks: tasks.tasks, events: cal.events, expenses: exp.expenses, files: [] });
     } catch (e) { if (e.message !== 'unauthorized') setError(true); }
   }, []);
+  const loadFull = useCallback(async () => {
+    setSearching(true);
+    try {
+      const [notes, cal, exp, files] = await Promise.all([
+        apiGet('/api/notes?archived=false'), apiGet('/api/calendar?past=false'), apiGet('/api/expenses'), apiGet('/api/files'),
+      ]);
+      setData(d => d && ({ ...d, notes: notes.notes, events: cal.events, expenses: exp.expenses, files: files.files }));
+      setFull(true);
+    } catch (e) { if (e.message !== 'unauthorized') toast.show('❌ ค้นหาไม่สำเร็จ ลองอีกครั้ง', { tone: 'error' }); }
+    setSearching(false);
+  }, [toast]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (q.trim() && data && !full && !searching) loadFull(); }, [q, data, full, searching, loadFull]);
 
   async function toggleTask(t) {
     setData(d => ({ ...d, tasks: d.tasks.map(x => x.id === t.id ? { ...x, is_done: !x.is_done } : x) }));
@@ -127,7 +144,7 @@ export default function TodayPage() {
 
       {results && (
         resultCount === 0
-          ? <div className="glass-card"><p className="muted" style={{ margin: 0 }}>ไม่พบ “{q.trim()}” ครับ</p></div>
+          ? <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{full ? `ไม่พบ “${q.trim()}” ครับ` : 'กำลังค้นหา…'}</p></div>
           : (
             <div className="list-stack">
               {results.notes.length > 0 && <Card title="📝 โน้ต">{results.notes.map(n => <Link key={n.id} href={`/dashboard?id=${n.id}`} className="result-row"><b>{n.title || '(ไม่มีหัวข้อ)'}</b><span className="muted">{(n.content || '').slice(0, 60)}</span></Link>)}</Card>}

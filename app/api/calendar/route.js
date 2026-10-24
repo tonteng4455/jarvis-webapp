@@ -54,7 +54,8 @@ export async function GET(request) {
       : query.gte('start_time', nowIso).order('start_time', { ascending: true });
   }
 
-  const { data, error } = await query.limit(500);
+  const limitParam = parseInt(searchParams.get('limit') || '', 10);
+  const { data, error } = await query.limit(Number.isFinite(limitParam) ? Math.min(500, Math.max(1, limitParam)) : 500);
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
 

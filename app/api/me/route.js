@@ -10,9 +10,14 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
+  // Only the columns this response uses (the row can carry more); '*' is the fallback if an optional column (card_theme.sql) is missing.
+  const readUser = async () => {
+    const narrow = await supabase.from('users').select('display_name, picture_url, phone_number, premium_until, card_theme, used_storage_bytes').eq('line_user_id', session.lineUserId).maybeSingle();
+    return narrow.error ? await supabase.from('users').select('*').eq('line_user_id', session.lineUserId).maybeSingle() : narrow;
+  };
   const [{ data: quotaBytes }, { data: user }] = await Promise.all([
     supabase.rpc('effective_quota_bytes', { p_line_user_id: session.lineUserId }),
-    supabase.from('users').select('*').eq('line_user_id', session.lineUserId).maybeSingle(),
+    readUser(),
   ]);
 
   return NextResponse.json({

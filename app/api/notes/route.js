@@ -15,6 +15,19 @@ import { sanitizeNoteImages } from '../../../lib/noteImages';
 
 const NOTES_LIMIT_FREE = 50; // keep in sync with NOTES_LIMIT_FREE on the bot's Worker
 
+// fingerprint of a list of notes — the same value from the full list and from the light ?stamp=1 call
+function notesStamp(rows) {
+  const s = rows.map(r => `${r.id}|${r.updated_at}|${r.sort_order}|${r.pinned}|${r.color}|${r.category}`).sort().join(';');
+  return `${rows.length}:${hashString(s)}`;
+}
+
+// small, stable string hash (FNV-1a) — only used to compare "same / different" between two polls
+function hashString(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+
 export async function GET(request) {
   const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -23,6 +36,35 @@ export async function GET(request) {
   const showArchived = searchParams.get('archived') === 'true';
 
   const supabase = supabaseAdmin();
+
+  // ?stamp=1 — "has anything changed?" for the open Notes page, which used to re-download every note every 8 s.
+  // Returns a short fingerprint built from the tiny columns only (no note text, no images).
+  if (searchParams.get('stamp') === '1') {
+    const { data: rows, error: stampErr } = await supabase
+      .from('notes')
+      .select('id, updated_at, sort_order, pinned, color, category')
+      .eq('user_id', session.lineUserId)
+      .eq('archived', showArchived)
+      .limit(500);
+    if (stampErr) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+    return NextResponse.json({ stamp: notesStamp(rows) });
+  }
+
+  // ?recent=N — only the N most recent notes (pinned first), for Today's "latest notes" card.
+  const recent = Math.min(20, Math.max(0, parseInt(searchParams.get('recent') || '0', 10) || 0));
+  if (recent > 0) {
+    const { data: rows, error: recentErr } = await supabase
+      .from('notes')
+      .select('id, title, content, category, color, images, pinned, archived, sort_order, created_at, updated_at')
+      .eq('user_id', session.lineUserId)
+      .eq('archived', false)
+      .order('pinned', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(recent);
+    if (recentErr) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+    return NextResponse.json({ notes: rows, partial: true });
+  }
+
   const { data, error } = await supabase
     .from('notes')
     .select('id, title, content, category, color, images, pinned, archived, sort_order, created_at, updated_at')
@@ -34,7 +76,7 @@ export async function GET(request) {
     .limit(500);
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
-  return NextResponse.json({ notes: data });
+  return NextResponse.json({ notes: data, stamp: notesStamp(data) });
 }
 
 export async function POST(request) {
