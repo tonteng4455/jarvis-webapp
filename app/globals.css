@@ -863,7 +863,24 @@ html[data-fs="lg"] { font-size: 18px; }
 .sketch-hint.err { background: #fde8e8; color: #9b1c1c; font-size: 0.85rem; }
 .sketch-text-edit { position: absolute; z-index: 2; margin: 0; border: 1.5px dashed var(--accent, #14a39a); border-radius: 6px; background: rgba(255,255,255,0.92); outline: none; resize: none; line-height: 1.3; padding: 2px 4px; box-sizing: border-box; overflow: hidden; touch-action: auto; user-select: text; -webkit-user-select: text; cursor: text; }
 .sketch-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.85); color: #333; }
-@media (min-width: 900px) { .sk-btn { height: 36px; min-width: 38px; } .sk-bar-row-gap { gap: 2px; } }
+@media (min-width: 900px) { .sk-btn { height: 36px; min-width: 36px; } }
+/* wide / landscape screens: all the tools sit on ONE line (it wraps only if the window is really too narrow) */
+@media (min-width: 1000px) {
+  .sketch-bar { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 3px; row-gap: 0; }
+  .sketch-bar .sk-row { display: contents; }
+  .sketch-bar .sk-spacer { flex: 0 0 8px; }
+  .sketch-bar .sk-save { margin-left: auto; order: 99; }
+  .sk-btn { min-width: 34px; }
+  .sk-dot { width: 22px; height: 22px; }
+}
+@media (min-width: 1000px) and (max-width: 1199px) {          /* a 10–11" tablet held sideways: squeeze a little so it still fits on one line */
+  .sketch-bar { column-gap: 1px; padding-left: 4px; padding-right: 4px; }
+  .sk-btn { min-width: 29px; height: 34px; font-size: 1rem; border-radius: 8px; }
+  .sk-dot { width: 20px; height: 20px; }
+  .sk-sep { margin: 6px 2px; }
+  .sketch-bar .sk-spacer { flex-basis: 4px; }
+}
+@media (min-width: 1000px) and (max-width: 1399px) { .sk-btn.sk-zoom { display: none; } }   /* a tablet pinches; the wheel and ⤢ still work */
 @media (max-width: 440px) { .sk-btn { min-width: 36px; height: 38px; } .sk-dot { width: 24px; height: 24px; }.sk-btn.sk-zoom { display: none; } }   /* phones pinch to zoom */
 
 .note-image-badge { position: absolute; left: 3px; bottom: 3px; z-index: 1; font-size: 0.7rem; line-height: 1; padding: 2px 3px; border-radius: 6px; background: rgba(255,255,255,0.88); }

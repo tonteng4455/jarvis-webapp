@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanItems, edgePoint, lineEnds, insideShape, shapeAt, hitItem, topItemAt, translateItem, resizeShape, removeItems, byIdMap, sceneBounds, boundsOf, duplicateItem, serializeItems } from '../lib/sketchModel.js';
+import { linePath, translateMany, duplicateItems, itemsInRect, cleanItems, edgePoint, lineEnds, insideShape, shapeAt, hitItem, topItemAt, translateItem, resizeShape, removeItems, byIdMap, sceneBounds, boundsOf, duplicateItem, serializeItems } from '../lib/sketchModel.js';
 
 const rect = (o = {}) => ({ k: 'rect', id: 'r1', c: '#000', w: 3, f: false, x: 100, y: 100, bw: 200, bh: 100, t: '', ...o });
 const arrow = (o = {}) => ({ k: 'arrow', id: 'a1', c: '#000', w: 3, a: [0, 0], e: [50, 0], from: null, to: null, ...o });
@@ -106,4 +106,68 @@ test('insideShape basics', () => {
   assert.equal(insideShape(rect({ k: 'ellipse' }), 105, 105), false);   // corner of the box is outside an ellipse
   assert.equal(insideShape(rect({ k: 'diamond' }), 200, 150), true);
   assert.equal(insideShape(rect({ k: 'diamond' }), 105, 105), false);
+});
+
+// ---- elbow lines, groups ----
+const A = (o = {}) => rect({ id: 'A', x: 0, y: 0, bw: 100, bh: 60, ...o }), Bq = (o = {}) => rect({ id: 'B', x: 300, y: 200, bw: 100, bh: 60, ...o });
+
+test('elbow: leaves the right side of the first shape, bends twice, enters the left side of the second', () => {
+  const a = A(), b = Bq(), l = arrow({ elbow: true, from: 'A', to: 'B' });
+  const p = linePath(l, byIdMap([a, b, l]));
+  assert.deepEqual(p, [[100, 30], [200, 30], [200, 230], [300, 230]]);
+  assert.ok(p.every((q, i) => i === 0 || q[0] === p[i - 1][0] || q[1] === p[i - 1][1]), 'every segment is horizontal or vertical');
+});
+
+test('elbow: stacked shapes route vertically; aligned shapes give a straight run', () => {
+  const a = A(), b = Bq({ x: 20, y: 300 }), l = arrow({ elbow: true, from: 'A', to: 'B' });
+  const p = linePath(l, byIdMap([a, b, l]));
+  assert.deepEqual(p[0], [50, 60]); assert.deepEqual(p[p.length - 1], [70, 300]);
+  const b2 = Bq({ x: 300, y: 0 }); const p2 = linePath(arrow({ elbow: true, from: 'A', to: 'B' }), byIdMap([a, b2]));
+  assert.deepEqual(p2, [[100, 30], [300, 30]]);
+});
+
+test('elbow with free ends keeps the ends where they are', () => {
+  const p = linePath(arrow({ elbow: true, a: [0, 0], e: [100, 50] }), {});
+  assert.deepEqual(p[0], [0, 0]); assert.deepEqual(p.at(-1), [100, 50]); assert.ok(p.length >= 3);
+});
+
+test('an elbow arrow can be picked on any of its segments, and its bounds cover the whole route', () => {
+  const a = A(), b = Bq(), l = arrow({ elbow: true, from: 'A', to: 'B' }), byId = byIdMap([a, b, l]);
+  assert.equal(hitItem(l, 200, 130, 6, byId), true);       // the vertical middle run
+  assert.equal(hitItem(l, 150, 130, 6, byId), false);      // empty space where a straight line would have been
+  const bb = boundsOf(l, byId); assert.ok(bb[0] <= 100 && bb[2] >= 300 && bb[3] >= 230);
+  assert.equal(cleanItems([{ ...l, elbow: true }])[0].elbow, true);
+  assert.equal(cleanItems([{ ...l, elbow: 'yes' }])[0].elbow, false);
+});
+
+test('moving a group: glue inside the group is kept, glue to outsiders is let go', () => {
+  const a = A(), b = Bq(), c = rect({ id: 'C', x: 600, y: 0 }), inside = arrow({ id: 'in', from: 'A', to: 'B' }), toOutside = arrow({ id: 'out', from: 'B', to: 'C' });
+  const moved = translateMany([a, b, c, inside, toOutside], ['A', 'B', 'in', 'out'], 10, 20);
+  assert.equal(moved.find(i => i.id === 'A').x, 10); assert.equal(moved.find(i => i.id === 'C').x, 600);
+  const i1 = moved.find(i => i.id === 'in'); assert.equal(i1.from, 'A'); assert.equal(i1.to, 'B');
+  const o1 = moved.find(i => i.id === 'out'); assert.equal(o1.from, 'B'); assert.equal(o1.to, null);
+  assert.ok(Number.isFinite(o1.e[0]) && o1.e[0] > 300);
+});
+
+test('a line NOT in the group follows its shapes when they move', () => {
+  const a = A(), b = Bq(), l = arrow({ id: 'L', from: 'A', to: 'B' });
+  const moved = translateMany([a, b, l], ['A'], 0, 500);
+  const ends = lineEnds(moved.find(i => i.id === 'L'), byIdMap(moved));
+  assert.ok(ends[1] > 300, 'its start moved down with shape A');
+});
+
+test('duplicating a group joins the copies to each other, not to the originals', () => {
+  const a = A(), b = Bq(), l = arrow({ id: 'L', from: 'A', to: 'B' }), free = arrow({ id: 'F', a: [0, 400], e: [50, 400] });
+  const { copies, idMap } = duplicateItems([a, b, l, free], ['A', 'B', 'L', 'F']);
+  assert.equal(copies.length, 4);
+  const cl = copies.find(c => c.id === idMap.L); assert.equal(cl.from, idMap.A); assert.equal(cl.to, idMap.B);
+  assert.ok(Object.values(idMap).every(v => ![ 'A', 'B', 'L', 'F' ].includes(v)));
+  const half = duplicateItems([a, b, l], ['A', 'L']); const hl = half.copies.find(c => c.k === 'arrow'); assert.equal(hl.from, half.idMap.A); assert.equal(hl.to, null);
+});
+
+test('marquee picks only what lies completely inside', () => {
+  const a = A(), b = Bq();
+  assert.deepEqual(itemsInRect([a, b], [-10, -10, 150, 100]), ['A']);
+  assert.deepEqual(itemsInRect([a, b], [450, 300, -10, -10]).sort(), ['A', 'B']);
+  assert.deepEqual(itemsInRect([a, b], [50, 50, 90, 90]), []);
 });

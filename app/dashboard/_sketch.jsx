@@ -4,6 +4,8 @@
 // • Pen (pressure-aware), marker, stroke eraser, hand (pan); undo / redo; an endless board you pan and pinch-zoom.
 // • Diagrams: rectangle / ellipse / diamond (with a label), line and arrow (the ends glue to shapes and follow them when moved),
 //   free text; select → move, resize a corner, drag an arrow's end, change colour / thickness / tint, duplicate, delete.
+//   Elbow arrows route in right angles. Several items: tick the ☑ button (tap to add / remove) or drag a box across them
+//   (mouse / pen: just drag on empty space; Shift-click on a desktop) → move, recolour, duplicate or delete them together.
 // • Tablet with a pen: the pen draws, fingers move and zoom the board (a resting palm never leaves a mark).
 //   Phone / no pen: one finger draws, two fingers move and zoom.
 // • Saved as a PNG with the drawing embedded (lib/sketchPng.js) → the same picture can be opened and edited again.
@@ -17,9 +19,9 @@ import { embedScene, readScene } from '../../lib/sketchPng';
 import { loadDraft, saveDraft, clearDraft } from '../../lib/draft';
 import {
   FONT, TEXT_SIZES, LABEL_SIZE, clamp, uid, isShape, isLine, cleanItems, serializeItems, sig, byIdMap, sceneBounds, boundsOf,
-  hitItem, topItemAt, shapeAt, translateItem, resizeShape, cornerPoints, lineEnds, removeItems, duplicateItem,
+  hitItem, topItemAt, shapeAt, resizeShape, cornerPoints, lineEnds, removeItems, translateMany, duplicateItems, itemsInRect,
 } from '../../lib/sketchModel';
-import { paintItems, drawItem, drawSelection, measureText } from '../../lib/sketchDraw';
+import { paintItems, drawItem, drawSelection, drawGroupSelection, drawMarquee, measureText } from '../../lib/sketchDraw';
 
 const INK = ['#1c1c1e', '#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5'];
 const WIDTHS = [2, 4, 8];
@@ -28,12 +30,12 @@ const EXPORT_SCALE = 2, EXPORT_MAX_SIDE = 4096, EXPORT_MAX_PIXELS = 16e6;
 const MAX_DRAFT_CHARS = 1.5e6;
 const DOUBLE_TAP_MS = 380;
 
-const TOOLS_ROW_C = [['select', '👆', 'เลือก / ย้าย'], ['rect', '▭', 'สี่เหลี่ยม'], ['ellipse', '◯', 'วงรี'], ['diamond', '◇', 'ข้าวหลามตัด'], ['line', '╱', 'เส้นตรง'], ['arrow', '➜', 'ลูกศร'], ['text', 'T', 'ข้อความ']];
+const TOOLS_ROW_C = [['select', '👆', 'เลือก / ย้าย'], ['rect', '▭', 'สี่เหลี่ยม'], ['ellipse', '◯', 'วงรี'], ['diamond', '◇', 'ข้าวหลามตัด'], ['line', '╱', 'เส้นตรง'], ['arrow', '➜', 'ลูกศร'], ['elbow', '↱', 'ลูกศรหักมุม'], ['text', 'T', 'ข้อความ']];
 const HINTS = {
   pen: 'ใช้นิ้วหรือปากกาเขียนได้เลย · สองนิ้วเพื่อเลื่อนและซูม (แท็บเล็ตที่มีปากกา: ปากกาเขียน นิ้วเลื่อน)', marker: 'ไฮไลต์ทับข้อความหรือเส้น สีจางโปร่งแสง', eraser: 'ลากผ่านเส้นหรือรูปทรงที่ต้องการลบ (ลบทั้งชิ้น)', hand: 'ลากเพื่อเลื่อนกระดาน',
   select: 'แตะเพื่อเลือก ลากเพื่อย้าย ลากมุม/ปลายลูกศรเพื่อปรับ · แตะสองครั้งที่ข้อความหรือรูปทรงเพื่อพิมพ์',
   rect: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', ellipse: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', diamond: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ',
-  line: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง เส้นจะติดกับรูปและตามเมื่อย้าย', arrow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะติดกับรูปและตามเมื่อย้าย', text: 'แตะตรงที่ต้องการพิมพ์',
+  line: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง เส้นจะติดกับรูปและตามเมื่อย้าย', arrow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะติดกับรูปและตามเมื่อย้าย', elbow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะหักเป็นมุมฉาก ติดกับรูปและตามเมื่อย้าย', multi: 'แตะรูปหลายชิ้นเพื่อเลือก/เลิกเลือก หรือลากคลุมให้ครอบรูปทั้งชิ้น แล้วลากเพื่อย้ายพร้อมกัน', text: 'แตะตรงที่ต้องการพิมพ์',
 };
 
 async function exportPng(items, bg) {
@@ -65,13 +67,15 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const dirty = useRef({ base: true, live: true }), raf = useRef(0);
   const initialSig = useRef('');
   const lastTap = useRef({ id: null, t: 0 });
+  const marq = useRef(null);                    // the rubber-band box while dragging across empty space: [x0, y0, x1, y1] in board coordinates
   const version = useRef(0);
 
   const [tool, setTool] = useState('pen');
   const [color, setColor] = useState(INK[0]);
   const [widthIdx, setWidthIdx] = useState(1);
   const [fill, setFill] = useState(false);
-  const [selId, setSelId] = useState(null);
+  const [selIds, setSelIds] = useState([]);
+  const [multi, setMulti] = useState(false);
   const [editing, setEditing] = useState(null);     // { mode:'new'|'text'|'label', id, x, y, text, size, c, box? }
   const [, setTick] = useState(0);
   const [loading, setLoading] = useState(!!imageUrl);
@@ -83,10 +87,13 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const colorRef = useRef(color); colorRef.current = color;
   const widthRef = useRef(widthIdx); widthRef.current = widthIdx;
   const fillRef = useRef(fill); fillRef.current = fill;
-  const selRef = useRef(selId); selRef.current = selId;
+  const selRef = useRef(selIds); selRef.current = selIds;
+  const multiRef = useRef(multi); multiRef.current = multi;
   const editRef = useRef(editing); editRef.current = editing;
   const bump = () => setTick(n => n + 1);
-  const selected = () => items.current.find(i => i.id === selRef.current) || null;
+  const selectedItems = () => items.current.filter(i => selRef.current.includes(i.id));
+  const selected = () => (selRef.current.length === 1 ? items.current.find(i => i.id === selRef.current[0]) || null : null);     // exactly one item (it gets handles)
+  const setSel = ids => { selRef.current = ids; setSelIds(ids); schedule('live'); };
 
   const schedule = useCallback((what = 'both') => {
     if (what !== 'live') dirty.current.base = true;
@@ -112,8 +119,11 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
         const ctx = live.getContext('2d'); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, live.width, live.height);
         ctx.setTransform(dpr, 0, 0, dpr, x * dpr, y * dpr);
         if (cur.current) drawItem(ctx, cur.current, k, byId);
-        const sel = list.find(i => i.id === selRef.current);
-        if (sel && !editRef.current) drawSelection(ctx, sel, k, byId);
+        if (!editRef.current) {
+          const chosen = list.filter(i => selRef.current.includes(i.id));
+          if (chosen.length === 1) drawSelection(ctx, chosen[0], k, byId); else if (chosen.length > 1) drawGroupSelection(ctx, chosen, k, byId);
+        }
+        if (marq.current) drawMarquee(ctx, marq.current, k);
         dirty.current.live = false;
       }
     });
@@ -205,7 +215,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const commit = next => { pushUndo(items.current); items.current = next; schedule(); bump(); };
   const doUndo = () => { if (!undo.current.length) return; endEdit(false); redo.current.push(items.current); items.current = undo.current.pop(); fixSelection(); version.current++; schedule(); bump(); };
   const doRedo = () => { if (!redo.current.length) return; endEdit(false); undo.current.push(items.current); items.current = redo.current.pop(); fixSelection(); version.current++; schedule(); bump(); };
-  const fixSelection = () => { if (selRef.current && !items.current.some(i => i.id === selRef.current)) setSelId(null); };
+  const fixSelection = () => { const keep = selRef.current.filter(id => items.current.some(i => i.id === id)); if (keep.length !== selRef.current.length) setSel(keep); };
 
   // ----- coordinates -----
   const toWorld = (cx, cy) => { const r = stageRef.current.getBoundingClientRect(), { x, y, k } = view.current; return [(cx - r.left - x) / k, (cy - r.top - y) / k]; };
@@ -220,11 +230,11 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     editRef.current = null; setEditing(null);
     if (!save) { schedule(); return; }
     if (ed.mode === 'new') {
-      if (text.trim()) { const it = { k: 'text', id: uid(), c: ed.c, s: ed.size, x: ed.x, y: ed.y, t: text }; commit([...items.current, it]); setSelId(it.id); setTool('select'); }
+      if (text.trim()) { const it = { k: 'text', id: uid(), c: ed.c, s: ed.size, x: ed.x, y: ed.y, t: text }; commit([...items.current, it]); setSel([it.id]); setTool('select'); }
     } else if (ed.mode === 'text') {
       const it = items.current.find(i => i.id === ed.id);
       if (it) commit(text.trim() ? items.current.map(i => (i.id === ed.id ? { ...i, t: text } : i)) : items.current.filter(i => i.id !== ed.id));
-      if (!text.trim()) setSelId(null);
+      if (!text.trim()) setSel([]);
     } else if (ed.mode === 'label') {
       commit(items.current.map(i => (i.id === ed.id ? { ...i, t: text } : i)));
     }
@@ -238,26 +248,38 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   };
 
   // ----- style of the selection (or of what is drawn next) -----
+  // `patch` is an object, or a function (item) → object | null, applied to every selected item
   const updateSel = patch => {
-    const it = selected(); if (!it) return false;
-    commit(items.current.map(i => (i.id === it.id ? { ...i, ...patch } : i))); return true;
+    const chosen = selectedItems(); if (!chosen.length) return false;
+    const ids = new Set(chosen.map(i => i.id));
+    commit(items.current.map(i => { if (!ids.has(i.id)) return i; const p = typeof patch === 'function' ? patch(i) : patch; return p ? { ...i, ...p } : i; }));
+    return true;
   };
-  const chooseColor = c => { setColor(c); if (selected()) updateSel({ c }); else if (toolRef.current === 'eraser' || toolRef.current === 'hand') setTool('pen'); };
-  const chooseWidth = i => {
-    setWidthIdx(i); const it = selected();
-    if (it) updateSel(it.k === 'text' ? { s: TEXT_SIZES[i] } : { w: WIDTHS[i] });
+  const chooseColor = c => { setColor(c); if (selRef.current.length) updateSel({ c }); else if (toolRef.current === 'eraser' || toolRef.current === 'hand') setTool('pen'); };
+  const chooseWidth = i => { setWidthIdx(i); if (selRef.current.length) updateSel(it => (it.k === 'text' ? { s: TEXT_SIZES[i] } : { w: WIDTHS[i] })); };
+  const toggleFill = () => {
+    const shapes = selectedItems().filter(isShape);
+    if (shapes.length) { const on = !shapes.every(i => i.f); updateSel(i => (isShape(i) ? { f: on } : null)); setFill(on); } else setFill(f => !f);
   };
-  const toggleFill = () => { const it = selected(); if (it && isShape(it)) { updateSel({ f: !it.f }); setFill(!it.f); } else setFill(f => !f); };
-  const deleteSelected = () => { const it = selected(); if (!it) return; commit(removeItems(items.current, [it.id])); setSelId(null); };
-  const duplicateSelected = () => { const it = selected(); if (!it) return; const d = duplicateItem(it); commit([...items.current, d]); setSelId(d.id); };
-  const pickTool = t => { endEdit(); setTool(t); if (t !== 'select') setSelId(null); };
+  const toggleElbow = () => {
+    const lines = selectedItems().filter(isLine); if (!lines.length) return;
+    const on = !lines.every(i => i.elbow); updateSel(i => (isLine(i) ? { elbow: on } : null));
+  };
+  const deleteSelected = () => { if (!selRef.current.length) return; commit(removeItems(items.current, selRef.current)); setSel([]); };
+  const duplicateSelected = () => {
+    if (!selRef.current.length) return;
+    const { copies } = duplicateItems(items.current, selRef.current); if (!copies.length) return;
+    commit([...items.current, ...copies]); setSel(copies.map(c => c.id));
+  };
+  const pickTool = t => { endEdit(); setTool(t); if (t !== 'select') { setSel([]); setMulti(false); } };
+  const toggleMulti = () => { endEdit(); const on = !multi; setMulti(on); if (on) setTool('select'); };
 
   // ----- gestures -----
   const touches = () => [...ptrs.current.values()].filter(v => v.type === 'touch');
   const cancelGesture = () => {                                      // a second finger arrives: whatever one finger had started is abandoned
     const gg = g.current;
     if (gg?.base) { items.current = gg.base; schedule(); }
-    cur.current = null; g.current = null; schedule('live');
+    cur.current = null; marq.current = null; g.current = null; schedule('live');
   };
   const startPinch = () => {
     const [a, b] = touches();
@@ -286,7 +308,8 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   };
   const startLine = e => {
     const [x, y] = toWorld(e.clientX, e.clientY), from = shapeAt(items.current, x, y);
-    cur.current = { k: toolRef.current, id: uid(), c: colorRef.current, w: WIDTHS[widthRef.current], a: [x, y], e: [x, y], from: from ? from.id : null, to: null, fromTouch: e.pointerType === 'touch' };
+    const elbow = toolRef.current === 'elbow';
+    cur.current = { k: elbow ? 'arrow' : toolRef.current, id: uid(), c: colorRef.current, w: WIDTHS[widthRef.current], a: [x, y], e: [x, y], from: from ? from.id : null, to: null, elbow, fromTouch: e.pointerType === 'touch' };
     g.current = { type: 'line', pid: e.pointerId, from: from ? from.id : null }; schedule('live');
   };
   const startSelect = e => {
@@ -301,11 +324,23 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
       if (Math.hypot(ex - x, ey - y) <= t) { g.current = { type: 'endpoint', pid: e.pointerId, base: list, id: sel.id, which: 'e', orig: sel }; return; }
     }
     const hit = topItemAt(list, x, y, tol(), measureText) || shapeAt(list, x, y);       // an empty shape can be picked from inside too (double-tap there to type its label)
-    if (!hit) { setSelId(null); lastTap.current = { id: null, t: 0 }; startPan(e); schedule('live'); return; }     // empty space: drag moves the board
-    const double = lastTap.current.id === hit.id && Date.now() - lastTap.current.t < DOUBLE_TAP_MS && (hit.k === 'text' || isShape(hit));
+    const toggle = multiRef.current || e.shiftKey || e.ctrlKey || e.metaKey, ids = selRef.current;
+    if (!hit) {
+      lastTap.current = { id: null, t: 0 };
+      if (multiRef.current || e.pointerType !== 'touch') {                              // mouse / pen / multi mode: drag a box across items (a phone finger drags the board)
+        marq.current = [x, y, x, y]; g.current = { type: 'marquee', pid: e.pointerId, add: toggle, keep: ids }; schedule('live'); return;
+      }
+      setSel([]); startPan(e); return;                                                  // empty space: drag moves the board
+    }
+    const wasIn = ids.includes(hit.id);
+    const double = !toggle && ids.length <= 1 && lastTap.current.id === hit.id && Date.now() - lastTap.current.t < DOUBLE_TAP_MS && (hit.k === 'text' || isShape(hit));
     lastTap.current = { id: hit.id, t: Date.now() };
-    setSelId(hit.id); selRef.current = hit.id; schedule('live');
-    g.current = { type: 'move', pid: e.pointerId, base: list, id: hit.id, orig: hit, sx: x, sy: y, moved: false, double };
+    let move = ids, narrow = false, toggleOff = false;
+    if (toggle) { if (wasIn) toggleOff = true; else move = [...ids, hit.id]; }
+    else if (wasIn && ids.length > 1) narrow = true;                                    // a tap on one of several narrows to it; a drag moves them all
+    else move = [hit.id];
+    if (!narrow && !toggleOff) setSel(move);
+    g.current = { type: 'move', pid: e.pointerId, base: list, id: hit.id, ids: move, sx: x, sy: y, moved: false, double, narrow, toggleOff };
   };
   const placeText = e => {
     const [x, y] = toWorld(e.clientX, e.clientY);
@@ -317,7 +352,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     if (tl === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32))) return startErase(e);
     if (tl === 'select') return startSelect(e);
     if (tl === 'rect' || tl === 'ellipse' || tl === 'diamond') return startShape(e);
-    if (tl === 'line' || tl === 'arrow') return startLine(e);
+    if (tl === 'line' || tl === 'arrow' || tl === 'elbow') return startLine(e);
     if (tl === 'text') { g.current = { type: 'text', pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }     // the box opens when the finger lifts (a phone only raises the keyboard inside a tap)
     return startDraw(e);
   };
@@ -367,11 +402,11 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
       const [x, y] = toWorld(e.clientX, e.clientY);
       Object.assign(cur.current, { x: Math.min(gg.ox, x), y: Math.min(gg.oy, y), bw: Math.abs(x - gg.ox), bh: Math.abs(y - gg.oy) }); schedule('live');
     } else if (gg.type === 'line' && cur.current) { cur.current.e = toWorld(e.clientX, e.clientY); schedule('live'); }
+    else if (gg.type === 'marquee' && marq.current) { const [x, y] = toWorld(e.clientX, e.clientY); marq.current = [marq.current[0], marq.current[1], x, y]; schedule('live'); }
     else if (gg.type === 'move') {
       const [x, y] = toWorld(e.clientX, e.clientY), dx = x - gg.sx, dy = y - gg.sy;
       if (!gg.moved && Math.hypot(dx, dy) * view.current.k < 4) return;                   // a tap is not a drag
-      gg.moved = true; const moved = translateItem(gg.orig, dx, dy);
-      items.current = gg.base.map(i => (i.id === gg.id ? moved : i)); schedule();
+      gg.moved = true; items.current = translateMany(gg.base, gg.ids, dx, dy); schedule();
     } else if (gg.type === 'resize') {
       const [x, y] = toWorld(e.clientX, e.clientY); gg.moved = true;
       items.current = gg.base.map(i => (i.id === gg.id ? resizeShape(gg.orig, gg.which, x, y) : i)); schedule();
@@ -396,17 +431,27 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
         const s = cur.current; cur.current = null; delete s.fromTouch;
         if (s.bw < 8 && s.bh < 8) { const bw = s.k === 'diamond' ? 140 : 160, bh = 100; Object.assign(s, { x: gg.ox - bw / 2, y: gg.oy - bh / 2, bw, bh }); }
         s.bw = Math.max(s.bw, 12); s.bh = Math.max(s.bh, 12);
-        commit([...items.current, s]); setSelId(s.id); selRef.current = s.id; setTool('select');
+        commit([...items.current, s]); setSel([s.id]); setTool('select');
       } else if (gg.type === 'line' && cur.current) {
         const l = cur.current; cur.current = null; delete l.fromTouch;
         const to = shapeAt(items.current, l.e[0], l.e[1], gg.from);
         if (Math.hypot(l.e[0] - l.a[0], l.e[1] - l.a[1]) * view.current.k < 12) schedule('live');
-        else { l.to = to ? to.id : null; commit([...items.current, l]); setSelId(l.id); selRef.current = l.id; setTool('select'); }
+        else { l.to = to ? to.id : null; commit([...items.current, l]); setSel([l.id]); setTool('select'); }
       } else if (gg.type === 'text') {
         if (Math.hypot(e.clientX - gg.x, e.clientY - gg.y) < 12) placeText(e);
+      } else if (gg.type === 'marquee') {
+        const r = marq.current; marq.current = null;
+        if (r && Math.hypot(r[2] - r[0], r[3] - r[1]) * view.current.k >= 6) {
+          const inside = itemsInRect(items.current, r, measureText);
+          setSel(gg.add ? [...new Set([...gg.keep, ...inside])] : inside);
+        } else if (!gg.add) setSel([]);
       } else if (gg.type === 'move' || gg.type === 'resize' || gg.type === 'endpoint') {
         if (gg.moved) { const after = items.current; items.current = gg.base; commit(after); }
-        else if (gg.type === 'move' && gg.double) { const it = items.current.find(i => i.id === gg.id); if (it) startEditing(it); }
+        else if (gg.type === 'move') {
+          if (gg.toggleOff) setSel(selRef.current.filter(id => id !== gg.id));
+          else if (gg.narrow) setSel([gg.id]);
+          else if (gg.double) { const it = items.current.find(i => i.id === gg.id); if (it) startEditing(it); }
+        }
       }
     } else if (gg?.type === 'pinch' && touches().length < 2) g.current = touches().length ? { type: 'wait' } : null;
     if (g.current?.type === 'wait' && touches().length === 0) g.current = null;
@@ -440,10 +485,11 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     const typing = () => /INPUT|TEXTAREA/.test(document.activeElement?.tagName || '');
     const down = e => {
       if (e.key === ' ' && !typing()) { space.current = true; e.preventDefault(); }
-      if (e.key === 'Escape') { if (editRef.current) endEdit(false); else if (selRef.current) { setSelId(null); schedule('live'); } else cancelRef.current(); }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing() && selRef.current) { e.preventDefault(); deleteSelected(); }
+      if (e.key === 'Escape') { if (editRef.current) endEdit(false); else if (selRef.current.length) setSel([]); else cancelRef.current(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing() && selRef.current.length) { e.preventDefault(); deleteSelected(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !typing()) { e.preventDefault(); setTool('select'); setSel(items.current.map(i => i.id)); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing()) { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && !typing() && selRef.current) { e.preventDefault(); duplicateSelected(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && !typing() && selRef.current.length) { e.preventDefault(); duplicateSelected(); }
     };
     const up = e => { if (e.key === ' ') space.current = false; };
     window.addEventListener('keydown', down); window.addEventListener('keyup', up);
@@ -470,7 +516,10 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   if (process.env.NEXT_PUBLIC_MOCK_MODE === '1' && typeof window !== 'undefined') window.__sketchItems = () => serializeItems(items.current);   // test hook (local mock mode only)
 
   const stop = e => e.stopPropagation();
-  const n = items.current.length, sel = selected();
+  const n = items.current.length, sel = selected(), chosen = selectedItems();
+  const chosenShapes = chosen.filter(isShape), chosenLines = chosen.filter(isLine);
+  const shownColor = chosen.length ? (chosen.every(i => i.c === chosen[0].c) ? chosen[0].c : null) : color;
+  const shownFill = chosenShapes.length ? chosenShapes.every(i => i.f) : fill;
   const { x: vx, y: vy, k: vk } = view.current;
   const ta = editing && (() => {
     if (editing.mode === 'label' && editing.box) {
@@ -494,10 +543,11 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
           <button type="button" className="sk-btn sk-save" title="บันทึก" aria-label="บันทึก" disabled={saving || loading || n === 0} onClick={save}>{saving ? '…' : '✓'}</button>
         </div>
         <div className="sk-row">
-          {INK.map(c => <button key={c} type="button" className={`sk-dot${(sel ? sel.c : color) === c ? ' on' : ''}`} style={{ background: c }} title="สี" aria-label={`สี ${c}`} aria-pressed={(sel ? sel.c : color) === c} onClick={() => chooseColor(c)} />)}
+          {INK.map(c => <button key={c} type="button" className={`sk-dot${shownColor === c ? ' on' : ''}`} style={{ background: c }} title="สี" aria-label={`สี ${c}`} aria-pressed={shownColor === c} onClick={() => chooseColor(c)} />)}
           <span className="sk-sep" />
           {WIDTHS.map((w, i) => <button key={w} type="button" className={`sk-btn${widthIdx === i ? ' on' : ''}`} title={`ขนาดเส้น/ตัวอักษร ${i + 1}`} aria-label={`ขนาด ${i + 1}`} aria-pressed={widthIdx === i} onClick={() => chooseWidth(i)}><span className="sk-w" style={{ width: 6 + i * 4, height: 6 + i * 4 }} /></button>)}
-          <button type="button" className={`sk-btn${(sel && isShape(sel) ? sel.f : fill) ? ' on' : ''}`} title="เติมสีอ่อนในรูปทรง" aria-label="เติมสี" aria-pressed={!!(sel && isShape(sel) ? sel.f : fill)} onClick={toggleFill}>◐</button>
+          <button type="button" className={`sk-btn${shownFill ? ' on' : ''}`} title="เติมสีอ่อนในรูปทรง" aria-label="เติมสี" aria-pressed={!!shownFill} onClick={toggleFill}>◐</button>
+          <button type="button" className={`sk-btn${chosenLines.length && chosenLines.every(i => i.elbow) ? ' on' : ''}`} title="เส้น/ลูกศรที่เลือก: หักมุมฉาก ⇄ ตรง" aria-label="หักมุม" aria-pressed={!!(chosenLines.length && chosenLines.every(i => i.elbow))} disabled={!chosenLines.length} onClick={toggleElbow}>⌐</button>
           <span className="sk-spacer" />
           <button type="button" className="sk-btn sk-zoom" title="ซูมออก" aria-label="ซูมออก" onClick={() => zoomBy(0.8)}>−</button>
           <button type="button" className="sk-btn sk-zoom" title="ซูมเข้า" aria-label="ซูมเข้า" onClick={() => zoomBy(1.25)}>＋</button>
@@ -507,14 +557,15 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
           {TOOLS_ROW_C.map(([key, icon, label]) => (
             <button key={key} type="button" className={`sk-btn${tool === key ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tool === key} onClick={() => pickTool(key)}>{icon}</button>
           ))}
+          <button type="button" className={`sk-btn${multi ? ' on' : ''}`} title="เลือกหลายชิ้น" aria-label="เลือกหลายชิ้น" aria-pressed={multi} onClick={toggleMulti}>☑</button>
           <span className="sk-spacer" />
-          <button type="button" className="sk-btn" title="ทำสำเนา" aria-label="ทำสำเนา" disabled={!sel} onClick={duplicateSelected}>⧉</button>
-          <button type="button" className="sk-btn" title="ลบที่เลือก" aria-label="ลบที่เลือก" disabled={!sel} onClick={deleteSelected}>🗑️</button>
+          <button type="button" className="sk-btn" title="ทำสำเนา" aria-label="ทำสำเนา" disabled={!chosen.length} onClick={duplicateSelected}>⧉</button>
+          <button type="button" className="sk-btn" title="ลบที่เลือก" aria-label="ลบที่เลือก" disabled={!chosen.length} onClick={deleteSelected}>🗑️</button>
         </div>
       </div>
       {/* one fixed-height line, so the board never jumps when the tool (and its hint) changes */}
-      <div className={`sketch-hint${error ? ' err' : (restored || loadNote) ? ' note' : ''}`} role="status">{error || loadNote || (restored ? '📝 กู้คืนที่วาดค้างไว้ให้แล้ว' : HINTS[tool] || '')}</div>
-      <div className={`sketch-stage tool-${tool}`} ref={stageRef} data-strokes={n} data-tool={tool} data-selected={sel ? sel.k : ''} data-loading={loading ? '1' : '0'}
+      <div className={`sketch-hint${error ? ' err' : (restored || loadNote) ? ' note' : ''}`} role="status">{error || loadNote || (restored ? '📝 กู้คืนที่วาดค้างไว้ให้แล้ว' : (multi ? HINTS.multi : HINTS[tool]) || '')}</div>
+      <div className={`sketch-stage tool-${tool}`} ref={stageRef} data-strokes={n} data-tool={tool} data-selected={sel ? sel.k : ''} data-selcount={chosen.length} data-loading={loading ? '1' : '0'}
         data-view={`${Math.round(vx)},${Math.round(vy)},${vk.toFixed(3)}`}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={e => e.preventDefault()}>
         <canvas ref={baseRef} className="sketch-canvas" />
