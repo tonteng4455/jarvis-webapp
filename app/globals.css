@@ -838,3 +838,32 @@ html[data-fs="lg"] { font-size: 18px; }
 .cal-set-row { padding: 0.45rem 0; border-top: 1px solid var(--border); }
 .cal-set-row input { justify-self: center; width: 22px; height: 22px; accent-color: var(--accent); }
 .cal-set-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }
+
+/* ----- hand-writing pad (app/dashboard/_sketch.jsx) ----- */
+.sketch-overlay { position: fixed; inset: 0; z-index: 3000; display: flex; flex-direction: column; background: var(--bg, #f4f5f7); overscroll-behavior: contain; touch-action: none; }
+.sketch-bar { display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; padding-top: max(4px, env(safe-area-inset-top)); background: var(--surface, #fff); border-bottom: 1px solid var(--border, #ddd); flex: 0 0 auto; }
+.sk-row { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.sk-btn { flex: 0 0 auto; min-width: 40px; height: 40px; border-radius: 10px; border: 1px solid transparent; background: transparent; color: var(--text-primary, #111); font-size: 1.1rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.sk-btn:disabled { opacity: 0.35; cursor: default; }
+.sk-btn.on { background: var(--accent-soft, #dff3f0); border-color: var(--accent, #14a39a); }
+.sk-save { background: var(--accent, #14a39a); color: #fff; font-weight: 700; }
+.sk-save:disabled { background: var(--surface-muted, #ddd); color: var(--text-secondary, #777); }
+.sk-w { display: block; border-radius: 50%; background: currentColor; }
+.sk-dot { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--surface, #fff); box-shadow: 0 0 0 1.5px rgba(150,150,150,0.75); cursor: pointer; }
+.sk-dot.on { box-shadow: 0 0 0 2px var(--accent, #14a39a); transform: scale(1.12); }
+.sk-sep { flex: 0 0 1px; align-self: stretch; margin: 6px 4px; background: var(--border, #ddd); }
+.sk-spacer { flex: 1 1 auto; }
+.sketch-note { padding: 6px 12px; font-size: 0.85rem; background: var(--accent-soft, #dff3f0); color: var(--text-primary, #111); flex: 0 0 auto; }
+.sketch-note.err { background: #fde8e8; color: #9b1c1c; }
+.sketch-stage { position: relative; flex: 1 1 auto; min-height: 0; background: #fff; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; overflow: hidden; }
+.sketch-stage.tool-hand { cursor: grab; }
+.sketch-stage.tool-eraser { cursor: cell; }
+.sketch-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.sketch-live { pointer-events: none; }
+.sketch-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.85); color: #333; }
+@media (min-width: 900px) { .sketch-bar { flex-direction: row; align-items: center; flex-wrap: wrap; } .sk-row { display: contents; } .sk-spacer-a { display: none; } .sk-save { order: 99; } .sk-spacer { flex: 1 1 auto; } }
+@media (max-width: 440px) { .sk-btn { min-width: 36px; height: 38px; } .sk-dot { width: 24px; height: 24px; }.sk-btn.sk-zoom { display: none; } }   /* phones pinch to zoom */
+
+.note-image-badge { position: absolute; left: 3px; bottom: 3px; z-index: 1; font-size: 0.7rem; line-height: 1; padding: 2px 3px; border-radius: 6px; background: rgba(255,255,255,0.88); }
+.note-image-thumb.is-sketch { background: #fff; }
+.note-image-thumb.is-sketch img { object-fit: contain; background: #fff; }

@@ -219,7 +219,7 @@ export function splitNoteForTask(note) {
 // Notes keep photos only as Drive references; when a note becomes a task/appointment they travel along as links.
 export function noteImageLines(note) {
   return (Array.isArray(note?.images) ? note.images : []).filter(i => i?.drive_file_id)
-    .map(i => `📷 ${i.name || 'รูปภาพ'} — https://drive.google.com/file/d/${i.drive_file_id}/view`);
+    .map(i => `${i.kind === 'sketch' ? '✏️ ลายมือ/ภาพวาด' : `📷 ${i.name || 'รูปภาพ'}`} — https://drive.google.com/file/d/${i.drive_file_id}/view`);
 }
 export function noteSource(note) {
   const src = splitNoteForTask(note);

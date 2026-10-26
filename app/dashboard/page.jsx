@@ -39,7 +39,7 @@ function Composer({ onCreate, onUpdate, onDiscard, onEditingChange, categories, 
   const [category, setCategory] = useState('general');
   const [pinned, setPinned] = useState(false);
   const [color, setColor] = useState('default');
-  const imgState = useNoteImages([]);
+  const imgState = useNoteImages([], 'composer');
   const { images, setImages, uploadingRef } = imgState;
   const ref = useRef(null);
 
@@ -166,7 +166,7 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [category, setCategory] = useState(note.category || 'general');
-  const imgState = useNoteImages(note.images || []);
+  const imgState = useNoteImages(note.images || [], note.id);
   const { images, setImages, uploadingRef } = imgState;
   const ref = useRef(null);
 
@@ -462,6 +462,25 @@ function NotesPageInner() {
   }, [showArchived]);
 
   useEffect(() => { load(); }, [load]);
+  // One-time (per device) clean-up: photos attached before photos became private lose their "anyone with the link" access.
+  const privacyRan = useRef(false);
+  useEffect(() => {
+    if (notes === null || privacyRan.current) return;
+    privacyRan.current = true;
+    (async () => {
+      try {
+        if (localStorage.getItem('jarvis-photos-private-v1') === '1') return;
+        let offset = 0;
+        for (let i = 0; i < 100; i++) {
+          const res = await fetch('/api/notes/images/privatize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offset }) });
+          if (!res.ok) return;                                    // not connected to Google / offline: try again next visit
+          const d = await res.json();
+          if (d.done) { if (!d.failed) localStorage.setItem('jarvis-photos-private-v1', '1'); return; }
+          offset = d.next;
+        }
+      } catch { /* try again next visit */ }
+    })();
+  }, [notes]);
   // ?new=1 (Today's quick-add button, the installed app's "จดโน้ต" shortcut) opens the composer ONCE and
   // is then removed from the address, so reloading / coming back never re-opens it.
   useEffect(() => {

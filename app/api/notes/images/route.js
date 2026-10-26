@@ -34,15 +34,16 @@ export async function POST(request) {
   let form;
   try { form = await request.formData(); } catch { return NextResponse.json({ error: 'bad_request' }, { status: 400 }); }
   const file = form.get('file');
+  const isSketch = form.get('kind') === 'sketch';       // a hand-drawn picture (always PNG)
   if (!file || typeof file.arrayBuffer !== 'function') return NextResponse.json({ error: 'no_file' }, { status: 400 });
-  if (!ALLOWED.test(file.type || '')) return NextResponse.json({ error: 'unsupported_type' }, { status: 415 });
+  if (!ALLOWED.test(file.type || '') || (isSketch && !/^image\/png$/i.test(file.type))) return NextResponse.json({ error: 'unsupported_type' }, { status: 415 });
   if (file.size > MAX_BYTES) return NextResponse.json({ error: 'too_large' }, { status: 413 });
 
   const result = await callBotInternal('/internal/note-image-upload', {
     userId: session.lineUserId,
     base64: toBase64(await file.arrayBuffer()),
     mimeType: file.type,
-    fileName: file.name || 'note_image.jpg',
+    fileName: isSketch ? `sketch_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}.png` : (file.name || 'note_image.jpg'),
   });
 
   if (!result?.ok || !result.driveFileId) {
@@ -57,5 +58,5 @@ export async function POST(request) {
       { status: notConnected ? 409 : 502 }
     );
   }
-  return NextResponse.json({ image: { drive_file_id: result.driveFileId, name: result.name || file.name || '' } });
+  return NextResponse.json({ image: { drive_file_id: result.driveFileId, name: result.name || file.name || '', ...(isSketch ? { kind: 'sketch' } : {}) } });
 }

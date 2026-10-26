@@ -10,6 +10,16 @@ function store() {
 }
 export function getMockDriveFile(id) { return store().get(id); }
 
+// Raw (binary) replies for the private-image proxy.
+export async function mockBotInternalRaw(path, payload) {
+  if (path === '/internal/note-image-download') {
+    const f = store().get(payload.driveFileId);
+    if (!f) return new Response(JSON.stringify({ error: 'not_found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+    return new Response(Buffer.from(f.base64, 'base64'), { status: 200, headers: { 'content-type': f.mimeType } });
+  }
+  return new Response('{}', { status: 404 });
+}
+
 const WORK_ID = 'work@group.calendar.google.com', HOLIDAY_ID = 'holidays@group.v.calendar.google.com';
 const MOCK_CALENDARS = [
   { id: 'primary', name: 'ส่วนตัว', color: '#0b8043', primary: true, writable: true },
@@ -28,9 +38,18 @@ export async function mockBotInternal(path, payload) {
         return { ok: false, error: 'google_not_connected', connectUrl: 'https://example.invalid/google/connect?mock=1' };
       }
       const id = 'mock' + Array.from(globalThis.crypto.getRandomValues(new Uint8Array(12)), b => b.toString(36).padStart(2, '0')).join('').slice(0, 20);
-      store().set(id, { mimeType: payload.mimeType, base64: payload.base64 });
+      store().set(id, { mimeType: payload.mimeType, base64: payload.base64, name: payload.fileName });
       return { ok: true, driveFileId: id, name: payload.fileName };
     }
+    case '/internal/note-image-delete': {
+      let deleted = 0, skipped = 0;
+      for (const id of (payload.driveFileIds || []).slice(0, 10)) {
+        const f = store().get(id);
+        if (f && /sketch_/.test(f.name || '') && f.mimeType === 'image/png') { store().delete(id); deleted++; } else skipped++;
+      }
+      return { ok: true, deleted, skipped };
+    }
+    case '/internal/note-images-privatize': { globalThis.__mockPrivatized = [...(globalThis.__mockPrivatized || []), ...(payload.driveFileIds || [])]; return { ok: true, done: (payload.driveFileIds || []).length, failed: 0 }; }
     case '/internal/file-delete': return { ok: true };
     case '/internal/expense-sheet-export':
       if (payload.userId === 'mock-nodrive') return { ok: false, error: 'not_connected', connectUrl: 'https://example.invalid/google/connect?mock=1' };

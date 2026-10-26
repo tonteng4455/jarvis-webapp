@@ -18,6 +18,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { MAX_NOTE_IMAGES } from '../../lib/noteImages';
 import { CategorySelect } from './_components';
 import { shareText, useToast } from './_ui';
+import SketchEditor from './_sketch';
 import {
   parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart,
   indentBlock, toggleCheck, pasteInto, rowInfo, appendRow, doneLayout, moveSubtree, subtreeEnd, cycleList, LIST_CYCLE,
@@ -86,10 +87,9 @@ export const colorBg = key => `var(--note-${key || 'default'})`;
 // nothing image-sized ever touches Supabase. Removing an image from a
 // note (or deleting the note) only drops the reference; the file stays
 // in the user's Drive folder on purpose.
-function driveImageSrc(id, width) {
-  // Test-only: with the mock backend the photos live in memory, not Drive.
-  if (process.env.NEXT_PUBLIC_MOCK_MODE === '1') return `/api/dev/drive-image/${encodeURIComponent(id)}`;
-  return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${width}`;
+// Note photos and drawings are PRIVATE in the owner's Drive — they are shown through the signed-in proxy (never a public link).
+function driveImageSrc(id) {
+  return `/api/notes/images/${encodeURIComponent(id)}`;
 }
 
 // Downscale a photo in the browser before uploading (phone photos are
@@ -127,7 +127,7 @@ async function shrinkImage(file, maxEdge = 1600, quality = 0.82) {
 // ONE open editor plus the upload state. `uploadingRef` lets the
 // click-outside handlers refuse to close the editor mid-upload (which
 // would orphan the file just uploaded).
-export function useNoteImages(initial) {
+export function useNoteImages(initial, scope = 'note') {
   const [images, setImages] = useState(initial || []);
   const [uploading, setUploading] = useState(0);
   const [error, setError] = useState('');
@@ -174,18 +174,53 @@ export function useNoteImages(initial) {
     }
   }
 
-  function removeImage(id) { setImages(prev => prev.filter(im => im.drive_file_id !== id)); }
-  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage };
+  // ----- hand-drawn pictures -----
+  const [sketch, setSketch] = useState(null);                // null | { image } (image = null for a new one)
+  const openSketch = image => {
+    if (!image && imagesRef.current.length >= MAX_NOTE_IMAGES) { setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต`); return; }
+    setError(''); setSketch({ image: image || null });
+  };
+  // an old drawing's file is removed a little AFTER the note has saved the new one (so a failed save never leaves a broken picture)
+  const trashLater = id => { setTimeout(() => { fetch(`/api/notes/images/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }).catch(() => {}); }, 12000); };
+  async function saveSketch(blob, replaceId) {
+    setError(''); setConnectUrl('');
+    try {
+      const form = new FormData();
+      form.append('file', new File([blob], 'sketch.png', { type: 'image/png' })); form.append('kind', 'sketch');
+      const res = await fetch('/api/notes/images', { method: 'POST', body: form });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.image) {
+        setImages(prev => replaceId ? prev.map(im => im.drive_file_id === replaceId ? data.image : im) : [...prev, data.image]);
+        if (replaceId) trashLater(replaceId);
+        setSketch(null);
+        return true;
+      }
+      if (data.error === 'google_not_connected') {
+        setConnectUrl(data.connectUrl || '');
+        setError('ต้องเชื่อมต่อ Google Drive ก่อนถึงจะเก็บลายมือได้ครับ');
+        setSketch(null);        // the drawing is still backed up on this device; reopen it after connecting
+      }
+      return false;
+    } catch { return false; }
+  }
+
+  function removeImage(id) {
+    const gone = imagesRef.current.find(im => im.drive_file_id === id);
+    setImages(prev => prev.filter(im => im.drive_file_id !== id));
+    if (gone?.kind === 'sketch') trashLater(id);           // a drawing is only a file of ours; a photo stays in Drive on purpose
+  }
+  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage, sketch, setSketch, openSketch, saveSketch, scope };
 }
 
 function ImageThumb({ image, onOpen, onRemove }) {
   const [failed, setFailed] = useState(false);
   return (
-    <div className="note-image-thumb" onClick={() => onOpen(image)}>
+    <div className={`note-image-thumb${image.kind === 'sketch' ? ' is-sketch' : ''}`} onClick={() => onOpen(image)}>
+      {image.kind === 'sketch' && <span className="note-image-badge" title="ลายมือ — แตะเพื่อแก้ไข">✏️</span>}
       {failed ? (
         <span className="note-image-fail" title="โหลดรูปไม่ได้">🖼️</span>
       ) : (
-        <img src={driveImageSrc(image.drive_file_id, 400)} alt={image.name || 'รูปในโน้ต'}
+        <img src={driveImageSrc(image.drive_file_id)} alt={image.kind === 'sketch' ? 'ลายมือในโน้ต' : (image.name || 'รูปในโน้ต')}
           loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
       )}
       <button type="button" className="note-image-remove" title="เอารูปออกจากโน้ต"
@@ -269,20 +304,26 @@ export function NoteImageButton({ state }) {
         onClick={() => inputRef.current?.click()}>
         📷{images.length > 0 && <span className="ne-badge">{images.length}</span>}
       </ToolBtn>
+      <ToolBtn title="เขียน/วาดด้วยมือ" disabled={images.length >= MAX_NOTE_IMAGES} onClick={() => state.openSketch(null)}>✏️</ToolBtn>
     </>
   );
 }
 
 // Thumbnails (one scrollable row), upload errors, and the full-size viewer.
 export function NoteImageStrip({ state }) {
-  const { images, uploading, error, connectUrl, removeImage } = state;
+  const { images, uploading, error, connectUrl, removeImage, sketch } = state;
   const [viewing, setViewing] = useState(null);
   return (
     <>
+      {sketch && (
+        <SketchEditor key={sketch.image?.drive_file_id || 'new'} imageUrl={sketch.image ? driveImageSrc(sketch.image.drive_file_id) : null}
+          draftKey={`${state.scope}:${sketch.image?.drive_file_id || 'new'}`}
+          onSave={blob => state.saveSketch(blob, sketch.image?.drive_file_id || null)} onCancel={() => state.setSketch(null)} />
+      )}
       {(images.length > 0 || uploading > 0) && (
         <div className="note-image-strip">
           {images.map(im => (
-            <ImageThumb key={im.drive_file_id} image={im} onOpen={setViewing} onRemove={removeImage} />
+            <ImageThumb key={im.drive_file_id} image={im} onOpen={i => (i.kind === 'sketch' ? state.openSketch(i) : setViewing(i))} onRemove={removeImage} />
           ))}
           {uploading > 0 && <div className="note-image-thumb note-image-loading">⏳</div>}
         </div>
@@ -301,7 +342,7 @@ export function NoteImageStrip({ state }) {
         // position:fixed viewer into "fixed inside the modal" and clip it. mousedown must not reach
         // the document-level click-outside handler, or tapping the viewer would save and close.
         <div className="note-lightbox" onMouseDown={e => e.stopPropagation()} onClick={() => setViewing(null)}>
-          <img src={driveImageSrc(viewing.drive_file_id, 1600)} alt={viewing.name || 'รูปในโน้ต'} referrerPolicy="no-referrer" />
+          <img src={driveImageSrc(viewing.drive_file_id)} alt={viewing.name || 'รูปในโน้ต'} referrerPolicy="no-referrer" />
           <button type="button" className="note-lightbox-close" title="ปิด">✕</button>
         </div>,
         document.body
