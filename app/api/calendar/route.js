@@ -136,7 +136,7 @@ export async function POST(request) {
       start_time: new Date(start).toISOString(),
       end_time: new Date(end).toISOString(),
       location: body.location ? String(body.location).slice(0, 300) : null,
-      description: body.description ? String(body.description).slice(0, 2000) : null,
+      description: body.description ? String(body.description).slice(0, 8000) : null,
       reminder_minutes: reminder,
       ...(calendarId ? { calendar_id: calendarId } : {}),
       status: 'scheduled', // same value the LINE bot writes for a created event

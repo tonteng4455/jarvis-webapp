@@ -181,7 +181,7 @@ function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
       </div>
       <div style={{ marginBottom: '0.8rem' }}>
         <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>รายละเอียด</label>
-        <textarea className="glass-input" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="ไม่บังคับ" style={{ resize: 'vertical' }} />
+        <textarea className="glass-input" rows={3} maxLength={8000} value={description} onChange={e => setDescription(e.target.value)} placeholder="ไม่บังคับ" style={{ resize: 'vertical' }} />
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         {!isNew && onConvert && <button className="glass-btn-outline" style={{ marginRight: 'auto' }} onClick={() => onConvert(event)}>🔄 เปลี่ยนเป็น…</button>}

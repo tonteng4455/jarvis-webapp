@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { BlockEditor, ToolBtn, EditorOverlay } from './_noteEditor';
 import { DueFields } from './_due';
+import { useToast } from './_ui';
 import { useEscape } from './_convert';
 import { buildDue, dueInputs } from '../../lib/taskDue';
 import { previewText, plainText } from '../../lib/noteBlocks';
@@ -94,16 +95,30 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, 
   const discarded = useRef(false);
   const leaving = useRef(false), leaveTried = useRef(false);
   const snap = c => ({ name: c.name.trim(), details: c.details, priority: c.priority, due: JSON.stringify(c.due) });
-  const persistNew = useCallback(() => {
+  // A task saved WITHOUT a title is never thrown away: when the editor is closed (✓, click-away, leaving the page) it takes
+  // its name from the first line of the details, or "งานที่ยังไม่ตั้งชื่อ" if only a due date / priority was set.
+  const toast = useToast();
+  const effectiveName = (c, final) => {
+    const typed = c.name.trim();
+    if (typed || !final) return typed;
+    const first = plainText(c.details).split('\n').map(l => l.trim()).find(Boolean) || '';
+    const fromText = first.replace(/^[•☐☑]\s*/, '').replace(/^\d+\.\s*/, '').slice(0, 200);
+    return fromText || (final === true && c.due?.date ? 'งานที่ยังไม่ตั้งชื่อ' : '');   // a due date alone only counts on an explicit ✓ / click-away
+  };
+  const persistNew = useCallback((final = false) => {
     chain.current = chain.current.then(async () => {
       if (discarded.current) return;
       const c = cur.current;
       if (!created.current) {
-        if (!c.name.trim()) return;
+        const title = effectiveName(c, final);
+        if (!title) return;
         if (leaving.current) { if (leaveTried.current) return; leaveTried.current = true; }   // closing the page: one attempt only (a reported failure may still have arrived)
         const d = buildDue(c.due.date, c.due.time);
-        const made = await onCreate({ task_name: c.name.trim(), details: c.details, priority: c.priority, ...(d || {}) }, { quiet: true });
-        if (made?.id) created.current = { id: made.id, sent: snap(c) };
+        const made = await onCreate({ task_name: title, details: c.details, priority: c.priority, ...(d || {}) }, { quiet: final !== true });
+        if (made?.id) {
+          created.current = { id: made.id, sent: { ...snap(c), name: title } };
+          if (!c.name.trim() && final === true) toast.show(`✅ สร้างงานแล้ว — ยังไม่ได้ตั้งชื่อ จึงใช้ “${title.slice(0, 30)}” เป็นชื่อให้ (แก้ได้)`, { duration: 6000 });
+        }
         return;
       }
       const now = snap(c), sent = created.current.sent, patch = {};
@@ -118,9 +133,9 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, 
     return chain.current;
   }, [onCreate, onUpdate]);
 
-  const persist = useCallback(() => {
+  const persist = useCallback((final = false) => {
     const c = cur.current;
-    if (isNew) { if (discarded.current) return false; persistNew(); return true; }
+    if (isNew) { if (discarded.current) return false; persistNew(final); return true; }
     const patch = {};
     if (c.name.trim() && c.name !== sent.current.name) patch.task_name = c.name.trim();
     if (c.details !== sent.current.details) patch.details = c.details;
@@ -134,10 +149,10 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, 
       .then(okSent => { if (okSent === false && sent.current === mine) sent.current = before; })      // could not be sent: retry on the next save
       .catch(() => { if (sent.current === mine) sent.current = before; });
     return true;
-  }, [isNew, onUpdate, task, persistNew]);
+  }, [isNew, onUpdate, task, persistNew]);   // eslint-disable-line react-hooks/exhaustive-deps
   const persistRef = useRef(persist); persistRef.current = persist;
 
-  const done = () => { persistRef.current(); finished.current = true; onClose(); };
+  const done = () => { persistRef.current(true); finished.current = true; onClose(); };
   const discard = () => {                         // 🗑️ "ทิ้งร่างนี้" — also removes a copy that was already auto-saved
     finished.current = true; discarded.current = true; onClose();
     chain.current = chain.current.then(async () => { const c = created.current; created.current = null; if (c && onDiscard) await onDiscard(c.id); }).catch(() => {});
@@ -148,7 +163,7 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, 
     return () => clearTimeout(t);
   }, [isNew, name, details, due, priority]);
   useEffect(() => {
-    const flush = () => persistRef.current();
+    const flush = () => persistRef.current('hide');          // last chance to keep it: a nameless task with details gets a name
     const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
     const onHide = () => { leaving.current = true; flush(); };
     const onShow = () => { leaving.current = false; leaveTried.current = false; };
@@ -211,7 +226,7 @@ export function noteSource(note) {
   const pics = noteImageLines(note).join('\n');
   return { name: src.name, details: [src.details, pics].filter(s => s && s.trim()).join('\n\n') };
 }
-export const TASK_DETAILS_MAX = 20000, EVENT_DESCRIPTION_MAX = 2000;   // keep in sync with /api/tasks and /api/calendar
+export const TASK_DETAILS_MAX = 20000, EVENT_DESCRIPTION_MAX = 8000;   // keep in sync with /api/tasks and /api/calendar
 
 export function ConvertToTaskSheet({ note, source, initialDue, heading = '✅ เปลี่ยนโน้ตเป็นงาน', detailsLabel = 'รายละเอียด (จากเนื้อหาโน้ต)', footnote = 'โน้ตเดิมจะถูกลบหลังสร้างงาน (กด “เลิกทำ” ได้ 6 วินาที)', onCancel, onConfirm }) {
   const init = source || splitNoteForTask(note);

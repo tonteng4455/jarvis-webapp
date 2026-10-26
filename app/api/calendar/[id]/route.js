@@ -26,6 +26,7 @@ export async function PATCH(request, { params }) {
   for (const key of EDITABLE_FIELDS) {
     if (key in body) updates[key] = body[key];
   }
+  if (typeof updates.description === 'string') updates.description = updates.description.slice(0, 8000);   // keep in sync with the bot (Google takes ~8,000 characters)
   if (Object.keys(updates).length === 0 && !moveTo) {
     return NextResponse.json({ error: 'no_fields' }, { status: 400 });
   }
