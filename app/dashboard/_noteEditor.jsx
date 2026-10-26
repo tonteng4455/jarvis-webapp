@@ -18,6 +18,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { MAX_NOTE_IMAGES } from '../../lib/noteImages';
 import { CategorySelect } from './_components';
 import { shareText, useToast } from './_ui';
+import { notesToPdf, saveFile } from '../../lib/notePdf';
 import SketchEditor from './_sketch';
 import {
   parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart,
@@ -930,9 +931,20 @@ export function NoteEditorPanel({
 }) {
   const toast = useToast();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [info, setInfo] = useState({ list: false, canIndent: false, canOutdent: false });
   const bodyRef = useRef(null);
   const contentRef = useRef(initialContent || '');
+  async function downloadPdf() {                          // this note as a PDF, drawn in the browser; pictures stay between their rows
+    if (pdfBusy) return;
+    setPdfBusy(true); toast.show('⏳ กำลังสร้าง PDF…');
+    try {
+      const bytes = await notesToPdf([{ title: titleValue, content: contentRef.current, images: imgState.images }], { imageUrl: driveImageSrc });
+      const name = String(titleValue || stripImageMarkers(contentRef.current).split('\n').find(l => l.trim()) || 'โน้ต').replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'โน้ต';
+      saveFile(new Blob([bytes], { type: 'application/pdf' }), `${name}.pdf`);
+      toast.show('📕 ดาวน์โหลด PDF แล้ว');
+    } catch { toast.show('สร้าง PDF ไม่สำเร็จ ลองอีกครั้งครับ'); } finally { setPdfBusy(false); }
+  }
   const setInlineIds = imgState.setInlineIds;
   const handleChange = useCallback(v => {
     contentRef.current = v; onContent(v);
@@ -974,6 +986,7 @@ export function NoteEditorPanel({
         <ToolBtn title="ทำซ้ำ (Ctrl+Shift+Z)" disabled={!info.canRedo} onClick={() => bodyRef.current?.redo()}>↷</ToolBtn>
         {onConvert && <ToolBtn title="เปลี่ยนโน้ตนี้เป็นงานหรือนัดหมาย" onClick={onConvert}>🔄</ToolBtn>}
         <ToolBtn title="สี" onClick={() => setPickerOpen(v => !v)} active={pickerOpen}>🎨</ToolBtn>
+        <ToolBtn title="ดาวน์โหลดโน้ตนี้เป็น PDF (มีภาพวาดตามตำแหน่งที่วางไว้)" disabled={pdfBusy} onClick={downloadPdf}>{pdfBusy ? '⏳' : '📕'}</ToolBtn>
         <ToolBtn title="แชร์/คัดลอกข้อความ" onClick={() => shareText({ title: titleValue, text: stripImageMarkers(contentRef.current) }, toast)}>📤</ToolBtn>
       </div>
       {pickerOpen && (

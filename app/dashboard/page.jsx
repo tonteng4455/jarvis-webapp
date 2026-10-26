@@ -13,6 +13,7 @@ import { ConvertToTaskSheet, ConvertToEventSheet, noteSource } from './_taskEdit
 import { ConvertChooser, convertItem } from './_convert';
 import { previewText } from '../../lib/noteBlocks';
 import { noteToMarkdown, notesToMarkdownFiles, notesToCombinedMarkdown, safeFileName } from '../../lib/noteMarkdown';
+import { notesToPdf } from '../../lib/notePdf';
 import { createZip } from '../../lib/zip';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from './_ui';
 
@@ -597,7 +598,8 @@ function NotesPageInner() {
 
   // ---- select several notes → download as .md / delete ----
   const [sel, setSel] = useState(null);          // null = normal; Set of ids = select mode
-  const [mdChoice, setMdChoice] = useState(false);
+  const [mdChoice, setMdChoice] = useState(false);   // false | 'md' | 'pdf' — the "one file or several" question
+  const [pdfBusy, setPdfBusy] = useState(false);
   const selButton = useRef(false);
   const selection = {
     active: sel !== null, ids: sel,
@@ -632,6 +634,28 @@ function NotesPageInner() {
     }
     toast.show(`⬇️ ดาวน์โหลด ${list.length} โน้ตเป็น Markdown แล้ว`);
     exitSelect();
+  }
+  // the PDF is drawn here in the browser (pictures placed between rows come out between the rows)
+  async function downloadPdf(mode) {
+    const list = chosenNotes(); if (!list.length || pdfBusy) return;
+    setMdChoice(false); setPdfBusy(true); toast.show('⏳ กำลังสร้าง PDF…');
+    try {
+      const imageUrl = id => `/api/notes/images/${encodeURIComponent(id)}`;
+      if (list.length > 1 && mode === 'zip') {
+        const files = [], names = new Map();
+        for (const n of list) {
+          const base = safeFileName(n.title || String(n.content || '').split('\n').find(l => l.trim()) || 'โน้ต'), k = names.get(base) || 0; names.set(base, k + 1);
+          files.push({ name: `${k ? `${base} (${k + 1})` : base}.pdf`, data: await notesToPdf([n], { imageUrl }) });
+        }
+        saveBlob(new Blob([createZip(files)], { type: 'application/zip' }), `jarvis-notes-pdf-${localDay()}.zip`);
+      } else {
+        const bytes = await notesToPdf(list, { imageUrl });
+        const one = list.length === 1;
+        saveBlob(new Blob([bytes], { type: 'application/pdf' }), one ? `${safeFileName(list[0].title || String(list[0].content || '').split('\n').find(l => l.trim()) || 'โน้ต')}.pdf` : `jarvis-notes-${localDay()}.pdf`);
+      }
+      toast.show(`📕 ดาวน์โหลด ${list.length} โน้ตเป็น PDF แล้ว`);
+      exitSelect();
+    } catch { toast.show('สร้าง PDF ไม่สำเร็จ ลองอีกครั้งครับ'); } finally { setPdfBusy(false); }
   }
   async function deleteSelected() {
     const ids = chosenNotes().map(n => n.id); if (!ids.length) return;
@@ -712,17 +736,18 @@ function NotesPageInner() {
               <b className="fsb-count">เลือก {visibleSelCount}</b>
               <button type="button" className="fsb-btn" onClick={() => setSel(prev => { const next = new Set(prev); const all = filtered.length > 0 && filtered.every(n => next.has(n.id)); filtered.forEach(n => (all ? next.delete(n.id) : next.add(n.id))); return next; })}>{filtered.length > 0 && filtered.every(n => sel.has(n.id)) ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
               <span style={{ flex: 1 }} />
-              <button type="button" className="fsb-btn" disabled={!visibleSelCount} onClick={() => (visibleSelCount === 1 ? downloadMd('one') : setMdChoice(true))}>⬇️ .md</button>
+              <button type="button" className="fsb-btn" disabled={!visibleSelCount} onClick={() => (visibleSelCount === 1 ? downloadMd('one') : setMdChoice('md'))}>⬇️ .md</button>
+              <button type="button" className="fsb-btn" disabled={!visibleSelCount || pdfBusy} onClick={() => (visibleSelCount === 1 ? downloadPdf('one') : setMdChoice('pdf'))}>{pdfBusy ? '⏳' : '📕'} PDF</button>
               <button type="button" className="fsb-btn danger" disabled={!visibleSelCount} onClick={deleteSelected}>🗑️ ลบ</button>
             </div>
           )}
           {mdChoice && (
             <div className="convert-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setMdChoice(false); }}>
-              <div className="convert-sheet" role="dialog" aria-modal="true" aria-label="ดาวน์โหลดเป็น Markdown">
-                <h2 className="convert-title">⬇️ ดาวน์โหลด {visibleSelCount} โน้ตเป็น .md</h2>
+              <div className="convert-sheet" role="dialog" aria-modal="true" aria-label={mdChoice === 'pdf' ? 'ดาวน์โหลดเป็น PDF' : 'ดาวน์โหลดเป็น Markdown'}>
+                <h2 className="convert-title">⬇️ ดาวน์โหลด {visibleSelCount} โน้ตเป็น {mdChoice === 'pdf' ? 'PDF' : '.md'}</h2>
                 <div style={{ display: 'grid', gap: '0.6rem' }}>
-                  <button type="button" className="convert-choice" data-mode="one" onClick={() => downloadMd('one')}><b>📄 รวมเป็นไฟล์เดียว</b><span className="muted">ทุกโน้ตอยู่ในไฟล์ .md เดียว คั่นด้วยเส้น</span></button>
-                  <button type="button" className="convert-choice" data-mode="zip" onClick={() => downloadMd('zip')}><b>🗜️ แยกไฟล์ (บีบเป็น .zip)</b><span className="muted">โน้ตละไฟล์ ตั้งชื่อตามหัวข้อ</span></button>
+                  <button type="button" className="convert-choice" data-mode="one" onClick={() => (mdChoice === 'pdf' ? downloadPdf('one') : downloadMd('one'))}><b>📄 รวมเป็นไฟล์เดียว</b><span className="muted">{mdChoice === 'pdf' ? 'ทุกโน้ตอยู่ใน PDF เดียว โน้ตละหน้าใหม่' : 'ทุกโน้ตอยู่ในไฟล์ .md เดียว คั่นด้วยเส้น'}</span></button>
+                  <button type="button" className="convert-choice" data-mode="zip" onClick={() => (mdChoice === 'pdf' ? downloadPdf('zip') : downloadMd('zip'))}><b>🗜️ แยกไฟล์ (บีบเป็น .zip)</b><span className="muted">โน้ตละไฟล์ ตั้งชื่อตามหัวข้อ</span></button>
                 </div>
                 <button type="button" className="glass-btn-outline" style={{ width: '100%', marginTop: '0.8rem' }} onClick={() => setMdChoice(false)}>ยกเลิก</button>
               </div>
