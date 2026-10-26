@@ -22,6 +22,7 @@ import SketchEditor from './_sketch';
 import {
   parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart,
   indentBlock, toggleCheck, pasteInto, rowInfo, appendRow, doneLayout, moveSubtree, subtreeEnd, cycleList, LIST_CYCLE,
+  normalizeRange, wholeRange, rangeText, deleteRange,
 } from '../../lib/noteBlocks';
 
 // Locks the page behind a full-screen editor so scrolling a long note
@@ -377,7 +378,7 @@ function fitHeight(el) {
   if (sc) sc.scrollTop = top;        // resizing must never make the panel jump
 }
 
-function RowText({ b, placeholder, reg, onInput, onFocusRow, onKey, onPasteRow, onCopyCut }) {
+function RowText({ b, hl, placeholder, reg, onInput, onFocusRow, onKey, onPasteRow, onCopyCut }) {
   const ref = useRef(null);
   useLayoutEffect(() => { reg(b.id, ref.current); return () => reg(b.id, null); }, [b.id, reg]);
   useLayoutEffect(() => { if (ref.current) fitHeight(ref.current); }, [b.text]);
@@ -391,6 +392,7 @@ function RowText({ b, placeholder, reg, onInput, onFocusRow, onKey, onPasteRow, 
   const checkedStyle = b.type === 'check' && b.checked;
   return (
     <div className="kl-cell">
+      {hl && <div className="kl-hl" aria-hidden>{ZW}{b.text.slice(0, hl[0])}<mark>{b.text.slice(hl[0], hl[1])}</mark>{b.text.slice(hl[1])}{'\n'}</div>}
       <textarea ref={ref} data-bid={b.id} rows={1} value={ZW + b.text}
         className={`kl-text${checkedStyle ? ' done' : ''}`} enterKeyHint="enter" spellCheck={false}
         onChange={e => onInput(e, b)} onFocus={() => onFocusRow(b.id)} onKeyDown={e => onKey(e, b)}
@@ -408,7 +410,12 @@ const LIST_LABEL = { text: 'ข้อความ', num: 'เลขข้อ', b
 export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, onActive, placeholder = 'พิมพ์โน้ต...', autoFocus }, ref) {
   const [blocks, setBlocks] = useState(() => parseContent(initial));
   const blocksRef = useRef(blocks);
-  const [allSel, setAllSel] = useState(false);          // Ctrl/⌘+A pressed twice → every row is selected
+  // A selection across several rows (the rows are separate text boxes, so the browser can't do it): { a: {id,pos}, f: {id,pos} } — see lib/noteBlocks.js
+  const [range, setRangeState] = useState(null);
+  const rangeRef = useRef(null);
+  const setRange = useCallback(r => { rangeRef.current = r; setRangeState(r); }, []);
+  const noClick = useRef(false);                           // the click that ends a drag across rows must not count as a tap on the empty area
+  const mouseSel = useRef(null);                          // a mouse drag that started inside a row
   const [hideDone, setHideDone] = useState(false);       // the "รายการที่ทำแล้ว" group is folded
   const [drag, setDrag] = useState(null);                // { id, i, j, dy, target } while a row is being dragged
   const dragRef = useRef(null);
@@ -447,6 +454,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
 
   const commit = useCallback((res, keepFocusId, typingId) => {
     if (!res) return false;
+    if (rangeRef.current) setRange(null);
     record(res.blocks, res.focus ? null : typingId);
     blocksRef.current = res.blocks;
     flushSync(() => setBlocks(res.blocks));
@@ -455,7 +463,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     else if (keepFocusId) { const el = els.current.get(keepFocusId); if (el && document.activeElement !== el) el.focus({ preventScroll: true }); }
     report();
     return true;
-  }, [onChange, focusAt, report, record]);
+  }, [onChange, focusAt, report, record, setRange]);
 
   const jump = useCallback((delta) => {
     const h = hist.current; const ni = h.idx + delta;
@@ -468,8 +476,8 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     // put the caret where the change happened
     let k = 0; while (k < next.length && k < prev.length && next[k].id === prev[k].id && next[k].text === prev[k].text && next[k].type === prev[k].type && next[k].indent === prev[k].indent && next[k].checked === prev[k].checked) k++;
     const t = next[Math.min(k, next.length - 1)]; if (t) focusAt(t.id, t.text.length);
-    setAllSel(false); report();
-  }, [onChange, focusAt, report]);
+    setRange(null); report();
+  }, [onChange, focusAt, report, setRange]);
 
   useImperativeHandle(ref, () => ({
     focusStart() { const f = blocksRef.current[0]; if (f) focusAt(f.id, 0); },
@@ -501,6 +509,9 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
       const ta = e.target;
       if (!(ta instanceof HTMLTextAreaElement) || !ta.dataset.bid || e.isComposing) return;
       const id = ta.dataset.bid;
+      const sp = rangeRef.current ? normalizeRange(blocksRef.current, rangeRef.current) : null;
+      if (sp && e.inputType === 'insertText' && e.data) { e.preventDefault(); replaceRange(sp, e.data); return; }          // typing over a selection that spans rows (also from a keyboard that sends no key events)
+      if (sp && e.inputType.startsWith('delete')) { e.preventDefault(); replaceRange(sp, ''); return; }
       if (e.inputType === 'historyUndo') { e.preventDefault(); jump(-1); return; }
       if (e.inputType === 'historyRedo') { e.preventDefault(); jump(1); return; }
       if (e.inputType !== 'insertLineBreak' && e.inputType !== 'insertParagraph') return;
@@ -524,6 +535,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
 
   function onInput(e, b) {
     const el = e.target;
+    if (rangeRef.current) setRange(null);
     let dom = el.value;
     const textBefore = b.text;
     if (!dom.startsWith(ZW)) {
@@ -561,18 +573,15 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
       if (k === 'z') { e.preventDefault(); jump(e.shiftKey ? 1 : -1); return; }
       if (k === 'y') { e.preventDefault(); jump(1); return; }
       if (k === 'a') {
-        // first press = this row's text (native); second press = the whole note
-        const whole = el.selectionStart <= 1 && el.selectionEnd >= el.value.length;
-        if (whole || el.value.length <= 1) { e.preventDefault(); el.setSelectionRange(0, el.value.length); setAllSel(true); }
+        // a note with several rows: select the whole note at once; one text box: the browser's own select-all
+        if (cur.length > 1) { e.preventDefault(); setRange(wholeRange(cur)); focusAt(cur[cur.length - 1].id, cur[cur.length - 1].text.length); }
         return;
       }
     }
-    if (allSel && !mod) {
-      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); clearAll(''); return; }
-      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Meta' || e.key === 'Alt') return;
-      if (e.key.length === 1 && !e.nativeEvent.isComposing) { e.preventDefault(); clearAll(e.key); return; }
-      setAllSel(false);
-    }
+    const span = rangeRef.current ? normalizeRange(cur, rangeRef.current) : null;
+    if (rangeRef.current && !span) setRange(null);
+    if (span && !e.nativeEvent.isComposing && rangeKey(e, span, b)) return;
+    if (e.shiftKey && !mod && !e.nativeEvent.isComposing && startRange(e, el, b, i)) return;
     if (e.key === 'Tab' && b.type !== 'text') {
       e.preventDefault();
       const s = el.selectionStart, e2 = el.selectionEnd;
@@ -590,8 +599,85 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     if (e.key === 'Home' && !e.shiftKey) { /* keep the caret after the sentinel */ requestAnimationFrame(() => { if (el.selectionStart === 0) el.setSelectionRange(1, 1); }); }
   }
 
+  // ----- a selection across rows -----
+  function nativeSelect(id, a, f) {                           // an ordinary selection inside one row
+    const t = els.current.get(id); if (!t) return;
+    t.focus({ preventScroll: true });
+    t.setSelectionRange(Math.min(a, f) + 1, Math.max(a, f) + 1, f < a ? 'backward' : 'forward');
+    activeId.current = id;
+  }
+  function setFocusEnd(f) {                                   // move the moving end of the selection to f ({id,pos})
+    const rg = rangeRef.current; if (!rg) return;
+    if (f.id === rg.a.id) { setRange(null); nativeSelect(f.id, rg.a.pos, f.pos); return; }
+    setRange({ a: rg.a, f }); focusAt(f.id, f.pos);
+  }
+  function replaceRange(span, insert) {
+    const res = deleteRange(blocksRef.current, span, insert);
+    setRange(null); commit(res);
+    if (insert && res.focus) hist.current.last = { key: res.focus.id, t: Date.now() };          // what is typed next joins this undo step
+  }
+  // Shift+arrow at the edge of a row: the selection grows into the next / previous row
+  function startRange(e, el, b, i) {
+    const cur = blocksRef.current, k = e.key;
+    if (!['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft'].includes(k)) return false;
+    const s0 = Math.max(0, el.selectionStart - 1), e0 = Math.max(0, el.selectionEnd - 1), collapsed = s0 === e0, dir = el.selectionDirection;
+    const atEnd = (collapsed || dir !== 'backward') && e0 >= b.text.length, atStart = (collapsed || dir === 'backward') && s0 === 0;
+    if ((k === 'ArrowDown' || k === 'ArrowRight') && atEnd && i < cur.length - 1) {
+      e.preventDefault(); const nx = cur[i + 1];
+      setRange({ a: { id: b.id, pos: s0 }, f: { id: nx.id, pos: k === 'ArrowRight' ? 0 : Math.min(e0, nx.text.length) } });
+      focusAt(nx.id, k === 'ArrowRight' ? 0 : Math.min(e0, nx.text.length)); return true;
+    }
+    if ((k === 'ArrowUp' || k === 'ArrowLeft') && atStart && i > 0) {
+      e.preventDefault(); const pv = cur[i - 1], pos = k === 'ArrowLeft' ? pv.text.length : Math.min(s0, pv.text.length);
+      setRange({ a: { id: b.id, pos: e0 }, f: { id: pv.id, pos } }); focusAt(pv.id, pos); return true;
+    }
+    return false;
+  }
+  // keys while several rows are selected; true = handled
+  function rangeKey(e, span, b) {
+    const cur = blocksRef.current, rg = rangeRef.current, k = e.key, mod = e.ctrlKey || e.metaKey;
+    if (mod) return false;                                     // copy / cut / paste arrive as their own events
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(k)) {
+      e.preventDefault();
+      if (!e.shiftKey) {                                       // the selection collapses to one of its ends
+        const toStart = k === 'ArrowLeft' || k === 'ArrowUp' || k === 'Home';
+        const r = cur[toStart ? span.i0 : span.i1]; setRange(null); focusAt(r.id, toStart ? span.p0 : span.p1); return true;
+      }
+      const fi = cur.findIndex(x => x.id === rg.f.id), row = cur[fi], fp = Math.min(rg.f.pos, row.text.length);
+      let ni = fi, np = fp;
+      if (k === 'ArrowRight') { if (fp < row.text.length) np = fp + 1; else if (fi < cur.length - 1) { ni = fi + 1; np = 0; } }
+      else if (k === 'ArrowLeft') { if (fp > 0) np = fp - 1; else if (fi > 0) { ni = fi - 1; np = cur[ni].text.length; } }
+      else if (k === 'ArrowDown') { if (fi < cur.length - 1) { ni = fi + 1; np = Math.min(fp, cur[ni].text.length); } else np = row.text.length; }
+      else if (k === 'ArrowUp') { if (fi > 0) { ni = fi - 1; np = Math.min(fp, cur[ni].text.length); } else np = 0; }
+      else if (k === 'Home') np = 0; else np = row.text.length;
+      const f = { id: cur[ni].id, pos: np };
+      if (f.id === rg.a.id && f.pos === rg.a.pos) { setRange(null); focusAt(f.id, f.pos); return true; }
+      setFocusEnd(f); return true;
+    }
+    if (k === 'Escape') { e.preventDefault(); e.stopPropagation(); const f = rg.f; setRange(null); focusAt(f.id, f.pos); return true; }
+    if (k === 'Backspace' || k === 'Delete') { e.preventDefault(); replaceRange(span, ''); return true; }
+    if (k === 'Enter') {
+      e.preventDefault();
+      const first = cur[span.i0];
+      if (first.type === 'text') replaceRange(span, '\n');
+      else { const res = deleteRange(cur, span, ''); setRange(null); commit(res); const r2 = enterInList(blocksRef.current, res.focus.id, res.focus.pos); if (r2) commit(r2); }
+      return true;
+    }
+    if (k.length === 1) { e.preventDefault(); replaceRange(span, k); return true; }       // typing replaces the selection
+    if (k === 'Shift' || k === 'Control' || k === 'Meta' || k === 'Alt' || k === 'CapsLock') return true;
+    setRange(null); return false;
+  }
+
   function onPasteRow(e, b) {
     const pasted = e.clipboardData?.getData('text') || '';
+    const span = rangeRef.current ? normalizeRange(blocksRef.current, rangeRef.current) : null;
+    if (span) {                                              // pasting over a selection that spans rows
+      e.preventDefault(); const text = stripZw(pasted);
+      if (!text.includes('\n')) { replaceRange(span, text); return; }
+      const res = deleteRange(blocksRef.current, span, ''); setRange(null); commit(res);
+      const r2 = pasteInto(blocksRef.current, res.focus.id, res.focus.pos, res.focus.pos, text); if (r2) commit(r2);
+      return;
+    }
     if (!pasted.includes('\n')) return;                     // one line → the browser's own paste
     const el = e.target;
     const s = Math.max(0, el.selectionStart - 1), en = Math.max(0, el.selectionEnd - 1);
@@ -600,18 +686,13 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
   }
 
   // Never put the invisible sentinel on the clipboard.
-  function clearAll(text) {
-    const fresh = parseContent(text);
-    setAllSel(false);
-    commit({ blocks: fresh, focus: { id: fresh[0].id, pos: fresh[0].text.length } });
-  }
-
   function onCopyCut(e) {
     const el = e.target;
-    if (allSel) {                                            // the whole note, as plain text
-      e.clipboardData.setData('text/plain', serializeBlocks(blocksRef.current));
+    const span = rangeRef.current ? normalizeRange(blocksRef.current, rangeRef.current) : null;
+    if (span) {                                              // the selection that spans rows, as plain text
+      e.clipboardData.setData('text/plain', rangeText(blocksRef.current, span));
       e.preventDefault();
-      if (e.type === 'cut') clearAll('');
+      if (e.type === 'cut') replaceRange(span, '');
       return;
     }
     const sel = stripZw(el.value.slice(el.selectionStart, el.selectionEnd));
@@ -621,9 +702,74 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     if (e.type === 'cut') { try { document.execCommand('delete'); } catch { /* ignore */ } }
   }
 
+  // ----- mouse: Shift+click and drag across rows -----
+  const rowAtY = y => {                                      // the row (index) under a height on screen; above / below the note → first / last
+    const rows = rootRef.current ? [...rootRef.current.querySelectorAll('[data-ri]')] : []; if (!rows.length) return -1;
+    let best = Number(rows[0].dataset.ri), bd = Infinity;
+    for (const r of rows) { const rc = r.getBoundingClientRect(), d = y < rc.top ? rc.top - y : y > rc.bottom ? y - rc.bottom : 0; if (d < bd) { bd = d; best = Number(r.dataset.ri); } if (d === 0) break; }
+    return best;
+  };
+  // where in a row's text a pointer is (exact on a single line; wrapped rows: start or end by which half)
+  const posAtPoint = (b, x, y, down) => {
+    const t = els.current.get(b.id); if (!t) return down ? b.text.length : 0;
+    const rc = t.getBoundingClientRect(), cs = getComputedStyle(t), lh = parseFloat(cs.lineHeight) || 24;
+    if (!b.text) return 0;
+    if (t.scrollHeight > lh * 1.5 + 4 || b.text.includes('\n')) return y > rc.top + rc.height / 2 ? b.text.length : 0;
+    const ctx = (posAtPoint.cv = posAtPoint.cv || document.createElement('canvas')).getContext('2d');
+    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const dx = x - rc.left; if (dx <= 0) return 0;
+    let lo = 0, hi = b.text.length;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (ctx.measureText(b.text.slice(0, m)).width <= dx) lo = m; else hi = m - 1; }
+    return lo < b.text.length && ctx.measureText(b.text.slice(0, lo + 1)).width - dx < dx - ctx.measureText(b.text.slice(0, lo)).width ? lo + 1 : lo;
+  };
+  function onRootMouseDown(e) {
+    if (e.button !== 0) return;
+    const ta = e.target instanceof Element ? e.target.closest('textarea[data-bid]') : null;
+    if (e.shiftKey && ta && activeId.current && ta.dataset.bid !== activeId.current) {      // Shift+click on another row
+      const cur = blocksRef.current, a = rangeRef.current ? rangeRef.current.a : { id: activeId.current, pos: Math.max(0, (els.current.get(activeId.current)?.selectionStart ?? 1) - 1) };
+      const id = ta.dataset.bid;
+      requestAnimationFrame(() => {
+        const b = cur.find(x => x.id === id); if (!b) return;
+        const pos = Math.min(b.text.length, Math.max(0, ta.selectionStart - 1));
+        setRange({ a, f: { id, pos } }); focusAt(id, pos);
+      });
+      return;
+    }
+    if (rangeRef.current && !e.shiftKey) setRange(null);
+    mouseSel.current = ta && !e.shiftKey ? { id: ta.dataset.bid, anchor: null } : null;
+  }
+  useEffect(() => {
+    const move = e => {
+      const m = mouseSel.current; if (!m) return;
+      if (e.buttons !== 1) { mouseSel.current = null; return; }
+      const cur = blocksRef.current, ai = cur.findIndex(x => x.id === m.id); if (ai < 0) { mouseSel.current = null; return; }
+      const sc = rootRef.current?.closest('.note-editor-modal');
+      if (sc) { const r = sc.getBoundingClientRect(); if (e.clientY < r.top + 36) sc.scrollTop -= 14; else if (e.clientY > r.bottom - 36) sc.scrollTop += 14; }
+      const ti = rowAtY(e.clientY); if (ti < 0) return;
+      if (ti === ai) { if (m.anchor !== null) { m.anchor = null; setRange(null); } return; }          // back in the first row: the browser's own selection again
+      const down = ti > ai, at = els.current.get(m.id);
+      if (m.anchor === null) {                                                                          // the browser's selection in the first row tells where the drag began
+        if (!at) return;
+        m.anchor = Math.max(0, (down ? at.selectionStart : at.selectionEnd) - 1);
+      }
+      const tb = cur[ti], pos = posAtPoint(tb, e.clientX, e.clientY, down);
+      const rg = { a: { id: m.id, pos: Math.min(m.anchor, cur[ai].text.length) }, f: { id: tb.id, pos } };
+      const old = rangeRef.current;
+      if (old && old.f.id === rg.f.id && old.f.pos === rg.f.pos) return;
+      if (at) { try { at.setSelectionRange(rg.a.pos + 1, rg.a.pos + 1); } catch { /* ignore */ } }
+      rangeRef.current = rg; setRangeState(rg);
+    };
+    const up = () => {
+      const m = mouseSel.current; mouseSel.current = null;
+      if (m && rangeRef.current) { const f = rangeRef.current.f; focusAt(f.id, f.pos); noClick.current = true; setTimeout(() => { noClick.current = false; }, 0); }                // keys carry on from where the drag ended
+    };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+    return () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+  }, [focusAt, setRange]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // Tapping the empty area under the last row: carry on where the note ends (one more list row after a list).
   function onBackgroundClick(e) {
-    if (e.target !== e.currentTarget) return;
+    if (e.target !== e.currentTarget || noClick.current) return;
     commit(appendRow(blocksRef.current));
   }
 
@@ -676,12 +822,14 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     return () => cancelAnimationFrame(raf);
   }, [!!drag]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const span = range ? normalizeRange(blocks, range) : null;
   const nums = numbering(blocks);
   const { header, done } = doneLayout(blocks);
   const onlyEmptyText = blocks.length === 1 && blocks[0].type === 'text' && blocks[0].text === '';
   const dropLine = <div key="drop" className="kl-drop" />;
   return (
-    <div className={`kl-root${allSel ? ' allsel' : ''}${drag ? ' dragging' : ''}`} ref={rootRef} onClick={onBackgroundClick}>
+    <div className={`kl-root${drag ? ' dragging' : ''}`} ref={rootRef} onClick={onBackgroundClick} onMouseDown={onRootMouseDown}
+      onBlur={e => { if (rangeRef.current && document.hasFocus() && !(e.relatedTarget && rootRef.current?.contains(e.relatedTarget))) setRange(null); }}>
       {blocks.map((b, i) => {
         const marker = b.type === 'bullet'
           ? <span className="kl-mark kl-bullet">{BULLETS[b.indent % BULLETS.length]}</span>
@@ -705,14 +853,14 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
               </button>
             )}
             {!hidden && (
-              <div data-ri={i} className={`kl-row kl-r-${b.type}${inDrag ? ' lifted' : ''}`}
+              <div data-ri={i} className={`kl-row kl-r-${b.type}${inDrag ? ' lifted' : ''}${span && i >= span.i0 && i <= span.i1 ? ' insel' : ''}`}
                 style={{ ...(b.type === 'text' ? null : { paddingLeft: `${b.indent * 1.5}rem` }), ...(inDrag ? { transform: `translateY(${drag.dy}px)` } : null) }}
                 onClick={e => { if (e.target === e.currentTarget) { e.stopPropagation(); focusAt(b.id, b.text.length); } }}>
                 {marker}
-                <RowText b={b} reg={reg}
+                <RowText b={b} reg={reg} hl={span && i >= span.i0 && i <= span.i1 ? [i === span.i0 ? span.p0 : 0, i === span.i1 ? span.p1 : b.text.length] : null}
                   placeholder={onlyEmptyText ? placeholder : (b.type !== 'text' && b.text === '' ? 'รายการ' : '')}
                   onInput={onInput} onKey={onKey} onPasteRow={onPasteRow} onCopyCut={onCopyCut}
-                  onFocusRow={id => { activeId.current = id; if (allSel) setAllSel(false); report(); }} />
+                  onFocusRow={id => { activeId.current = id; report(); }} />
                 {b.type !== 'text' && (
                   <span className="kl-handle" title="ลากเพื่อย้าย" aria-label="ลากเพื่อย้ายแถว" role="button"
                     onPointerDown={e => startDrag(e, b)} onPointerMove={moveDrag}

@@ -1,7 +1,7 @@
 // node --test tests/   — the note-body logic (no browser needed)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, cycleList, pasteInto, rowInfo, previewText, plainText } from '../lib/noteBlocks.js';
+import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, cycleList, pasteInto, rowInfo, previewText, plainText, normalizeRange, wholeRange, rangeText, deleteRange } from '../lib/noteBlocks.js';
 
 const types = blocks => blocks.map(b => `${b.type}${b.indent ? '@' + b.indent : ''}${b.checked ? '✓' : ''}:${JSON.stringify(b.text)}`);
 const idOf = (blocks, n) => blocks[n].id;
@@ -320,4 +320,48 @@ test('calculator: Enter in a list row finishes the sum then adds the next row', 
 test('plainText: glyphs per line, indent kept, blank lines dropped', () => {
   assert.equal(plainText('- นม\n  - นมจืด\n\n[x] เสร็จ\n1. หนึ่ง\nข้อความ'), '• นม\n  • นมจืด\n☑ เสร็จ\n1. หนึ่ง\nข้อความ');
   assert.equal(previewText('- a\n- b'), '• a  • b');
+});
+
+// ---- a selection across several rows ----
+const sel = (b, i0, p0, i1, p1) => normalizeRange(b, { a: { id: b[i0].id, pos: p0 }, f: { id: b[i1].id, pos: p1 } });
+
+test('range: order does not matter, one row is not a range', () => {
+  const b = parseContent('หัวข้อ\n- นม\n- ไข่');
+  assert.deepEqual(sel(b, 2, 1, 0, 2), { i0: 0, p0: 2, i1: 2, p1: 1 });
+  assert.equal(sel(b, 1, 0, 1, 2), null);
+  assert.equal(normalizeRange(b, { a: { id: 'gone', pos: 0 }, f: { id: b[0].id, pos: 0 } }), null);
+});
+
+test('range: copied text keeps list markers (pastes back as rows) and cuts the end rows at the selection', () => {
+  const b = parseContent('หัวข้อใหญ่\n- นมสด\n- ไข่ไก่\n[ ] ขนมปัง');
+  assert.equal(rangeText(b, sel(b, 0, 0, 3, 3)), 'หัวข้อใหญ่\n- นมสด\n- ไข่ไก่\n[ ] ขนม');
+  assert.equal(rangeText(b, sel(b, 1, 2, 2, 2)), '- สด\n- ไข');
+});
+
+test('range: delete joins the two end rows and drops the rows between', () => {
+  const b = parseContent('หัวข้อ\n- นมสด\n- ไข่ไก่\n- ขนมปัง');
+  const r = deleteRange(b, sel(b, 1, 2, 3, 3), '');
+  assert.deepEqual(types(r.blocks), ['text:"หัวข้อ"', 'bullet:"นมปัง"']);
+  assert.deepEqual(r.focus, { id: r.blocks[1].id, pos: 2 });
+});
+
+test('range: typing over a selection replaces it; caret lands after the typed text', () => {
+  const b = parseContent('- one\n- two\n- three');
+  const r = deleteRange(b, sel(b, 0, 1, 2, 2), 'X');
+  assert.deepEqual(types(r.blocks), ['bullet:"oXree"']);
+  assert.equal(r.focus.pos, 2);
+});
+
+test('range: selecting the whole note and deleting leaves one empty text row (typing replaces everything)', () => {
+  const b = parseContent('หัวข้อ\n- a\n[ ] b');
+  const w = normalizeRange(b, wholeRange(b));
+  assert.deepEqual(types(deleteRange(b, w, '').blocks), ['text:""']);
+  assert.deepEqual(types(deleteRange(b, w, 'ก').blocks), ['text:"ก"']);
+  assert.equal(rangeText(b, w), serializeBlocks(b));
+});
+
+test('range: deleting from a text block into a list row keeps the text block type and merges lines', () => {
+  const b = parseContent('บรรทัด 1\nบรรทัด 2\n- รายการ');
+  const r = deleteRange(b, sel(b, 0, 9, 1, 0), '');
+  assert.deepEqual(types(r.blocks), ['text:"บรรทัด 1\\nรายการ"']);
 });
