@@ -33,7 +33,7 @@ const DOUBLE_TAP_MS = 380;
 const TOOLS_ROW_C = [['select', '👆', 'เลือก / ย้าย'], ['rect', '▭', 'สี่เหลี่ยม'], ['ellipse', '◯', 'วงรี'], ['diamond', '◇', 'ข้าวหลามตัด'], ['line', '╱', 'เส้นตรง'], ['arrow', '➜', 'ลูกศร'], ['elbow', '↱', 'ลูกศรหักมุม'], ['text', 'T', 'ข้อความ']];
 const HINTS = {
   pen: 'ใช้นิ้วหรือปากกาเขียนได้เลย · สองนิ้วเพื่อเลื่อนและซูม (แท็บเล็ตที่มีปากกา: ปากกาเขียน นิ้วเลื่อน)', marker: 'ไฮไลต์ทับข้อความหรือเส้น สีจางโปร่งแสง', eraser: 'ลากผ่านเส้นหรือรูปทรงที่ต้องการลบ (ลบทั้งชิ้น)', hand: 'ลากเพื่อเลื่อนกระดาน',
-  select: 'แตะเพื่อเลือก ลากเพื่อย้าย ลากมุม/ปลายลูกศรเพื่อปรับ · แตะสองครั้งที่ข้อความหรือรูปทรงเพื่อพิมพ์',
+  select: 'แตะเพื่อเลือก ลากเพื่อย้าย ลากมุม/ปลายลูกศรเพื่อปรับ · แก้ข้อความ: แตะสองครั้ง หรือเลือกแล้วกดปุ่ม ✎ (หรือ Enter)',
   rect: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', ellipse: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', diamond: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ',
   line: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง เส้นจะติดกับรูปและตามเมื่อย้าย', arrow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะติดกับรูปและตามเมื่อย้าย', elbow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะหักเป็นมุมฉาก ติดกับรูปและตามเมื่อย้าย', multi: 'แตะรูปหลายชิ้นเพื่อเลือก/เลิกเลือก หรือลากคลุมให้ครอบรูปทั้งชิ้น แล้วลากเพื่อย้ายพร้อมกัน', text: 'แตะตรงที่ต้องการพิมพ์',
 };
@@ -180,6 +180,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
       const saved = draftKey ? loadDraft(`sketch:${draftKey}`) : null;
       const backup = cleanItems(saved?.items || saved?.strokes);
       if (backup.length && sig(backup) !== initialSig.current) { items.current = backup; setRestored(true); }
+      if (imageUrl && items.current.length) setTool('select');      // an existing drawing is opened to be changed: pick / move / edit text first (✏️ is one tap away)
       setLoading(false); fitView(); bump();
     })();
     return () => { alive = false; if (bgRef.current?.url) URL.revokeObjectURL(bgRef.current.url); };
@@ -271,6 +272,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     const { copies } = duplicateItems(items.current, selRef.current); if (!copies.length) return;
     commit([...items.current, ...copies]); setSel(copies.map(c => c.id));
   };
+  const editSelected = () => { const it = selected(); if (it && (it.k === 'text' || isShape(it))) startEditing(it); };
   const pickTool = t => { endEdit(); setTool(t); if (t !== 'select') { setSel([]); setMulti(false); } };
   const toggleMulti = () => { endEdit(); const on = !multi; setMulti(on); if (on) setTool('select'); };
 
@@ -340,7 +342,18 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     else if (wasIn && ids.length > 1) narrow = true;                                    // a tap on one of several narrows to it; a drag moves them all
     else move = [hit.id];
     if (!narrow && !toggleOff) setSel(move);
-    g.current = { type: 'move', pid: e.pointerId, base: list, id: hit.id, ids: move, sx: x, sy: y, moved: false, double, narrow, toggleOff };
+    g.current = { type: 'move', pid: e.pointerId, base: list, id: hit.id, ids: move, sx: x, sy: y, moved: false, double, narrow, toggleOff, tapEdit: wasIn && ids.length === 1 && hit.k === 'text' && !toggle };
+  };
+  // a finger on a tablet that has a pen only taps (a drag moves the board): tap = select, double-tap = edit the text / label
+  const tapSelect = e => {
+    const [x, y] = toWorld(e.clientX, e.clientY), list = items.current;
+    const hit = topItemAt(list, x, y, tol(), measureText) || shapeAt(list, x, y);
+    if (!hit) { lastTap.current = { id: null, t: 0 }; if (selRef.current.length && !multiRef.current) setSel([]); return; }
+    const double = lastTap.current.id === hit.id && Date.now() - lastTap.current.t < DOUBLE_TAP_MS + 150 && (hit.k === 'text' || isShape(hit));
+    lastTap.current = { id: hit.id, t: Date.now() };
+    if (double) { setSel([hit.id]); startEditing(hit); return; }
+    const ids = selRef.current;
+    if (multiRef.current) setSel(ids.includes(hit.id) ? ids.filter(i => i !== hit.id) : [...ids, hit.id]); else setSel([hit.id]);
   };
   const placeText = e => {
     const [x, y] = toWorld(e.clientX, e.clientY);
@@ -371,7 +384,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     // a finger
     if (g.current?.type === 'draw' && !cur.current?.fromTouch) return;                   // the pen is writing: a resting palm is ignored
     if (penSeen.current) {                                              // tablet with a pen: fingers only move / zoom the board
-      if (touches().length >= 2) { if (g.current) cancelGesture(); startPinch(); } else if (touches().length === 1 && !g.current) startPan(e);
+      if (touches().length >= 2) { if (g.current) cancelGesture(); startPinch(); } else if (touches().length === 1 && !g.current) { startPan(e); if (toolRef.current === 'select') g.current.tap = true; }
       return;
     }
     if (touches().length >= 2) { cancelGesture(); startPinch(); return; }
@@ -439,6 +452,8 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
         else { l.to = to ? to.id : null; commit([...items.current, l]); setSel([l.id]); setTool('select'); }
       } else if (gg.type === 'text') {
         if (Math.hypot(e.clientX - gg.x, e.clientY - gg.y) < 12) placeText(e);
+      } else if (gg.type === 'pan' && gg.tap) {
+        if (Math.hypot(e.clientX - gg.x, e.clientY - gg.y) < 8) tapSelect(e);
       } else if (gg.type === 'marquee') {
         const r = marq.current; marq.current = null;
         if (r && Math.hypot(r[2] - r[0], r[3] - r[1]) * view.current.k >= 6) {
@@ -450,7 +465,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
         else if (gg.type === 'move') {
           if (gg.toggleOff) setSel(selRef.current.filter(id => id !== gg.id));
           else if (gg.narrow) setSel([gg.id]);
-          else if (gg.double) { const it = items.current.find(i => i.id === gg.id); if (it) startEditing(it); }
+          else if (gg.double || gg.tapEdit) { const it = items.current.find(i => i.id === gg.id); if (it) startEditing(it); }
         }
       }
     } else if (gg?.type === 'pinch' && touches().length < 2) g.current = touches().length ? { type: 'wait' } : null;
@@ -486,6 +501,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     const down = e => {
       if (e.key === ' ' && !typing()) { space.current = true; e.preventDefault(); }
       if (e.key === 'Escape') { if (editRef.current) endEdit(false); else if (selRef.current.length) setSel([]); else cancelRef.current(); }
+      if ((e.key === 'Enter' || e.key === 'F2') && !typing() && !editRef.current) { const it = selected(); if (it && (it.k === 'text' || isShape(it))) { e.preventDefault(); startEditing(it); } }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !typing() && selRef.current.length) { e.preventDefault(); deleteSelected(); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !typing()) { e.preventDefault(); setTool('select'); setSel(items.current.map(i => i.id)); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing()) { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); }
@@ -558,6 +574,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
             <button key={key} type="button" className={`sk-btn${tool === key ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tool === key} onClick={() => pickTool(key)}>{icon}</button>
           ))}
           <button type="button" className={`sk-btn${multi ? ' on' : ''}`} title="เลือกหลายชิ้น" aria-label="เลือกหลายชิ้น" aria-pressed={multi} onClick={toggleMulti}>☑</button>
+          <button type="button" className="sk-btn" title="แก้ข้อความในรูป/กล่องข้อความที่เลือก" aria-label="แก้ข้อความ" disabled={!(sel && (sel.k === 'text' || isShape(sel)))} onClick={editSelected}>✎</button>
           <span className="sk-spacer" />
           <button type="button" className="sk-btn" title="ทำสำเนา" aria-label="ทำสำเนา" disabled={!chosen.length} onClick={duplicateSelected}>⧉</button>
           <button type="button" className="sk-btn" title="ลบที่เลือก" aria-label="ลบที่เลือก" disabled={!chosen.length} onClick={deleteSelected}>🗑️</button>
