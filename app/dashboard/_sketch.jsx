@@ -176,17 +176,29 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   }, [imageUrl, draftKey, fitView]);
 
   // ----- on-device backup while drawing -----
+  // saved shortly after each change, AND at once when the page is hidden / left / the pad closes without a successful save
+  const closedClean = useRef(false);                    // true once the picture was saved or the drawing was thrown away on purpose
+  const writeBackup = useCallback(() => {
+    if (!draftKey) return;
+    try {
+      const json = JSON.stringify({ items: serializeItems(items.current) });
+      if (!items.current.length) clearDraft(`sketch:${draftKey}`);
+      else if (json.length < MAX_DRAFT_CHARS) saveDraft(`sketch:${draftKey}`, JSON.parse(json));
+    } catch { /* ignore */ }
+  }, [draftKey]);
+  const backupRef = useRef(writeBackup); backupRef.current = writeBackup;
   useEffect(() => {
     if (loading || !draftKey) return undefined;
-    const t = setTimeout(() => {
-      try {
-        const json = JSON.stringify({ items: serializeItems(items.current) });
-        if (!items.current.length) clearDraft(`sketch:${draftKey}`);
-        else if (json.length < MAX_DRAFT_CHARS) saveDraft(`sketch:${draftKey}`, JSON.parse(json));
-      } catch { /* ignore */ }
-    }, 800);
+    const t = setTimeout(() => backupRef.current(), 800);
     return () => clearTimeout(t);
   });                                                           // every render: cheap, and every change re-renders
+  useEffect(() => {
+    const flush = () => { if (!closedClean.current && !loadingRef.current) backupRef.current(); };
+    const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', onVis); window.addEventListener('pagehide', flush);
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush); flush(); };
+  }, []);
+  const loadingRef = useRef(loading); loadingRef.current = loading;
 
   // ----- history -----
   const pushUndo = snapshot => { undo.current.push(snapshot); if (undo.current.length > 200) undo.current.shift(); redo.current = []; version.current++; };
@@ -422,7 +434,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
 
   // ----- keys / closing -----
   const changed = () => sig(items.current) !== initialSig.current;
-  const cancel = () => { if (saving) return; endEdit(false); if (items.current.length && changed() && !confirm('ทิ้งสิ่งที่วาดไว้ใช่ไหมครับ?')) return; if (draftKey) clearDraft(`sketch:${draftKey}`); onCancel(); };
+  const cancel = () => { if (saving) return; endEdit(false); if (items.current.length && changed() && !confirm('ทิ้งสิ่งที่วาดไว้ใช่ไหมครับ?')) return; if (draftKey) clearDraft(`sketch:${draftKey}`); closedClean.current = true; onCancel(); };
   const cancelRef = useRef(cancel); cancelRef.current = cancel;
   useEffect(() => {
     const typing = () => /INPUT|TEXTAREA/.test(document.activeElement?.tagName || '');
@@ -444,13 +456,15 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     endEdit(true);
     if (!items.current.length) return;
     setSaving(true); setError('');
+    const failed = () => { closedClean.current = false; writeBackup(); setError('บันทึกไม่สำเร็จ — ที่วาดยังอยู่ ลองกด ✓ อีกครั้งครับ'); setSaving(false); };
     try {
       const blob = await exportPng(items.current, bgRef.current);
       if (!blob) throw new Error('export');
+      closedClean.current = true;                    // set BEFORE handing over: a successful save closes this pad, and the pad must not re-back-up on its way out
       const ok = await onSave(blob);
-      if (ok === false) { setError('บันทึกไม่สำเร็จ — ที่วาดยังอยู่ ลองกด ✓ อีกครั้งครับ'); setSaving(false); return; }
+      if (ok === false) return failed();             // (the drawing is written to the backup right here, whether or not the pad is still on screen)
       if (draftKey) clearDraft(`sketch:${draftKey}`);
-    } catch { setError('บันทึกไม่สำเร็จ — ที่วาดยังอยู่ ลองกด ✓ อีกครั้งครับ'); setSaving(false); }
+    } catch { failed(); }
   }
 
   if (process.env.NEXT_PUBLIC_MOCK_MODE === '1' && typeof window !== 'undefined') window.__sketchItems = () => serializeItems(items.current);   // test hook (local mock mode only)
