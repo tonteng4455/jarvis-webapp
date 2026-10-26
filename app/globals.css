@@ -831,6 +831,9 @@ html[data-fs="lg"] { font-size: 18px; }
 .file-selbar .fsb-btn:disabled { opacity: 0.45; cursor: default; }
 .convert-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 0.8rem 1rem; border-radius: 14px; border: 1px solid var(--border-strong); background: var(--surface-muted); color: var(--text-primary); font: inherit; cursor: pointer; }
 .convert-choice b { font-size: 1rem; }
+.dl-pack { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0 0 0.8rem; border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; }
+.dl-pack button { padding: 0.55rem 0.4rem; border: none; background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: 0.88rem; cursor: pointer; }
+.dl-pack button[aria-checked="true"] { background: var(--accent-soft, #dff3f0); box-shadow: inset 0 0 0 2px var(--accent, #14a39a); font-weight: 600; }
 .convert-choice span { font-size: 0.8rem; }
 .convert-choice:hover { border-color: var(--accent); }
 .note-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

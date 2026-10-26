@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, NOTE_CATEGORIES } from './_components';
-import { NoteEditorPanel, EditorOverlay, useNoteImages, COLORS, colorBg } from './_noteEditor';
+import { NoteEditorPanel, EditorOverlay, useNoteImages, DownloadSheet, COLORS, colorBg } from './_noteEditor';
 import { ConvertToTaskSheet, ConvertToEventSheet, noteSource } from './_taskEditor';
 import { ConvertChooser, convertItem } from './_convert';
 import { previewText } from '../../lib/noteBlocks';
@@ -598,7 +598,7 @@ function NotesPageInner() {
 
   // ---- select several notes → download as .md / delete ----
   const [sel, setSel] = useState(null);          // null = normal; Set of ids = select mode
-  const [mdChoice, setMdChoice] = useState(false);   // false | 'md' | 'pdf' — the "one file or several" question
+  const [dlOpen, setDlOpen] = useState(false);       // the "download as .md / PDF" dialog
   const [pdfBusy, setPdfBusy] = useState(false);
   const selButton = useRef(false);
   const selection = {
@@ -606,13 +606,13 @@ function NotesPageInner() {
     start: note => { selButton.current = !note; setSel(new Set(note ? [note.id] : [])); },
     toggle: note => setSel(prev => { const next = new Set(prev); next.has(note.id) ? next.delete(note.id) : next.add(note.id); return next.size === 0 && !selButton.current ? null : next; }),
   };
-  const exitSelect = () => { selButton.current = false; setSel(null); setMdChoice(false); };
-  useEffect(() => {                                   // Escape: close the .md dialog first, then leave select mode
+  const exitSelect = () => { selButton.current = false; setSel(null); setDlOpen(false); };
+  useEffect(() => {                                   // Escape: close the download dialog first, then leave select mode
     if (sel === null) return undefined;
-    const k = e => { if (e.key !== 'Escape') return; if (mdChoice) setMdChoice(false); else { selButton.current = false; setSel(null); } };
+    const k = e => { if (e.key !== 'Escape') return; if (dlOpen) setDlOpen(false); else { selButton.current = false; setSel(null); } };
     document.addEventListener('keydown', k);
     return () => document.removeEventListener('keydown', k);
-  }, [sel === null, mdChoice]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sel === null, dlOpen]);   // eslint-disable-line react-hooks/exhaustive-deps
   const chosenNotes = () => filtered.filter(n => sel?.has(n.id));   // only what is on screen: never act on hidden (archived / filtered-out) selections
 
   function saveBlob(blob, name) {
@@ -638,7 +638,7 @@ function NotesPageInner() {
   // the PDF is drawn here in the browser (pictures placed between rows come out between the rows)
   async function downloadPdf(mode) {
     const list = chosenNotes(); if (!list.length || pdfBusy) return;
-    setMdChoice(false); setPdfBusy(true); toast.show('⏳ กำลังสร้าง PDF…');
+    setDlOpen(false); setPdfBusy(true); toast.show('⏳ กำลังสร้าง PDF…');
     try {
       const imageUrl = id => `/api/notes/images/${encodeURIComponent(id)}`;
       if (list.length > 1 && mode === 'zip') {
@@ -736,23 +736,11 @@ function NotesPageInner() {
               <b className="fsb-count">เลือก {visibleSelCount}</b>
               <button type="button" className="fsb-btn" onClick={() => setSel(prev => { const next = new Set(prev); const all = filtered.length > 0 && filtered.every(n => next.has(n.id)); filtered.forEach(n => (all ? next.delete(n.id) : next.add(n.id))); return next; })}>{filtered.length > 0 && filtered.every(n => sel.has(n.id)) ? 'ไม่เลือกเลย' : 'ทั้งหมด'}</button>
               <span style={{ flex: 1 }} />
-              <button type="button" className="fsb-btn" disabled={!visibleSelCount} onClick={() => (visibleSelCount === 1 ? downloadMd('one') : setMdChoice('md'))}>⬇️ .md</button>
-              <button type="button" className="fsb-btn" disabled={!visibleSelCount || pdfBusy} onClick={() => (visibleSelCount === 1 ? downloadPdf('one') : setMdChoice('pdf'))}>{pdfBusy ? '⏳' : '📕'} PDF</button>
+              <button type="button" className="fsb-btn" disabled={!visibleSelCount || pdfBusy} onClick={() => setDlOpen(true)}>{pdfBusy ? '⏳' : '⬇️'} ดาวน์โหลด</button>
               <button type="button" className="fsb-btn danger" disabled={!visibleSelCount} onClick={deleteSelected}>🗑️ ลบ</button>
             </div>
           )}
-          {mdChoice && (
-            <div className="convert-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setMdChoice(false); }}>
-              <div className="convert-sheet" role="dialog" aria-modal="true" aria-label={mdChoice === 'pdf' ? 'ดาวน์โหลดเป็น PDF' : 'ดาวน์โหลดเป็น Markdown'}>
-                <h2 className="convert-title">⬇️ ดาวน์โหลด {visibleSelCount} โน้ตเป็น {mdChoice === 'pdf' ? 'PDF' : '.md'}</h2>
-                <div style={{ display: 'grid', gap: '0.6rem' }}>
-                  <button type="button" className="convert-choice" data-mode="one" onClick={() => (mdChoice === 'pdf' ? downloadPdf('one') : downloadMd('one'))}><b>📄 รวมเป็นไฟล์เดียว</b><span className="muted">{mdChoice === 'pdf' ? 'ทุกโน้ตอยู่ใน PDF เดียว โน้ตละหน้าใหม่' : 'ทุกโน้ตอยู่ในไฟล์ .md เดียว คั่นด้วยเส้น'}</span></button>
-                  <button type="button" className="convert-choice" data-mode="zip" onClick={() => (mdChoice === 'pdf' ? downloadPdf('zip') : downloadMd('zip'))}><b>🗜️ แยกไฟล์ (บีบเป็น .zip)</b><span className="muted">โน้ตละไฟล์ ตั้งชื่อตามหัวข้อ</span></button>
-                </div>
-                <button type="button" className="glass-btn-outline" style={{ width: '100%', marginTop: '0.8rem' }} onClick={() => setMdChoice(false)}>ยกเลิก</button>
-              </div>
-            </div>
-          )}
+          {dlOpen && <DownloadSheet count={visibleSelCount} onClose={() => setDlOpen(false)} onPick={(fmt, pack) => (fmt === 'pdf' ? downloadPdf(pack) : downloadMd(pack))} />}
 
           {!showArchived && <Composer onCreate={createNote} onUpdate={updateNote} onDiscard={discardNote} onEditingChange={setComposerEditing} categories={categoryOptions} openSignal={openSignal} />}
 

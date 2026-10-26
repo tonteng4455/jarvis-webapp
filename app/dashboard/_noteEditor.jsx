@@ -19,6 +19,7 @@ import { MAX_NOTE_IMAGES } from '../../lib/noteImages';
 import { CategorySelect } from './_components';
 import { shareText, useToast } from './_ui';
 import { notesToPdf, saveFile } from '../../lib/notePdf';
+import { notesToMarkdownFiles } from '../../lib/noteMarkdown';
 import SketchEditor from './_sketch';
 import {
   parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart,
@@ -924,6 +925,38 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
   );
 });
 
+// ---------- "download": one dialog for every format (Markdown / PDF) ----------
+// count > 1 also asks whether to make one file or one file per note (the answer is remembered on this device).
+export function DownloadSheet({ count, onPick, onClose }) {
+  const [pack, setPack] = useState(() => { try { return localStorage.getItem('jarvis.dlPack') === 'zip' ? 'zip' : 'one'; } catch { return 'one'; } });
+  const choose = v => { setPack(v); try { localStorage.setItem('jarvis.dlPack', v); } catch { /* ignore */ } };
+  useEffect(() => {
+    const k = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); onClose(); } };
+    document.addEventListener('keydown', k, true);
+    return () => document.removeEventListener('keydown', k, true);
+  }, [onClose]);
+  return createPortal(
+    // portal to <body> (the editor's click-outside handler must not see these clicks)
+    <div className="convert-overlay" onMouseDown={e => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }} onClick={e => e.stopPropagation()}>
+      <div className="convert-sheet" role="dialog" aria-modal="true" aria-label="ดาวน์โหลดโน้ต">
+        <h2 className="convert-title">⬇️ ดาวน์โหลด{count > 1 ? ` ${count} โน้ต` : 'โน้ตนี้'}</h2>
+        {count > 1 && (
+          <div className="dl-pack" role="radiogroup" aria-label="รวมไฟล์หรือแยกไฟล์">
+            <button type="button" role="radio" aria-checked={pack === 'one'} data-pack="one" onClick={() => choose('one')}>📄 รวมเป็นไฟล์เดียว</button>
+            <button type="button" role="radio" aria-checked={pack === 'zip'} data-pack="zip" onClick={() => choose('zip')}>🗜️ แยกไฟล์ (.zip)</button>
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: '0.6rem' }}>
+          <button type="button" className="convert-choice" data-fmt="md" onClick={() => onPick('md', pack)}><b>📄 Markdown (.md)</b><span className="muted">ข้อความล้วน เปิดต่อใน Obsidian / Notion ได้ รูปเป็นลิงก์</span></button>
+          <button type="button" className="convert-choice" data-fmt="pdf" onClick={() => onPick('pdf', pack)}><b>📕 PDF</b><span className="muted">ภาพวาดอยู่ตรงตำแหน่งเดิม เปิดอ่านและส่งต่อง่าย (เลือกคัดลอกตัวหนังสือไม่ได้)</span></button>
+        </div>
+        <button type="button" className="glass-btn-outline" style={{ width: '100%', marginTop: '0.8rem' }} onClick={onClose}>ยกเลิก</button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ---------- the whole editor panel ----------
 export function NoteEditorPanel({
   titleValue, onTitle, initialContent, onContent, imgState, categories, category, onCategory,
@@ -935,11 +968,19 @@ export function NoteEditorPanel({
   const [info, setInfo] = useState({ list: false, canIndent: false, canOutdent: false });
   const bodyRef = useRef(null);
   const contentRef = useRef(initialContent || '');
-  async function downloadPdf() {                          // this note as a PDF, drawn in the browser; pictures stay between their rows
+  const [dlOpen, setDlOpen] = useState(false);
+  async function downloadNote(fmt) {                      // this note as .md or PDF (drawn in the browser; pictures stay between their rows)
+    setDlOpen(false);
+    const note = { title: titleValue, content: contentRef.current, images: imgState.images };
+    if (fmt === 'md') {
+      const f = notesToMarkdownFiles([note])[0];
+      saveFile(new Blob([f.text], { type: 'text/markdown;charset=utf-8' }), f.name);
+      toast.show('⬇️ ดาวน์โหลดเป็น Markdown แล้ว'); return;
+    }
     if (pdfBusy) return;
     setPdfBusy(true); toast.show('⏳ กำลังสร้าง PDF…');
     try {
-      const bytes = await notesToPdf([{ title: titleValue, content: contentRef.current, images: imgState.images }], { imageUrl: driveImageSrc });
+      const bytes = await notesToPdf([note], { imageUrl: driveImageSrc });
       const name = String(titleValue || stripImageMarkers(contentRef.current).split('\n').find(l => l.trim()) || 'โน้ต').replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'โน้ต';
       saveFile(new Blob([bytes], { type: 'application/pdf' }), `${name}.pdf`);
       toast.show('📕 ดาวน์โหลด PDF แล้ว');
@@ -986,9 +1027,10 @@ export function NoteEditorPanel({
         <ToolBtn title="ทำซ้ำ (Ctrl+Shift+Z)" disabled={!info.canRedo} onClick={() => bodyRef.current?.redo()}>↷</ToolBtn>
         {onConvert && <ToolBtn title="เปลี่ยนโน้ตนี้เป็นงานหรือนัดหมาย" onClick={onConvert}>🔄</ToolBtn>}
         <ToolBtn title="สี" onClick={() => setPickerOpen(v => !v)} active={pickerOpen}>🎨</ToolBtn>
-        <ToolBtn title="ดาวน์โหลดโน้ตนี้เป็น PDF (มีภาพวาดตามตำแหน่งที่วางไว้)" disabled={pdfBusy} onClick={downloadPdf}>{pdfBusy ? '⏳' : '📕'}</ToolBtn>
+        <ToolBtn title="ดาวน์โหลดโน้ตนี้ (Markdown หรือ PDF)" disabled={pdfBusy} onClick={() => setDlOpen(true)}>{pdfBusy ? '⏳' : '⬇️'}</ToolBtn>
         <ToolBtn title="แชร์/คัดลอกข้อความ" onClick={() => shareText({ title: titleValue, text: stripImageMarkers(contentRef.current) }, toast)}>📤</ToolBtn>
       </div>
+      {dlOpen && <DownloadSheet count={1} onPick={fmt => downloadNote(fmt)} onClose={() => setDlOpen(false)} />}
       {pickerOpen && (
         <div className="note-swatch-row">
           {COLORS.map(c => (
