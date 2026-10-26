@@ -1,122 +1,78 @@
 'use client';
-// app/dashboard/_sketch.jsx — hand-writing / drawing pad for notes.
+// app/dashboard/_sketch.jsx — hand-writing + diagram pad for notes.
 //
 // • Pen (pressure-aware), marker, stroke eraser, hand (pan); undo / redo; an endless board you pan and pinch-zoom.
+// • Diagrams: rectangle / ellipse / diamond (with a label), line and arrow (the ends glue to shapes and follow them when moved),
+//   free text; select → move, resize a corner, drag an arrow's end, change colour / thickness / tint, duplicate, delete.
 // • Tablet with a pen: the pen draws, fingers move and zoom the board (a resting palm never leaves a mark).
 //   Phone / no pen: one finger draws, two fingers move and zoom.
-// • Saved as a PNG with the strokes embedded (lib/sketchPng.js) → the same picture can be opened and edited again.
-// • What is drawn is also backed up on this device while drawing (see lib/draft.js), so a phone call or an app switch
-//   in the middle of a drawing loses nothing.
-// The paper is always white (so ink reads in light and dark themes).
+// • Saved as a PNG with the drawing embedded (lib/sketchPng.js) → the same picture can be opened and edited again.
+// • Backed up on this device while drawing (lib/draft.js), so a phone call or an app switch loses nothing.
+// The paper is always white (so ink reads in light and dark themes). The model / geometry lives in lib/sketchModel.js,
+// the painting in lib/sketchDraw.js.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { embedScene, readScene } from '../../lib/sketchPng';
 import { loadDraft, saveDraft, clearDraft } from '../../lib/draft';
+import {
+  FONT, TEXT_SIZES, LABEL_SIZE, clamp, uid, isShape, isLine, cleanItems, serializeItems, sig, byIdMap, sceneBounds, boundsOf,
+  hitItem, topItemAt, shapeAt, translateItem, resizeShape, cornerPoints, lineEnds, removeItems, duplicateItem,
+} from '../../lib/sketchModel';
+import { paintItems, drawItem, drawSelection, measureText } from '../../lib/sketchDraw';
 
 const INK = ['#1c1c1e', '#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5'];
-const PEN_WIDTHS = [2, 4, 8];
-const MARKER_ALPHA = 0.35;
+const WIDTHS = [2, 4, 8];
 const MIN_K = 0.1, MAX_K = 6;
 const EXPORT_SCALE = 2, EXPORT_MAX_SIDE = 4096, EXPORT_MAX_PIXELS = 16e6;
 const MAX_DRAFT_CHARS = 1.5e6;
+const DOUBLE_TAP_MS = 380;
 
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const TOOLS_ROW_C = [['select', '👆', 'เลือก / ย้าย'], ['rect', '▭', 'สี่เหลี่ยม'], ['ellipse', '◯', 'วงรี'], ['diamond', '◇', 'ข้าวหลามตัด'], ['line', '╱', 'เส้นตรง'], ['arrow', '➜', 'ลูกศร'], ['text', 'T', 'ข้อความ']];
+const HINTS = {
+  pen: 'ใช้นิ้วหรือปากกาเขียนได้เลย · สองนิ้วเพื่อเลื่อนและซูม (แท็บเล็ตที่มีปากกา: ปากกาเขียน นิ้วเลื่อน)', marker: 'ไฮไลต์ทับข้อความหรือเส้น สีจางโปร่งแสง', eraser: 'ลากผ่านเส้นหรือรูปทรงที่ต้องการลบ (ลบทั้งชิ้น)', hand: 'ลากเพื่อเลื่อนกระดาน',
+  select: 'แตะเพื่อเลือก ลากเพื่อย้าย ลากมุม/ปลายลูกศรเพื่อปรับ · แตะสองครั้งที่ข้อความหรือรูปทรงเพื่อพิมพ์',
+  rect: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', ellipse: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', diamond: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ',
+  line: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง เส้นจะติดกับรูปและตามเมื่อย้าย', arrow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะติดกับรูปและตามเมื่อย้าย', text: 'แตะตรงที่ต้องการพิมพ์',
+};
 
-// ---------- geometry ----------
-function bboxOf(stroke) {
-  if (stroke.b) return stroke.b;
-  const p = stroke.p; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (let i = 0; i < p.length; i += 3) { if (p[i] < x0) x0 = p[i]; if (p[i] > x1) x1 = p[i]; if (p[i + 1] < y0) y0 = p[i + 1]; if (p[i + 1] > y1) y1 = p[i + 1]; }
-  const pad = (stroke.tool === 'marker' ? stroke.w * 4 : stroke.w) / 2 + 1;
-  Object.defineProperty(stroke, 'b', { value: [x0 - pad, y0 - pad, x1 + pad, y1 + pad], enumerable: false });
-  return stroke.b;
-}
-function sceneBounds(strokes, bg) {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const s of strokes) { const b = bboxOf(s); x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]); }
-  if (bg) { x0 = Math.min(x0, 0); y0 = Math.min(y0, 0); x1 = Math.max(x1, bg.w); y1 = Math.max(y1, bg.h); }
-  return Number.isFinite(x0) ? [x0, y0, x1, y1] : null;
-}
-function segDist2(px, py, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay; const l2 = dx * dx + dy * dy;
-  let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0; t = clamp(t, 0, 1);
-  const cx = ax + t * dx - px, cy = ay + t * dy - py; return cx * cx + cy * cy;
-}
-function hits(stroke, x, y, r) {
-  const b = bboxOf(stroke); if (x < b[0] - r || x > b[2] + r || y < b[1] - r || y > b[3] + r) return false;
-  const p = stroke.p, rr = (r + stroke.w / 2) ** 2;
-  if (p.length === 3) return (p[0] - x) ** 2 + (p[1] - y) ** 2 <= rr;
-  for (let i = 3; i < p.length; i += 3) if (segDist2(x, y, p[i - 3], p[i - 2], p[i], p[i + 1]) <= rr) return true;
-  return false;
-}
-
-// ---------- drawing ----------
-function drawStroke(ctx, s, k) {
-  const p = s.p, n = p.length / 3; if (!n) return;
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = s.c; ctx.fillStyle = s.c;
-  if (s.tool === 'marker') {
-    ctx.globalAlpha = MARKER_ALPHA; ctx.lineWidth = s.w * 4 * k;
-    ctx.beginPath(); ctx.moveTo(p[0] * k, p[1] * k);
-    if (n === 1) ctx.lineTo(p[0] * k + 0.01, p[1] * k);
-    for (let i = 1; i < n; i++) ctx.lineTo(p[i * 3] * k, p[i * 3 + 1] * k);
-    ctx.stroke(); ctx.globalAlpha = 1; return;
-  }
-  const wAt = i => s.w * (0.45 + 0.9 * clamp(p[i * 3 + 2], 0, 1)) * k;
-  if (n === 1) { ctx.beginPath(); ctx.arc(p[0] * k, p[1] * k, wAt(0) / 2, 0, Math.PI * 2); ctx.fill(); return; }
-  let px = p[0] * k, py = p[1] * k;
-  for (let i = 1; i < n; i++) {
-    const x = p[i * 3] * k, y = p[i * 3 + 1] * k;
-    const mx = i === n - 1 ? x : (x + p[(i + 1) * 3] * k) / 2, my = i === n - 1 ? y : (y + p[(i + 1) * 3 + 1] * k) / 2;
-    ctx.lineWidth = wAt(i); ctx.beginPath(); ctx.moveTo(px, py); ctx.quadraticCurveTo(x, y, mx, my); ctx.stroke();
-    px = mx; py = my;
-  }
-}
-function paintScene(ctx, strokes, bg, k) {
-  if (bg) ctx.drawImage(bg.img, 0, 0, bg.w * k, bg.h * k);
-  for (const s of strokes) drawStroke(ctx, s, k);
-}
-
-async function exportPng(strokes, bg) {
-  const b = sceneBounds(strokes, bg); if (!b) return null;
+async function exportPng(items, bg) {
+  const b = sceneBounds(items, bg, measureText); if (!b) return null;
   const margin = 32;
   const x0 = Math.floor(b[0] - margin), y0 = Math.floor(b[1] - margin);
   const w = Math.max(64, Math.ceil(b[2] + margin) - x0), h = Math.max(64, Math.ceil(b[3] + margin) - y0);
-  let scale = EXPORT_SCALE;
-  scale = Math.min(scale, EXPORT_MAX_SIDE / Math.max(w, h), Math.sqrt(EXPORT_MAX_PIXELS / (w * h)));
+  const scale = Math.min(EXPORT_SCALE, EXPORT_MAX_SIDE / Math.max(w, h), Math.sqrt(EXPORT_MAX_PIXELS / (w * h)));
   const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(w * scale)); cv.height = Math.max(1, Math.round(h * scale));
   const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.translate(-x0 * scale, -y0 * scale); paintScene(ctx, strokes, bg, scale);
+  ctx.translate(-x0 * scale, -y0 * scale); paintItems(ctx, items, bg, scale, byIdMap(items));
   const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
   if (!blob) return null;
   const png = new Uint8Array(await blob.arrayBuffer());
-  const scene = { v: 1, strokes: strokes.map(s => ({ c: s.c, w: s.w, tool: s.tool, p: s.p })) };
-  try { return new Blob([await embedScene(png, scene)], { type: 'image/png' }); } catch { return blob; }
+  try { return new Blob([await embedScene(png, { v: 2, items: serializeItems(items) })], { type: 'image/png' }); } catch { return blob; }
 }
 
-const cleanStrokes = list => (Array.isArray(list) ? list : []).filter(s => s && Array.isArray(s.p) && s.p.length >= 3 && s.p.length % 3 === 0 && typeof s.c === 'string')
-  .map(s => ({ c: String(s.c).slice(0, 20), w: clamp(Number(s.w) || 4, 1, 40), tool: s.tool === 'marker' ? 'marker' : 'pen', p: s.p.map(Number) }));
-
-// ---------- the component ----------
 // imageUrl: reopen an existing picture · draftKey: where the on-device backup lives · onSave(blob) → Promise<boolean> · onCancel()
 export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
-  const stageRef = useRef(null), baseRef = useRef(null), liveRef = useRef(null);
+  const stageRef = useRef(null), baseRef = useRef(null), liveRef = useRef(null), taRef = useRef(null);
   const view = useRef({ x: 24, y: 24, k: 1 });
-  const strokes = useRef([]);
+  const items = useRef([]);
   const undo = useRef([]), redo = useRef([]);
   const bgRef = useRef(null);
-  const cur = useRef(null);                     // the stroke being drawn
+  const cur = useRef(null);                     // the item being drawn right now (stroke / shape / line preview)
   const ptrs = useRef(new Map());
-  const mode = useRef(null);                    // draw | erase | pan | pinch | wait
-  const gesture = useRef(null);
+  const g = useRef(null);                       // the running gesture: { type, pid, … }
   const penSeen = useRef(false), space = useRef(false);
   const dirty = useRef({ base: true, live: true }), raf = useRef(0);
-  const erased = useRef(null);
-  const initialJson = useRef('[]');
+  const initialSig = useRef('');
+  const lastTap = useRef({ id: null, t: 0 });
+  const version = useRef(0);
 
   const [tool, setTool] = useState('pen');
   const [color, setColor] = useState(INK[0]);
   const [widthIdx, setWidthIdx] = useState(1);
+  const [fill, setFill] = useState(false);
+  const [selId, setSelId] = useState(null);
+  const [editing, setEditing] = useState(null);     // { mode:'new'|'text'|'label', id, x, y, text, size, c, box? }
   const [, setTick] = useState(0);
   const [loading, setLoading] = useState(!!imageUrl);
   const [loadNote, setLoadNote] = useState('');
@@ -125,8 +81,12 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const [restored, setRestored] = useState(false);
   const toolRef = useRef(tool); toolRef.current = tool;
   const colorRef = useRef(color); colorRef.current = color;
-  const widthRef = useRef(PEN_WIDTHS[widthIdx]); widthRef.current = PEN_WIDTHS[widthIdx];
+  const widthRef = useRef(widthIdx); widthRef.current = widthIdx;
+  const fillRef = useRef(fill); fillRef.current = fill;
+  const selRef = useRef(selId); selRef.current = selId;
+  const editRef = useRef(editing); editRef.current = editing;
   const bump = () => setTick(n => n + 1);
+  const selected = () => items.current.find(i => i.id === selRef.current) || null;
 
   const schedule = useCallback((what = 'both') => {
     if (what !== 'live') dirty.current.base = true;
@@ -135,7 +95,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     raf.current = requestAnimationFrame(() => {
       raf.current = 0;
       const stage = stageRef.current, base = baseRef.current, live = liveRef.current; if (!stage || !base || !live) return;
-      const dpr = window.devicePixelRatio || 1, { x, y, k } = view.current;
+      const dpr = window.devicePixelRatio || 1, { x, y, k } = view.current, list = items.current, byId = byIdMap(list);
       if (dirty.current.base) {
         const ctx = base.getContext('2d'); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, base.width, base.height);
         ctx.setTransform(dpr, 0, 0, dpr, x * dpr, y * dpr);
@@ -145,12 +105,15 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
           ctx.fillStyle = 'rgba(0,0,0,0.13)';
           for (let gx = sx; gx < ex; gx += step) for (let gy = sy; gy < ey; gy += step) ctx.fillRect(gx * k - 0.75, gy * k - 0.75, 1.5, 1.5);
         }
-        paintScene(ctx, strokes.current, bgRef.current, k);
+        paintItems(ctx, list, bgRef.current, k, byId, editRef.current && editRef.current.mode !== 'new' ? editRef.current.id : null);
         dirty.current.base = false;
       }
       if (dirty.current.live) {
         const ctx = live.getContext('2d'); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, live.width, live.height);
-        if (cur.current) { ctx.setTransform(dpr, 0, 0, dpr, x * dpr, y * dpr); drawStroke(ctx, cur.current, k); }
+        ctx.setTransform(dpr, 0, 0, dpr, x * dpr, y * dpr);
+        if (cur.current) drawItem(ctx, cur.current, k, byId);
+        const sel = list.find(i => i.id === selRef.current);
+        if (sel && !editRef.current) drawSelection(ctx, sel, k, byId);
         dirty.current.live = false;
       }
     });
@@ -172,15 +135,15 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
 
   const fitView = useCallback(() => {
     const stage = stageRef.current; if (!stage) return;
-    const b = sceneBounds(strokes.current, bgRef.current);
+    const b = sceneBounds(items.current, bgRef.current, measureText);
     if (!b) { view.current = { x: 24, y: 24, k: 1 }; schedule(); return; }
     const pad = 32, w = b[2] - b[0] + pad * 2, h = b[3] - b[1] + pad * 2;
     const k = clamp(Math.min(stage.clientWidth / w, stage.clientHeight / h), MIN_K, 1.5);
     view.current = { k, x: (stage.clientWidth - (b[2] - b[0]) * k) / 2 - b[0] * k, y: (stage.clientHeight - (b[3] - b[1]) * k) / 2 - b[1] * k };
-    schedule();
+    schedule(); bump();
   }, [schedule]);
 
-  // ----- load an existing picture (strokes inside the PNG, or just the picture) + restore a backup -----
+  // ----- load an existing picture (the drawing inside the PNG, or just the picture) + restore a backup -----
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -191,133 +154,253 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
           if (!res.ok) throw new Error(String(res.status));
           const bytes = new Uint8Array(await res.arrayBuffer());
           const scene = await readScene(bytes);
-          if (scene?.strokes) loaded = cleanStrokes(scene.strokes);
+          const list = scene?.items || scene?.strokes;                          // v2 (items) · v1 (strokes only)
+          if (Array.isArray(list)) loaded = cleanItems(list);
           else {
             const url = URL.createObjectURL(new Blob([bytes]));
             const img = await new Promise((ok, no) => { const el = new Image(); el.onload = () => ok(el); el.onerror = no; el.src = url; });
             bgRef.current = { img, w: img.naturalWidth, h: img.naturalHeight, url };
-            setLoadNote('รูปนี้ไม่มีข้อมูลเส้นให้แก้ — วาดทับได้ แต่เส้นเดิมลบไม่ได้');
+            setLoadNote('รูปนี้ไม่มีข้อมูลเส้นให้แก้ — วาดทับได้ แต่ของเดิมลบไม่ได้');
           }
         } catch { if (alive) setError('เปิดรูปไม่สำเร็จ ลองอีกครั้งครับ'); }
       }
       if (!alive) return;
-      initialJson.current = JSON.stringify(loaded.map(s => [s.c, s.w, s.tool, s.p.length]));
-      strokes.current = loaded;
+      initialSig.current = sig(loaded);
+      items.current = loaded;
       const saved = draftKey ? loadDraft(`sketch:${draftKey}`) : null;
-      const backup = cleanStrokes(saved?.strokes);
-      if (backup.length && JSON.stringify(backup.map(s => [s.c, s.w, s.tool, s.p.length])) !== initialJson.current) { strokes.current = backup; setRestored(true); }
+      const backup = cleanItems(saved?.items || saved?.strokes);
+      if (backup.length && sig(backup) !== initialSig.current) { items.current = backup; setRestored(true); }
       setLoading(false); fitView(); bump();
     })();
     return () => { alive = false; if (bgRef.current?.url) URL.revokeObjectURL(bgRef.current.url); };
   }, [imageUrl, draftKey, fitView]);
 
   // ----- on-device backup while drawing -----
-  const version = useRef(0);
   useEffect(() => {
     if (loading || !draftKey) return undefined;
     const t = setTimeout(() => {
       try {
-        const json = JSON.stringify({ strokes: strokes.current.map(s => ({ c: s.c, w: s.w, tool: s.tool, p: s.p })) });
-        if (!strokes.current.length) clearDraft(`sketch:${draftKey}`);
+        const json = JSON.stringify({ items: serializeItems(items.current) });
+        if (!items.current.length) clearDraft(`sketch:${draftKey}`);
         else if (json.length < MAX_DRAFT_CHARS) saveDraft(`sketch:${draftKey}`, JSON.parse(json));
       } catch { /* ignore */ }
     }, 800);
     return () => clearTimeout(t);
-  });                                                           // every render: cheap, and a stroke always re-renders
+  });                                                           // every render: cheap, and every change re-renders
 
   // ----- history -----
-  const commit = next => {
-    undo.current.push(strokes.current); if (undo.current.length > 200) undo.current.shift();
-    redo.current = []; strokes.current = next; version.current++; schedule(); bump();
-  };
-  const doUndo = () => { if (!undo.current.length) return; redo.current.push(strokes.current); strokes.current = undo.current.pop(); version.current++; schedule(); bump(); };
-  const doRedo = () => { if (!redo.current.length) return; undo.current.push(strokes.current); strokes.current = redo.current.pop(); version.current++; schedule(); bump(); };
+  const pushUndo = snapshot => { undo.current.push(snapshot); if (undo.current.length > 200) undo.current.shift(); redo.current = []; version.current++; };
+  const commit = next => { pushUndo(items.current); items.current = next; schedule(); bump(); };
+  const doUndo = () => { if (!undo.current.length) return; endEdit(false); redo.current.push(items.current); items.current = undo.current.pop(); fixSelection(); version.current++; schedule(); bump(); };
+  const doRedo = () => { if (!redo.current.length) return; endEdit(false); undo.current.push(items.current); items.current = redo.current.pop(); fixSelection(); version.current++; schedule(); bump(); };
+  const fixSelection = () => { if (selRef.current && !items.current.some(i => i.id === selRef.current)) setSelId(null); };
 
-  // ----- pointer input -----
+  // ----- coordinates -----
   const toWorld = (cx, cy) => { const r = stageRef.current.getBoundingClientRect(), { x, y, k } = view.current; return [(cx - r.left - x) / k, (cy - r.top - y) / k]; };
-  const eraseAt = (cx, cy) => {
-    const [wx, wy] = toWorld(cx, cy), r = 14 / view.current.k;
-    const keep = strokes.current.filter(s => !hits(s, wx, wy, r));
-    if (keep.length !== strokes.current.length) { erased.current = erased.current || strokes.current; strokes.current = keep; schedule('base'); }
-  };
+  const tol = () => 12 / view.current.k;
   const pressureOf = e => (e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0.5);
+
+  // ----- the text box (new text, a text item, a shape's label) -----
+  const openEditor = spec => { setEditing(spec); dirty.current.base = true; schedule(); };
+  function endEdit(save = true) {
+    const ed = editRef.current; if (!ed) return;
+    const text = (taRef.current ? taRef.current.value : ed.text).replace(/\s+$/g, '');
+    editRef.current = null; setEditing(null);
+    if (!save) { schedule(); return; }
+    if (ed.mode === 'new') {
+      if (text.trim()) { const it = { k: 'text', id: uid(), c: ed.c, s: ed.size, x: ed.x, y: ed.y, t: text }; commit([...items.current, it]); setSelId(it.id); setTool('select'); }
+    } else if (ed.mode === 'text') {
+      const it = items.current.find(i => i.id === ed.id);
+      if (it) commit(text.trim() ? items.current.map(i => (i.id === ed.id ? { ...i, t: text } : i)) : items.current.filter(i => i.id !== ed.id));
+      if (!text.trim()) setSelId(null);
+    } else if (ed.mode === 'label') {
+      commit(items.current.map(i => (i.id === ed.id ? { ...i, t: text } : i)));
+    }
+    schedule('both');
+  }
+  useEffect(() => { if (editing && taRef.current) { taRef.current.focus(); taRef.current.setSelectionRange(taRef.current.value.length, taRef.current.value.length); } }, [editing?.id, editing?.mode, editing?.x, editing?.y]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const startEditing = it => {
+    if (it.k === 'text') openEditor({ mode: 'text', id: it.id, x: it.x, y: it.y, text: it.t, size: it.s, c: it.c });
+    else if (isShape(it)) openEditor({ mode: 'label', id: it.id, x: it.x, y: it.y, text: it.t || '', size: LABEL_SIZE, c: it.c, box: [it.x, it.y, it.bw, it.bh] });
+  };
+
+  // ----- style of the selection (or of what is drawn next) -----
+  const updateSel = patch => {
+    const it = selected(); if (!it) return false;
+    commit(items.current.map(i => (i.id === it.id ? { ...i, ...patch } : i))); return true;
+  };
+  const chooseColor = c => { setColor(c); if (selected()) updateSel({ c }); else if (toolRef.current === 'eraser' || toolRef.current === 'hand') setTool('pen'); };
+  const chooseWidth = i => {
+    setWidthIdx(i); const it = selected();
+    if (it) updateSel(it.k === 'text' ? { s: TEXT_SIZES[i] } : { w: WIDTHS[i] });
+  };
+  const toggleFill = () => { const it = selected(); if (it && isShape(it)) { updateSel({ f: !it.f }); setFill(!it.f); } else setFill(f => !f); };
+  const deleteSelected = () => { const it = selected(); if (!it) return; commit(removeItems(items.current, [it.id])); setSelId(null); };
+  const duplicateSelected = () => { const it = selected(); if (!it) return; const d = duplicateItem(it); commit([...items.current, d]); setSelId(d.id); };
+  const pickTool = t => { endEdit(); setTool(t); if (t !== 'select') setSelId(null); };
+
+  // ----- gestures -----
+  const touches = () => [...ptrs.current.values()].filter(v => v.type === 'touch');
+  const cancelGesture = () => {                                      // a second finger arrives: whatever one finger had started is abandoned
+    const gg = g.current;
+    if (gg?.base) { items.current = gg.base; schedule(); }
+    cur.current = null; g.current = null; schedule('live');
+  };
+  const startPinch = () => {
+    const [a, b] = touches();
+    g.current = { type: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, view: { ...view.current } };
+  };
+  const startPan = e => { g.current = { type: 'pan', pid: e.pointerId, x: e.clientX, y: e.clientY, view: { ...view.current } }; };
+  const eraseAt = (cx, cy) => {
+    const [wx, wy] = toWorld(cx, cy), r = 14 / view.current.k, list = items.current, byId = byIdMap(list);
+    const hit = list.filter(it => hitItem(it, wx, wy, r, byId, measureText));
+    if (hit.length) { g.current.base = g.current.base || list; items.current = removeItems(list, hit.map(h => h.id)); fixSelection(); schedule('base'); }
+  };
+  const startErase = e => { g.current = { type: 'erase', pid: e.pointerId, base: null }; eraseAt(e.clientX, e.clientY); };
   const addPoint = e => {
     const [wx, wy] = toWorld(e.clientX, e.clientY), p = cur.current.p, n = p.length;
     if (n >= 3) { const dx = wx - p[n - 3], dy = wy - p[n - 2]; if (dx * dx + dy * dy < (0.8 / view.current.k) ** 2) return; }
     p.push(Math.round(wx * 10) / 10, Math.round(wy * 10) / 10, Math.round(pressureOf(e) * 100) / 100);
   };
-  const active = useRef(null);                 // pointerId that is drawing / erasing / panning right now
-  const touches = () => [...ptrs.current.values()].filter(v => v.type === 'touch');
-  const startPinch = () => {
-    const [a, b] = touches();
-    gesture.current = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, view: { ...view.current } };
-    mode.current = 'pinch'; active.current = null;
-  };
-  const startPan = e => { mode.current = 'pan'; active.current = e.pointerId; gesture.current = { x: e.clientX, y: e.clientY, view: { ...view.current } }; };
-  const startErase = e => { mode.current = 'erase'; active.current = e.pointerId; erased.current = null; eraseAt(e.clientX, e.clientY); };
   const startDraw = e => {
-    cur.current = { c: colorRef.current, w: widthRef.current, tool: toolRef.current === 'marker' ? 'marker' : 'pen', p: [], fromTouch: e.pointerType === 'touch' };
-    mode.current = 'draw'; active.current = e.pointerId; addPoint(e); schedule('live');
+    cur.current = { k: 'stroke', id: uid(), c: colorRef.current, w: WIDTHS[widthRef.current], tool: toolRef.current === 'marker' ? 'marker' : 'pen', p: [], fromTouch: e.pointerType === 'touch' };
+    g.current = { type: 'draw', pid: e.pointerId }; addPoint(e); schedule('live');
+  };
+  const startShape = e => {
+    const [x, y] = toWorld(e.clientX, e.clientY);
+    cur.current = { k: toolRef.current, id: uid(), c: colorRef.current, w: WIDTHS[widthRef.current], f: fillRef.current, x, y, bw: 0, bh: 0, t: '', fromTouch: e.pointerType === 'touch' };
+    g.current = { type: 'shape', pid: e.pointerId, ox: x, oy: y }; schedule('live');
+  };
+  const startLine = e => {
+    const [x, y] = toWorld(e.clientX, e.clientY), from = shapeAt(items.current, x, y);
+    cur.current = { k: toolRef.current, id: uid(), c: colorRef.current, w: WIDTHS[widthRef.current], a: [x, y], e: [x, y], from: from ? from.id : null, to: null, fromTouch: e.pointerType === 'touch' };
+    g.current = { type: 'line', pid: e.pointerId, from: from ? from.id : null }; schedule('live');
+  };
+  const startSelect = e => {
+    const [x, y] = toWorld(e.clientX, e.clientY), list = items.current, byId = byIdMap(list), t = 14 / view.current.k;
+    const sel = selected();
+    if (sel && isShape(sel)) {                                          // a corner handle of the selected shape?
+      for (const [which, [hx, hy]] of Object.entries(cornerPoints(sel))) if (Math.hypot(hx - x, hy - y) <= t) { g.current = { type: 'resize', pid: e.pointerId, base: list, id: sel.id, which, orig: sel }; return; }
+    }
+    if (sel && isLine(sel)) {                                           // an end of the selected line / arrow?
+      const [ax, ay, ex, ey] = lineEnds(sel, byId);
+      if (Math.hypot(ax - x, ay - y) <= t) { g.current = { type: 'endpoint', pid: e.pointerId, base: list, id: sel.id, which: 'a', orig: sel }; return; }
+      if (Math.hypot(ex - x, ey - y) <= t) { g.current = { type: 'endpoint', pid: e.pointerId, base: list, id: sel.id, which: 'e', orig: sel }; return; }
+    }
+    const hit = topItemAt(list, x, y, tol(), measureText) || shapeAt(list, x, y);       // an empty shape can be picked from inside too (double-tap there to type its label)
+    if (!hit) { setSelId(null); lastTap.current = { id: null, t: 0 }; startPan(e); schedule('live'); return; }     // empty space: drag moves the board
+    const double = lastTap.current.id === hit.id && Date.now() - lastTap.current.t < DOUBLE_TAP_MS && (hit.k === 'text' || isShape(hit));
+    lastTap.current = { id: hit.id, t: Date.now() };
+    setSelId(hit.id); selRef.current = hit.id; schedule('live');
+    g.current = { type: 'move', pid: e.pointerId, base: list, id: hit.id, orig: hit, sx: x, sy: y, moved: false, double };
+  };
+  const placeText = e => {
+    const [x, y] = toWorld(e.clientX, e.clientY);
+    openEditor({ mode: 'new', id: 'new', x, y, text: '', size: TEXT_SIZES[widthRef.current], c: colorRef.current });
+  };
+  const startTool = e => {
+    const tl = toolRef.current;
+    if (tl === 'hand' || (e.pointerType === 'mouse' && (e.button === 1 || space.current))) return startPan(e);
+    if (tl === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32))) return startErase(e);
+    if (tl === 'select') return startSelect(e);
+    if (tl === 'rect' || tl === 'ellipse' || tl === 'diamond') return startShape(e);
+    if (tl === 'line' || tl === 'arrow') return startLine(e);
+    if (tl === 'text') { g.current = { type: 'text', pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }     // the box opens when the finger lifts (a phone only raises the keyboard inside a tap)
+    return startDraw(e);
   };
 
   const onDown = e => {
     e.preventDefault();
+    if (editRef.current) endEdit(true);
     if (e.pointerType === 'pen') penSeen.current = true;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
-    const tl = toolRef.current;
     if (e.pointerType !== 'touch') {                                  // pen or mouse: always acts, whatever else is on the glass
       if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
-      if (mode.current === 'pinch' || mode.current === 'wait' || mode.current === 'pan') { mode.current = null; gesture.current = null; }
-      if (cur.current) { cur.current = null; schedule('live'); }
-      if (tl === 'hand' || (e.pointerType === 'mouse' && (e.button === 1 || space.current))) startPan(e);
-      else if (tl === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32))) startErase(e);
-      else startDraw(e);
-      return;
+      if (g.current) cancelGesture();
+      return startTool(e);
     }
     // a finger
-    if (mode.current === 'draw' && cur.current && !cur.current.fromTouch) return;       // the pen is writing: a resting palm is ignored
-    if (penSeen.current) {                                                              // tablet with a pen: fingers only move / zoom the board
-      if (touches().length >= 2) startPinch(); else if (touches().length === 1) startPan(e);
+    if (g.current?.type === 'draw' && !cur.current?.fromTouch) return;                   // the pen is writing: a resting palm is ignored
+    if (penSeen.current) {                                              // tablet with a pen: fingers only move / zoom the board
+      if (touches().length >= 2) { if (g.current) cancelGesture(); startPinch(); } else if (touches().length === 1 && !g.current) startPan(e);
       return;
     }
-    if (touches().length >= 2) { if (cur.current) { cur.current = null; schedule('live'); } startPinch(); return; }
-    if (mode.current === 'pinch' || mode.current === 'wait') return;
-    if (tl === 'hand') startPan(e);
-    else if (tl === 'eraser') startErase(e);
-    else startDraw(e);
+    if (touches().length >= 2) { cancelGesture(); startPinch(); return; }
+    if (g.current?.type === 'pinch' || g.current?.type === 'wait') return;
+    startTool(e);
   };
+
   const onMove = e => {
     const rec = ptrs.current.get(e.pointerId); if (!rec) return;
     rec.x = e.clientX; rec.y = e.clientY;
-    if (mode.current === 'pinch' && gesture.current && touches().length >= 2) {
-      const [a, b] = touches(), g = gesture.current;
+    const gg = g.current; if (!gg) return;
+    if (gg.type === 'pinch' && touches().length >= 2) {
+      const [a, b] = touches();
       const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-      const k = clamp(g.view.k * d / g.d, MIN_K, MAX_K), r = stageRef.current.getBoundingClientRect();
-      const wx = (g.cx - r.left - g.view.x) / g.view.k, wy = (g.cy - r.top - g.view.y) / g.view.k;       // the world point that was under the fingers
+      const k = clamp(gg.view.k * d / gg.d, MIN_K, MAX_K), r = stageRef.current.getBoundingClientRect();
+      const wx = (gg.cx - r.left - gg.view.x) / gg.view.k, wy = (gg.cy - r.top - gg.view.y) / gg.view.k;       // the world point that was under the fingers
       view.current = { k, x: cx - r.left - wx * k, y: cy - r.top - wy * k }; schedule();
       return;
     }
-    if (e.pointerId !== active.current) return;
-    if (mode.current === 'draw' && cur.current) {
+    if (e.pointerId !== gg.pid) return;
+    if (gg.type === 'draw' && cur.current) {
       const list = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
       for (const ev of (list.length ? list : [e])) addPoint(ev);
       schedule('live');
-    } else if (mode.current === 'erase') eraseAt(e.clientX, e.clientY);
-    else if (mode.current === 'pan' && gesture.current) { view.current = { ...view.current, x: gesture.current.view.x + e.clientX - gesture.current.x, y: gesture.current.view.y + e.clientY - gesture.current.y }; schedule(); }
+    } else if (gg.type === 'erase') eraseAt(e.clientX, e.clientY);
+    else if (gg.type === 'pan') { view.current = { ...view.current, x: gg.view.x + e.clientX - gg.x, y: gg.view.y + e.clientY - gg.y }; schedule(); }
+    else if (gg.type === 'shape' && cur.current) {
+      const [x, y] = toWorld(e.clientX, e.clientY);
+      Object.assign(cur.current, { x: Math.min(gg.ox, x), y: Math.min(gg.oy, y), bw: Math.abs(x - gg.ox), bh: Math.abs(y - gg.oy) }); schedule('live');
+    } else if (gg.type === 'line' && cur.current) { cur.current.e = toWorld(e.clientX, e.clientY); schedule('live'); }
+    else if (gg.type === 'move') {
+      const [x, y] = toWorld(e.clientX, e.clientY), dx = x - gg.sx, dy = y - gg.sy;
+      if (!gg.moved && Math.hypot(dx, dy) * view.current.k < 4) return;                   // a tap is not a drag
+      gg.moved = true; const moved = translateItem(gg.orig, dx, dy);
+      items.current = gg.base.map(i => (i.id === gg.id ? moved : i)); schedule();
+    } else if (gg.type === 'resize') {
+      const [x, y] = toWorld(e.clientX, e.clientY); gg.moved = true;
+      items.current = gg.base.map(i => (i.id === gg.id ? resizeShape(gg.orig, gg.which, x, y) : i)); schedule();
+    } else if (gg.type === 'endpoint') {
+      const [x, y] = toWorld(e.clientX, e.clientY); gg.moved = true;
+      const other = gg.which === 'a' ? gg.orig.to : gg.orig.from, hit = shapeAt(gg.base, x, y, other);
+      const patch = gg.which === 'a' ? { a: [x, y], from: hit ? hit.id : null } : { e: [x, y], to: hit ? hit.id : null };
+      items.current = gg.base.map(i => (i.id === gg.id ? { ...gg.orig, ...patch } : i)); schedule();
+    }
   };
+
   const onUp = e => {
     ptrs.current.delete(e.pointerId);
-    if (e.pointerId === active.current) {
-      if (mode.current === 'draw' && cur.current) {
+    const gg = g.current;
+    if (gg && e.pointerId === gg.pid) {
+      g.current = null;
+      if (gg.type === 'draw' && cur.current) {
         const st = cur.current; cur.current = null;
-        if (st.p.length >= 3) { delete st.fromTouch; commit([...strokes.current, st]); }
-      } else if (mode.current === 'erase' && erased.current) { const after = strokes.current; strokes.current = erased.current; erased.current = null; commit(after); }
-      mode.current = null; active.current = null; gesture.current = null;
-    } else if (mode.current === 'pinch' && touches().length < 2) { mode.current = touches().length ? 'wait' : null; gesture.current = null; }
-    if (mode.current === 'wait' && touches().length === 0) mode.current = null;
-    schedule('live');
+        if (st.p.length >= 3) { delete st.fromTouch; commit([...items.current, st]); } else schedule('live');
+      } else if (gg.type === 'erase') { if (gg.base) { const after = items.current; items.current = gg.base; commit(after); } }
+      else if (gg.type === 'shape' && cur.current) {
+        const s = cur.current; cur.current = null; delete s.fromTouch;
+        if (s.bw < 8 && s.bh < 8) { const bw = s.k === 'diamond' ? 140 : 160, bh = 100; Object.assign(s, { x: gg.ox - bw / 2, y: gg.oy - bh / 2, bw, bh }); }
+        s.bw = Math.max(s.bw, 12); s.bh = Math.max(s.bh, 12);
+        commit([...items.current, s]); setSelId(s.id); selRef.current = s.id; setTool('select');
+      } else if (gg.type === 'line' && cur.current) {
+        const l = cur.current; cur.current = null; delete l.fromTouch;
+        const to = shapeAt(items.current, l.e[0], l.e[1], gg.from);
+        if (Math.hypot(l.e[0] - l.a[0], l.e[1] - l.a[1]) * view.current.k < 12) schedule('live');
+        else { l.to = to ? to.id : null; commit([...items.current, l]); setSelId(l.id); selRef.current = l.id; setTool('select'); }
+      } else if (gg.type === 'text') {
+        if (Math.hypot(e.clientX - gg.x, e.clientY - gg.y) < 12) placeText(e);
+      } else if (gg.type === 'move' || gg.type === 'resize' || gg.type === 'endpoint') {
+        if (gg.moved) { const after = items.current; items.current = gg.base; commit(after); }
+        else if (gg.type === 'move' && gg.double) { const it = items.current.find(i => i.id === gg.id); if (it) startEditing(it); }
+      }
+    } else if (gg?.type === 'pinch' && touches().length < 2) g.current = touches().length ? { type: 'wait' } : null;
+    if (g.current?.type === 'wait' && touches().length === 0) g.current = null;
+    schedule('live'); bump();
   };
+
   const onWheel = e => {
     e.preventDefault();
     const r = stageRef.current.getBoundingClientRect(), { x, y, k } = view.current;
@@ -334,18 +417,21 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   });
   const zoomBy = f => {
     const stage = stageRef.current, { x, y, k } = view.current, nk = clamp(k * f, MIN_K, MAX_K), cx = stage.clientWidth / 2, cy = stage.clientHeight / 2;
-    view.current = { k: nk, x: cx - (cx - x) * nk / k, y: cy - (cy - y) * nk / k }; schedule();
+    view.current = { k: nk, x: cx - (cx - x) * nk / k, y: cy - (cy - y) * nk / k }; schedule(); bump();
   };
 
-  // ----- keys -----
-  const changed = () => JSON.stringify(strokes.current.map(s => [s.c, s.w, s.tool, s.p.length])) !== initialJson.current;
-  const cancel = () => { if (saving) return; if (strokes.current.length && changed() && !confirm('ทิ้งสิ่งที่วาดไว้ใช่ไหมครับ?')) return; if (draftKey) clearDraft(`sketch:${draftKey}`); onCancel(); };
+  // ----- keys / closing -----
+  const changed = () => sig(items.current) !== initialSig.current;
+  const cancel = () => { if (saving) return; endEdit(false); if (items.current.length && changed() && !confirm('ทิ้งสิ่งที่วาดไว้ใช่ไหมครับ?')) return; if (draftKey) clearDraft(`sketch:${draftKey}`); onCancel(); };
   const cancelRef = useRef(cancel); cancelRef.current = cancel;
   useEffect(() => {
+    const typing = () => /INPUT|TEXTAREA/.test(document.activeElement?.tagName || '');
     const down = e => {
-      if (e.key === ' ' && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) { space.current = true; e.preventDefault(); }
-      if (e.key === 'Escape') cancelRef.current();
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); }
+      if (e.key === ' ' && !typing()) { space.current = true; e.preventDefault(); }
+      if (e.key === 'Escape') { if (editRef.current) endEdit(false); else if (selRef.current) { setSelId(null); schedule('live'); } else cancelRef.current(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing() && selRef.current) { e.preventDefault(); deleteSelected(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing()) { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && !typing() && selRef.current) { e.preventDefault(); duplicateSelected(); }
     };
     const up = e => { if (e.key === ' ') space.current = false; };
     window.addEventListener('keydown', down); window.addEventListener('keyup', up);
@@ -354,10 +440,12 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
 
   // ----- save -----
   async function save() {
-    if (saving || !strokes.current.length) return;
+    if (saving) return;
+    endEdit(true);
+    if (!items.current.length) return;
     setSaving(true); setError('');
     try {
-      const blob = await exportPng(strokes.current, bgRef.current);
+      const blob = await exportPng(items.current, bgRef.current);
       if (!blob) throw new Error('export');
       const ok = await onSave(blob);
       if (ok === false) { setError('บันทึกไม่สำเร็จ — ที่วาดยังอยู่ ลองกด ✓ อีกครั้งครับ'); setSaving(false); return; }
@@ -365,8 +453,18 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     } catch { setError('บันทึกไม่สำเร็จ — ที่วาดยังอยู่ ลองกด ✓ อีกครั้งครับ'); setSaving(false); }
   }
 
+  if (process.env.NEXT_PUBLIC_MOCK_MODE === '1' && typeof window !== 'undefined') window.__sketchItems = () => serializeItems(items.current);   // test hook (local mock mode only)
+
   const stop = e => e.stopPropagation();
-  const nStrokes = strokes.current.length;
+  const n = items.current.length, sel = selected();
+  const { x: vx, y: vy, k: vk } = view.current;
+  const ta = editing && (() => {
+    if (editing.mode === 'label' && editing.box) {
+      const [bx, by, bw, bh] = editing.box, lh = LABEL_SIZE * 1.3 * vk;
+      return { left: vx + bx * vk, top: vy + by * vk, width: bw * vk, height: bh * vk, fontSize: LABEL_SIZE * vk, textAlign: 'center', paddingTop: Math.max(2, (bh * vk - lh) / 2), color: editing.c };
+    }
+    return { left: vx + editing.x * vk, top: vy + editing.y * vk, minWidth: 80, width: Math.max(120, 260 * vk), height: editing.size * 1.3 * vk * 2.2, fontSize: editing.size * vk, color: editing.c };
+  })();
   return createPortal(
     <div className="sketch-overlay" role="dialog" aria-modal="true" aria-label="เขียนด้วยมือ" onMouseDown={stop} onPointerDown={stop} onClick={stop}>
       <div className="sketch-bar">
@@ -375,29 +473,43 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
           <button type="button" className="sk-btn" title="เลิกทำ" aria-label="เลิกทำ" disabled={!undo.current.length} onClick={doUndo}>↶</button>
           <button type="button" className="sk-btn" title="ทำซ้ำ" aria-label="ทำซ้ำ" disabled={!redo.current.length} onClick={doRedo}>↷</button>
           <span className="sk-sep" />
-          {[['pen', '✏️', 'ปากกา'], ['marker', '🖍️', 'ไฮไลต์'], ['eraser', '🧽', 'ลบเส้น'], ['hand', '✋', 'เลื่อนกระดาน']].map(([key, icon, label]) => (
-            <button key={key} type="button" className={`sk-btn${tool === key ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tool === key} onClick={() => setTool(key)}>{icon}</button>
+          {[['pen', '✏️', 'ปากกา'], ['marker', '🖍️', 'ไฮไลต์'], ['eraser', '🧽', 'ลบ'], ['hand', '✋', 'เลื่อนกระดาน']].map(([key, icon, label]) => (
+            <button key={key} type="button" className={`sk-btn${tool === key ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tool === key} onClick={() => pickTool(key)}>{icon}</button>
           ))}
           <span className="sk-spacer sk-spacer-a" />
-          <button type="button" className="sk-btn sk-save" title="บันทึก" aria-label="บันทึก" disabled={saving || loading || nStrokes === 0} onClick={save}>{saving ? '…' : '✓'}</button>
+          <button type="button" className="sk-btn sk-save" title="บันทึก" aria-label="บันทึก" disabled={saving || loading || n === 0} onClick={save}>{saving ? '…' : '✓'}</button>
         </div>
         <div className="sk-row">
-          {INK.map(c => <button key={c} type="button" className={`sk-dot${color === c ? ' on' : ''}`} style={{ background: c }} title="สี" aria-label={`สี ${c}`} aria-pressed={color === c} onClick={() => { setColor(c); if (tool === 'eraser' || tool === 'hand') setTool('pen'); }} />)}
+          {INK.map(c => <button key={c} type="button" className={`sk-dot${(sel ? sel.c : color) === c ? ' on' : ''}`} style={{ background: c }} title="สี" aria-label={`สี ${c}`} aria-pressed={(sel ? sel.c : color) === c} onClick={() => chooseColor(c)} />)}
           <span className="sk-sep" />
-          {PEN_WIDTHS.map((w, i) => <button key={w} type="button" className={`sk-btn${widthIdx === i ? ' on' : ''}`} title={`ขนาดเส้น ${i + 1}`} aria-label={`ขนาดเส้น ${i + 1}`} aria-pressed={widthIdx === i} onClick={() => setWidthIdx(i)}><span className="sk-w" style={{ width: 6 + i * 4, height: 6 + i * 4 }} /></button>)}
+          {WIDTHS.map((w, i) => <button key={w} type="button" className={`sk-btn${widthIdx === i ? ' on' : ''}`} title={`ขนาดเส้น/ตัวอักษร ${i + 1}`} aria-label={`ขนาด ${i + 1}`} aria-pressed={widthIdx === i} onClick={() => chooseWidth(i)}><span className="sk-w" style={{ width: 6 + i * 4, height: 6 + i * 4 }} /></button>)}
+          <button type="button" className={`sk-btn${(sel && isShape(sel) ? sel.f : fill) ? ' on' : ''}`} title="เติมสีอ่อนในรูปทรง" aria-label="เติมสี" aria-pressed={!!(sel && isShape(sel) ? sel.f : fill)} onClick={toggleFill}>◐</button>
           <span className="sk-spacer" />
           <button type="button" className="sk-btn sk-zoom" title="ซูมออก" aria-label="ซูมออก" onClick={() => zoomBy(0.8)}>−</button>
           <button type="button" className="sk-btn sk-zoom" title="ซูมเข้า" aria-label="ซูมเข้า" onClick={() => zoomBy(1.25)}>＋</button>
           <button type="button" className="sk-btn" title="ดูทั้งหมด" aria-label="ดูทั้งหมด" onClick={fitView}>⤢</button>
         </div>
+        <div className="sk-row">
+          {TOOLS_ROW_C.map(([key, icon, label]) => (
+            <button key={key} type="button" className={`sk-btn${tool === key ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tool === key} onClick={() => pickTool(key)}>{icon}</button>
+          ))}
+          <span className="sk-spacer" />
+          <button type="button" className="sk-btn" title="ทำสำเนา" aria-label="ทำสำเนา" disabled={!sel} onClick={duplicateSelected}>⧉</button>
+          <button type="button" className="sk-btn" title="ลบที่เลือก" aria-label="ลบที่เลือก" disabled={!sel} onClick={deleteSelected}>🗑️</button>
+        </div>
       </div>
-      {(restored || loadNote || error) && (
-        <div className={`sketch-note${error ? ' err' : ''}`} role="status">{error || loadNote || '📝 กู้คืนที่วาดค้างไว้ให้แล้ว'}</div>
-      )}
-      <div className={`sketch-stage tool-${tool}`} ref={stageRef} data-strokes={nStrokes} data-tool={tool} data-loading={loading ? '1' : '0'}
+      {/* one fixed-height line, so the board never jumps when the tool (and its hint) changes */}
+      <div className={`sketch-hint${error ? ' err' : (restored || loadNote) ? ' note' : ''}`} role="status">{error || loadNote || (restored ? '📝 กู้คืนที่วาดค้างไว้ให้แล้ว' : HINTS[tool] || '')}</div>
+      <div className={`sketch-stage tool-${tool}`} ref={stageRef} data-strokes={n} data-tool={tool} data-selected={sel ? sel.k : ''} data-loading={loading ? '1' : '0'}
+        data-view={`${Math.round(vx)},${Math.round(vy)},${vk.toFixed(3)}`}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={e => e.preventDefault()}>
         <canvas ref={baseRef} className="sketch-canvas" />
         <canvas ref={liveRef} className="sketch-canvas sketch-live" />
+        {editing && (
+          <textarea ref={taRef} className="sketch-text-edit" style={{ ...ta, fontFamily: FONT }} defaultValue={editing.text} placeholder={editing.mode === 'label' ? 'ข้อความในรูปทรง' : 'พิมพ์ข้อความ'}
+            aria-label="ข้อความ" onPointerDown={stop} onMouseDown={stop} onClick={stop}
+            onBlur={() => endEdit(true)} onKeyDown={ev => { if (ev.key === 'Escape') { ev.stopPropagation(); endEdit(false); } }} />
+        )}
         {loading && <div className="sketch-loading">กำลังเปิด…</div>}
       </div>
     </div>,

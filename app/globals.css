@@ -853,15 +853,17 @@ html[data-fs="lg"] { font-size: 18px; }
 .sk-dot.on { box-shadow: 0 0 0 2px var(--accent, #14a39a); transform: scale(1.12); }
 .sk-sep { flex: 0 0 1px; align-self: stretch; margin: 6px 4px; background: var(--border, #ddd); }
 .sk-spacer { flex: 1 1 auto; }
-.sketch-note { padding: 6px 12px; font-size: 0.85rem; background: var(--accent-soft, #dff3f0); color: var(--text-primary, #111); flex: 0 0 auto; }
-.sketch-note.err { background: #fde8e8; color: #9b1c1c; }
 .sketch-stage { position: relative; flex: 1 1 auto; min-height: 0; background: #fff; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; overflow: hidden; }
 .sketch-stage.tool-hand { cursor: grab; }
 .sketch-stage.tool-eraser { cursor: cell; }
 .sketch-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
 .sketch-live { pointer-events: none; }
+.sketch-hint { padding: 3px 12px; font-size: 0.76rem; line-height: 1.25; height: 2.7em; overflow: hidden; display: flex; align-items: center; color: var(--text-secondary, #666); background: var(--surface-muted, #f2f2f2); flex: 0 0 auto; }
+.sketch-hint.note { background: var(--accent-soft, #dff3f0); color: var(--text-primary, #111); font-size: 0.85rem; }
+.sketch-hint.err { background: #fde8e8; color: #9b1c1c; font-size: 0.85rem; }
+.sketch-text-edit { position: absolute; z-index: 2; margin: 0; border: 1.5px dashed var(--accent, #14a39a); border-radius: 6px; background: rgba(255,255,255,0.92); outline: none; resize: none; line-height: 1.3; padding: 2px 4px; box-sizing: border-box; overflow: hidden; touch-action: auto; user-select: text; -webkit-user-select: text; cursor: text; }
 .sketch-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.85); color: #333; }
-@media (min-width: 900px) { .sketch-bar { flex-direction: row; align-items: center; flex-wrap: wrap; } .sk-row { display: contents; } .sk-spacer-a { display: none; } .sk-save { order: 99; } .sk-spacer { flex: 1 1 auto; } }
+@media (min-width: 900px) { .sk-btn { height: 36px; min-width: 38px; } .sk-bar-row-gap { gap: 2px; } }
 @media (max-width: 440px) { .sk-btn { min-width: 36px; height: 38px; } .sk-dot { width: 24px; height: 24px; }.sk-btn.sk-zoom { display: none; } }   /* phones pinch to zoom */
 
 .note-image-badge { position: absolute; left: 3px; bottom: 3px; z-index: 1; font-size: 0.7rem; line-height: 1; padding: 2px 3px; border-radius: 6px; background: rgba(255,255,255,0.88); }
