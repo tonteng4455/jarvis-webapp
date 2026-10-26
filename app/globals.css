@@ -727,6 +727,12 @@ html[data-fs="lg"] { font-size: 18px; }
 .kl-row.lifted { position: relative; z-index: 5; background: var(--editor-bg, var(--surface)); box-shadow: 0 6px 18px rgba(0,0,0,0.22); border-radius: 8px; opacity: 0.96; pointer-events: none; }
 .kl-drop { position: relative; height: 0; }
 .kl-drop::before { content: ''; position: absolute; left: 0; right: 0; top: -2px; height: 3px; border-radius: 2px; background: var(--accent); }
+.kl-r-img { padding: 0.25rem 0; align-items: stretch; }
+.kl-imgbox { position: relative; flex: 1; min-width: 0; display: flex; }
+.kl-imgbox img { display: block; max-width: 100%; max-height: 340px; background: #fff; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; object-fit: contain; }
+.kl-imgmissing { padding: 1.2rem 1rem; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-secondary); font-size: 0.85rem; }
+.kl-imgx { position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; border: none; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.75rem; cursor: pointer; opacity: 0.9; }
+@media (max-width: 759px) { .kl-imgx { width: 34px; height: 34px; } }
 .kl-row.insel { background: color-mix(in srgb, var(--accent) 9%, transparent); border-radius: 4px; }
 /* the highlight of a selection that spans rows: a copy of the row's text (transparent) with the selected part marked */
 .kl-hl { position: absolute; inset: 0; padding: 0.2rem 0; font: inherit; font-size: 0.95rem; line-height: 1.6; color: transparent; white-space: pre-wrap; overflow-wrap: break-word; pointer-events: none; overflow: hidden; }

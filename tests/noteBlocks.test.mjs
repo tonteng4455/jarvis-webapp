@@ -1,7 +1,7 @@
 // node --test tests/   — the note-body logic (no browser needed)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, cycleList, pasteInto, rowInfo, previewText, plainText, normalizeRange, wholeRange, rangeText, deleteRange } from '../lib/noteBlocks.js';
+import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, cycleList, pasteInto, rowInfo, previewText, plainText, normalizeRange, wholeRange, rangeText, deleteRange, insertImage, replaceImage, removeImageBlock, inlineImageIds, stripImageMarkers } from '../lib/noteBlocks.js';
 
 const types = blocks => blocks.map(b => `${b.type}${b.indent ? '@' + b.indent : ''}${b.checked ? '✓' : ''}:${JSON.stringify(b.text)}`);
 const idOf = (blocks, n) => blocks[n].id;
@@ -364,4 +364,72 @@ test('range: deleting from a text block into a list row keeps the text block typ
   const b = parseContent('บรรทัด 1\nบรรทัด 2\n- รายการ');
   const r = deleteRange(b, sel(b, 0, 9, 1, 0), '');
   assert.deepEqual(types(r.blocks), ['text:"บรรทัด 1\\nรายการ"']);
+});
+
+// ---- pictures placed inside the text ----
+const FID = '1AbCdEfGhIjKlMn', FID2 = '9ZyXwVuTsRqPoNm';
+
+test('image: a marker line becomes its own block and serialises back unchanged', () => {
+  const t = `หัวข้อ\n⟦img:${FID}⟧\n- นม`;
+  const b = parseContent(t);
+  assert.deepEqual(types(b), ['text:"หัวข้อ"', `img:"${FID}"`, 'bullet:"นม"']);
+  assert.equal(serializeBlocks(b), t);
+});
+
+test('image: there is always a line to type on above and below a picture, and a picture appears only once', () => {
+  const b = parseContent(`⟦img:${FID}⟧`);
+  assert.deepEqual(types(b), ['text:""', `img:"${FID}"`, 'text:""']);
+  const twice = parseContent(`a\n⟦img:${FID}⟧\nb\n⟦img:${FID}⟧\nc`);
+  assert.equal(twice.filter(x => x.type === 'img').length, 1);
+});
+
+test('image: numbering restarts after a picture, and list helpers do not treat it as a list row', () => {
+  const b = parseContent(`1. a\n2. b\n⟦img:${FID}⟧\n1. c`);
+  assert.deepEqual(numbering(b), [1, 2, 0, 1]);
+  const info = rowInfo(b, b[3].id); assert.equal(info.canIndent, false);
+  assert.equal(indentBlock(b, b[3].id, 1), null);
+});
+
+test('image: Backspace at the start of the line under a picture does not eat the picture', () => {
+  const b = parseContent(`x\n⟦img:${FID}⟧\nabc`);
+  assert.equal(backspaceAtStart(b, b[2].id), null);
+  const l = parseContent(`x\n⟦img:${FID}⟧\n- yy`);
+  const r = backspaceAtStart(l, l[2].id);
+  assert.deepEqual(types(r.blocks), ['text:"x"', `img:"${FID}"`, 'text:"yy"']);
+});
+
+test('image: insert after a list row, in the middle of a text block, and at the end', () => {
+  const l = parseContent('- a\n- b');
+  let r = insertImage(l, l[0].id, 0, FID);
+  assert.deepEqual(types(r.blocks), ['bullet:"a"', `img:"${FID}"`, 'text:""', 'bullet:"b"']);
+  const t = parseContent('one\ntwo\nthree');
+  r = insertImage(t, t[0].id, 'one\ntw'.length, FID);
+  assert.deepEqual(types(r.blocks), ['text:"one"', `img:"${FID}"`, 'text:"two\\nthree"']);
+  r = insertImage(t, t[0].id, t[0].text.length, FID);
+  assert.deepEqual(types(r.blocks), ['text:"one\\ntwo\\nthree"', `img:"${FID}"`, 'text:""']);
+  r = insertImage(l, null, 0, FID); assert.equal(r.blocks.filter(x => x.type === 'img').length, 1);
+  assert.equal(insertImage(r.blocks, r.blocks[0].id, 0, FID).blocks.filter(x => x.type === 'img').length, 1);   // the same picture is not added twice
+});
+
+test('image: a re-saved drawing keeps its place; removing it takes the line away', () => {
+  const b = parseContent(`a\n⟦img:${FID}⟧\nb`);
+  const r = replaceImage(b, FID, FID2); assert.equal(serializeBlocks(r.blocks), `a\n⟦img:${FID2}⟧\nb`);
+  assert.equal(replaceImage(b, 'nope', FID2), null);
+  const g = removeImageBlock(b, FID); assert.equal(serializeBlocks(g.blocks), 'a\nb');
+  assert.equal(g.blocks.some(x => x.type === 'img'), false);
+});
+
+test('image: previews, plain text and the helpers see "🖼️ ภาพวาด" / the ids / the text without markers', () => {
+  const t = `ซื้อของ\n⟦img:${FID}⟧\n- นม`;
+  assert.equal(previewText(t), 'ซื้อของ  🖼️ ภาพวาด  • นม');
+  assert.deepEqual([...inlineImageIds(t)], [FID]);
+  assert.equal(stripImageMarkers(t), 'ซื้อของ\n- นม');
+});
+
+test('image: copying a selection that holds a picture keeps its marker; deleting it removes the picture', () => {
+  const b = parseContent(`one\n⟦img:${FID}⟧\ntwo`);
+  const span = normalizeRange(b, { a: { id: b[0].id, pos: 1 }, f: { id: b[2].id, pos: 2 } });
+  assert.equal(rangeText(b, span), `ne\n⟦img:${FID}⟧\ntw`);
+  const r = deleteRange(b, span, '');
+  assert.equal(serializeBlocks(r.blocks), 'oo');
 });

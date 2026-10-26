@@ -22,7 +22,7 @@ import SketchEditor from './_sketch';
 import {
   parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart,
   indentBlock, toggleCheck, pasteInto, rowInfo, appendRow, doneLayout, moveSubtree, subtreeEnd, cycleList, LIST_CYCLE,
-  normalizeRange, wholeRange, rangeText, deleteRange,
+  normalizeRange, wholeRange, rangeText, deleteRange, insertImage, replaceImage, removeImageBlock, inlineImageIds, stripImageMarkers,
 } from '../../lib/noteBlocks';
 
 // Locks the page behind a full-screen editor so scrolling a long note
@@ -134,6 +134,8 @@ export function useNoteImages(initial, scope = 'note') {
   const [error, setError] = useState('');
   const [connectUrl, setConnectUrl] = useState('');
   const uploadingRef = useRef(false);
+  const [inlineIds, setInlineIds] = useState(() => new Set());   // pictures placed inside the note's text (not shown in the strip)
+  const hooks = useRef({});                                       // the editor body registers what to do with a saved drawing
   const imagesRef = useRef(images);
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { uploadingRef.current = uploading > 0; }, [uploading]);
@@ -176,14 +178,14 @@ export function useNoteImages(initial, scope = 'note') {
   }
 
   // ----- hand-drawn pictures -----
-  const [sketch, setSketch] = useState(null);                // null | { image } (image = null for a new one)
-  const openSketch = image => {
+  const [sketch, setSketch] = useState(null);                // null | { image, inline } (image = null for a new one; inline = place it at the caret)
+  const openSketch = (image, inline = false) => {
     if (!image && imagesRef.current.length >= MAX_NOTE_IMAGES) { setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต`); return; }
-    setError(''); setSketch({ image: image || null });
+    setError(''); setSketch({ image: image || null, inline: !!inline && !image });
   };
   // an old drawing's file is removed a little AFTER the note has saved the new one (so a failed save never leaves a broken picture)
   const trashLater = id => { setTimeout(() => { fetch(`/api/notes/images/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }).catch(() => {}); }, 12000); };
-  async function saveSketch(blob, replaceId) {
+  async function saveSketch(blob, replaceId, inline = false) {
     setError(''); setConnectUrl('');
     try {
       const form = new FormData();
@@ -193,6 +195,7 @@ export function useNoteImages(initial, scope = 'note') {
       if (res.ok && data.image) {
         setImages(prev => replaceId ? prev.map(im => im.drive_file_id === replaceId ? data.image : im) : [...prev, data.image]);
         if (replaceId) trashLater(replaceId);
+        try { hooks.current.saved?.(data.image, replaceId, inline); } catch { /* the picture is in the note's list anyway */ }
         setSketch(null);
         return true;
       }
@@ -210,7 +213,7 @@ export function useNoteImages(initial, scope = 'note') {
     setImages(prev => prev.filter(im => im.drive_file_id !== id));
     if (gone?.kind === 'sketch') trashLater(id);           // a drawing is only a file of ours; a photo stays in Drive on purpose
   }
-  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage, sketch, setSketch, openSketch, saveSketch, scope };
+  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage, sketch, setSketch, openSketch, saveSketch, scope, inlineIds, setInlineIds, hooks };
 }
 
 function ImageThumb({ image, onOpen, onRemove }) {
@@ -231,6 +234,24 @@ function ImageThumb({ image, onOpen, onRemove }) {
   );
 }
 
+
+// A drawing placed inside the text, between rows.
+function InlineImage({ image, onOpen, onRemove }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="kl-imgbox" data-img={image?.drive_file_id || ''}>
+      {image && !failed ? (
+        <img src={driveImageSrc(image.drive_file_id)} alt="ลายมือในโน้ต" loading="lazy" referrerPolicy="no-referrer"
+          title="แตะเพื่อแก้ไข" onClick={() => onOpen(image)} onError={() => setFailed(true)} />
+      ) : (
+        <div className="kl-imgmissing">🖼️ โหลดภาพไม่ได้</div>
+      )}
+      <button type="button" className="kl-imgx" title="เอาภาพนี้ออกจากโน้ต" aria-label="เอาภาพออก"
+        onPointerDown={e => e.preventDefault()} onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+        onClick={e => { e.stopPropagation(); onRemove(image?.drive_file_id); }}>✕</button>
+    </div>
+  );
+}
 
 // Textarea that grows to fit its content — no scrollbar, no cramped box.
 // The surrounding editor panel is what scrolls, so two things have to be
@@ -305,21 +326,22 @@ export function NoteImageButton({ state }) {
         onClick={() => inputRef.current?.click()}>
         📷{images.length > 0 && <span className="ne-badge">{images.length}</span>}
       </ToolBtn>
-      <ToolBtn title="เขียน/วาดด้วยมือ" disabled={images.length >= MAX_NOTE_IMAGES} onClick={() => state.openSketch(null)}>✏️</ToolBtn>
+      <ToolBtn title="เขียน/วาดด้วยมือ" disabled={images.length >= MAX_NOTE_IMAGES} onClick={() => state.openSketch(null, true)}>✏️</ToolBtn>
     </>
   );
 }
 
 // Thumbnails (one scrollable row), upload errors, and the full-size viewer.
 export function NoteImageStrip({ state }) {
-  const { images, uploading, error, connectUrl, removeImage, sketch } = state;
+  const { uploading, error, connectUrl, removeImage, sketch } = state;
+  const images = state.images.filter(im => !state.inlineIds.has(im.drive_file_id));      // a picture placed in the text is shown there
   const [viewing, setViewing] = useState(null);
   return (
     <>
       {sketch && (
         <SketchEditor key={sketch.image?.drive_file_id || 'new'} imageUrl={sketch.image ? driveImageSrc(sketch.image.drive_file_id) : null}
           draftKey={`${state.scope}:${sketch.image?.drive_file_id || 'new'}`}
-          onSave={blob => state.saveSketch(blob, sketch.image?.drive_file_id || null)} onCancel={() => state.setSketch(null)} />
+          onSave={blob => state.saveSketch(blob, sketch.image?.drive_file_id || null, !!sketch.inline)} onCancel={() => state.setSketch(null)} />
       )}
       {(images.length > 0 || uploading > 0) && (
         <div className="note-image-strip">
@@ -407,7 +429,7 @@ const BULLETS = ['•', '◦', '▪', '•', '◦'];
 const LIST_GLYPH = { text: '☰', num: '1.', bullet: '•', check: '☑' };
 const LIST_LABEL = { text: 'ข้อความ', num: 'เลขข้อ', bullet: 'จุด', check: 'ช่องติ๊ก' };
 
-export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, onActive, placeholder = 'พิมพ์โน้ต...', autoFocus }, ref) {
+export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, onActive, images = [], onOpenImage, onRemoveImage, placeholder = 'พิมพ์โน้ต...', autoFocus }, ref) {
   const [blocks, setBlocks] = useState(() => parseContent(initial));
   const blocksRef = useRef(blocks);
   // A selection across several rows (the rows are separate text boxes, so the browser can't do it): { a: {id,pos}, f: {id,pos} } — see lib/noteBlocks.js
@@ -465,6 +487,9 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     return true;
   }, [onChange, focusAt, report, record, setRange]);
 
+  // the nearest row you can put a caret in, from row i going up (-1) or down (+1); pictures are skipped. -1 = none
+  const step = (cur, i, dir) => { for (let k = i + dir; k >= 0 && k < cur.length; k += dir) if (cur[k].type !== 'img') return k; return -1; };
+
   const jump = useCallback((delta) => {
     const h = hist.current; const ni = h.idx + delta;
     if (ni < 0 || ni >= h.list.length) return;
@@ -475,7 +500,8 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     onChange(serializeBlocks(next));
     // put the caret where the change happened
     let k = 0; while (k < next.length && k < prev.length && next[k].id === prev[k].id && next[k].text === prev[k].text && next[k].type === prev[k].type && next[k].indent === prev[k].indent && next[k].checked === prev[k].checked) k++;
-    const t = next[Math.min(k, next.length - 1)]; if (t) focusAt(t.id, t.text.length);
+    let ti = Math.min(k, next.length - 1); while (ti > 0 && next[ti].type === 'img') ti--;
+    const t = next[ti]; if (t && t.type !== 'img') focusAt(t.id, t.text.length);
     setRange(null); report();
   }, [onChange, focusAt, report, setRange]);
 
@@ -490,6 +516,14 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
       const caret = el ? Math.max(0, el.selectionStart - 1) : (cur.find(x => x.id === id)?.text.length || 0);
       commit(cycleList(cur, id, caret), id);
     },
+    insertImage(fileId) {
+      const cur = blocksRef.current, id = activeId.current && cur.some(x => x.id === activeId.current) ? activeId.current : null;
+      const el = id ? els.current.get(id) : null;
+      const res = insertImage(cur, id, el ? Math.max(0, el.selectionStart - 1) : 0, fileId);
+      if (res && res.blocks !== cur) commit(res);
+    },
+    replaceImage(oldId, newId) { const res = replaceImage(blocksRef.current, oldId, newId); if (!res) return false; commit(res); return true; },
+    removeImageBlock(fileId) { const res = removeImageBlock(blocksRef.current, fileId); if (res) commit(res); },
     undo() { jump(-1); },
     redo() { jump(1); },
     indent(delta) {
@@ -590,11 +624,11 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     }
     if (e.nativeEvent.isComposing) return;
     // Arrow keys move between rows when the caret is already at the edge of this one
-    if ((e.key === 'ArrowUp' || e.key === 'ArrowLeft') && !e.shiftKey && el.selectionStart <= 1 && el.selectionEnd <= 1 && i > 0) {
-      e.preventDefault(); const p = cur[i - 1]; focusAt(p.id, p.text.length); return;
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowLeft') && !e.shiftKey && el.selectionStart <= 1 && el.selectionEnd <= 1 && step(cur, i, -1) >= 0) {
+      e.preventDefault(); const p = cur[step(cur, i, -1)]; focusAt(p.id, p.text.length); return;
     }
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowRight') && !e.shiftKey && el.selectionStart === el.value.length && i < cur.length - 1) {
-      e.preventDefault(); focusAt(cur[i + 1].id, 0); return;
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowRight') && !e.shiftKey && el.selectionStart === el.value.length && step(cur, i, 1) >= 0) {
+      e.preventDefault(); focusAt(cur[step(cur, i, 1)].id, 0); return;
     }
     if (e.key === 'Home' && !e.shiftKey) { /* keep the caret after the sentinel */ requestAnimationFrame(() => { if (el.selectionStart === 0) el.setSelectionRange(1, 1); }); }
   }
@@ -622,13 +656,13 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
     if (!['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft'].includes(k)) return false;
     const s0 = Math.max(0, el.selectionStart - 1), e0 = Math.max(0, el.selectionEnd - 1), collapsed = s0 === e0, dir = el.selectionDirection;
     const atEnd = (collapsed || dir !== 'backward') && e0 >= b.text.length, atStart = (collapsed || dir === 'backward') && s0 === 0;
-    if ((k === 'ArrowDown' || k === 'ArrowRight') && atEnd && i < cur.length - 1) {
-      e.preventDefault(); const nx = cur[i + 1];
+    if ((k === 'ArrowDown' || k === 'ArrowRight') && atEnd && step(cur, i, 1) >= 0) {
+      e.preventDefault(); const nx = cur[step(cur, i, 1)];
       setRange({ a: { id: b.id, pos: s0 }, f: { id: nx.id, pos: k === 'ArrowRight' ? 0 : Math.min(e0, nx.text.length) } });
       focusAt(nx.id, k === 'ArrowRight' ? 0 : Math.min(e0, nx.text.length)); return true;
     }
-    if ((k === 'ArrowUp' || k === 'ArrowLeft') && atStart && i > 0) {
-      e.preventDefault(); const pv = cur[i - 1], pos = k === 'ArrowLeft' ? pv.text.length : Math.min(s0, pv.text.length);
+    if ((k === 'ArrowUp' || k === 'ArrowLeft') && atStart && step(cur, i, -1) >= 0) {
+      e.preventDefault(); const pv = cur[step(cur, i, -1)], pos = k === 'ArrowLeft' ? pv.text.length : Math.min(s0, pv.text.length);
       setRange({ a: { id: b.id, pos: e0 }, f: { id: pv.id, pos } }); focusAt(pv.id, pos); return true;
     }
     return false;
@@ -645,10 +679,10 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
       }
       const fi = cur.findIndex(x => x.id === rg.f.id), row = cur[fi], fp = Math.min(rg.f.pos, row.text.length);
       let ni = fi, np = fp;
-      if (k === 'ArrowRight') { if (fp < row.text.length) np = fp + 1; else if (fi < cur.length - 1) { ni = fi + 1; np = 0; } }
-      else if (k === 'ArrowLeft') { if (fp > 0) np = fp - 1; else if (fi > 0) { ni = fi - 1; np = cur[ni].text.length; } }
-      else if (k === 'ArrowDown') { if (fi < cur.length - 1) { ni = fi + 1; np = Math.min(fp, cur[ni].text.length); } else np = row.text.length; }
-      else if (k === 'ArrowUp') { if (fi > 0) { ni = fi - 1; np = Math.min(fp, cur[ni].text.length); } else np = 0; }
+      if (k === 'ArrowRight') { if (fp < row.text.length) np = fp + 1; else if (step(cur, fi, 1) >= 0) { ni = step(cur, fi, 1); np = 0; } }
+      else if (k === 'ArrowLeft') { if (fp > 0) np = fp - 1; else if (step(cur, fi, -1) >= 0) { ni = step(cur, fi, -1); np = cur[ni].text.length; } }
+      else if (k === 'ArrowDown') { if (step(cur, fi, 1) >= 0) { ni = step(cur, fi, 1); np = Math.min(fp, cur[ni].text.length); } else np = row.text.length; }
+      else if (k === 'ArrowUp') { if (step(cur, fi, -1) >= 0) { ni = step(cur, fi, -1); np = Math.min(fp, cur[ni].text.length); } else np = 0; }
       else if (k === 'Home') np = 0; else np = row.text.length;
       const f = { id: cur[ni].id, pos: np };
       if (f.id === rg.a.id && f.pos === rg.a.pos) { setRange(null); focusAt(f.id, f.pos); return true; }
@@ -752,7 +786,9 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
         if (!at) return;
         m.anchor = Math.max(0, (down ? at.selectionStart : at.selectionEnd) - 1);
       }
-      const tb = cur[ti], pos = posAtPoint(tb, e.clientX, e.clientY, down);
+      let tj = ti; if (cur[tj].type === 'img') tj = step(cur, tj, down ? 1 : -1);          // a pointer over a picture: the nearest row beyond it
+      if (tj < 0 || tj === ai) return;
+      const tb = cur[tj], pos = cur[ti].type === 'img' ? (down ? 0 : tb.text.length) : posAtPoint(tb, e.clientX, e.clientY, down);
       const rg = { a: { id: m.id, pos: Math.min(m.anchor, cur[ai].text.length) }, f: { id: tb.id, pos } };
       const old = rangeRef.current;
       if (old && old.f.id === rg.f.id && old.f.pos === rg.f.pos) return;
@@ -852,7 +888,17 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
                 <span className="kl-done-caret">{hideDone ? '▸' : '▾'}</span> รายการที่ทำแล้ว <span className="kl-done-n">{header[i]}</span>
               </button>
             )}
-            {!hidden && (
+            {!hidden && b.type === 'img' && (
+              <div data-ri={i} className={`kl-row kl-r-img${inDrag ? ' lifted' : ''}${span && i >= span.i0 && i <= span.i1 ? ' insel' : ''}`}
+                style={inDrag ? { transform: `translateY(${drag.dy}px)` } : undefined}>
+                <InlineImage image={images.find(im => im.drive_file_id === b.text)} onOpen={im => onOpenImage?.(im)} onRemove={id => onRemoveImage?.(id || b.text)} />
+                <span className="kl-handle" title="ลากเพื่อย้าย" aria-label="ลากเพื่อย้ายภาพ" role="button"
+                  onPointerDown={e => startDrag(e, b)} onPointerMove={moveDrag}
+                  onPointerUp={e => endDrag(e, false)} onPointerCancel={e => endDrag(e, true)}
+                  onClick={e => e.stopPropagation()}>⋮⋮</span>
+              </div>
+            )}
+            {!hidden && b.type !== 'img' && (
               <div data-ri={i} className={`kl-row kl-r-${b.type}${inDrag ? ' lifted' : ''}${span && i >= span.i0 && i <= span.i1 ? ' insel' : ''}`}
                 style={{ ...(b.type === 'text' ? null : { paddingLeft: `${b.indent * 1.5}rem` }), ...(inDrag ? { transform: `translateY(${drag.dy}px)` } : null) }}
                 onClick={e => { if (e.target === e.currentTarget) { e.stopPropagation(); focusAt(b.id, b.text.length); } }}>
@@ -887,7 +933,19 @@ export function NoteEditorPanel({
   const [info, setInfo] = useState({ list: false, canIndent: false, canOutdent: false });
   const bodyRef = useRef(null);
   const contentRef = useRef(initialContent || '');
-  const handleChange = useCallback(v => { contentRef.current = v; onContent(v); }, [onContent]);
+  const setInlineIds = imgState.setInlineIds;
+  const handleChange = useCallback(v => {
+    contentRef.current = v; onContent(v);
+    const ids = inlineImageIds(v);
+    setInlineIds(prev => (prev.size === ids.size && [...ids].every(x => prev.has(x)) ? prev : ids));
+  }, [onContent, setInlineIds]);
+  useLayoutEffect(() => { setInlineIds(inlineImageIds(initialContent)); }, [editorKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // a drawing saved from ✏️ goes where the caret is; a re-saved one keeps its place
+  imgState.hooks.current.saved = (image, replaceId, inline) => {
+    const body = bodyRef.current; if (!body) return;
+    if (replaceId && body.replaceImage(replaceId, image.drive_file_id)) return;
+    if (inline && !replaceId) body.insertImage(image.drive_file_id);
+  };
 
   return (
     <>
@@ -906,7 +964,9 @@ export function NoteEditorPanel({
       <NoteImageStrip state={imgState} />
       <input className="note-title-input" placeholder="หัวข้อ" value={titleValue} onChange={e => onTitle(e.target.value)} autoFocus={isNew}
         enterKeyHint="next" onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); bodyRef.current?.focusStart(); } }} />
-      <BlockEditor key={editorKey} ref={bodyRef} initial={initialContent} onChange={handleChange} onActive={setInfo} />
+      <BlockEditor key={editorKey} ref={bodyRef} initial={initialContent} onChange={handleChange} onActive={setInfo}
+        images={imgState.images} onOpenImage={im => imgState.openSketch(im)}
+        onRemoveImage={id => { bodyRef.current?.removeImageBlock(id); imgState.removeImage(id); }} />
 
       <div className="ne-bottom" onMouseDown={e => e.stopPropagation()}>
         <div className="ne-cat"><CategorySelect options={categories} value={category} onChange={onCategory} /></div>
@@ -914,7 +974,7 @@ export function NoteEditorPanel({
         <ToolBtn title="ทำซ้ำ (Ctrl+Shift+Z)" disabled={!info.canRedo} onClick={() => bodyRef.current?.redo()}>↷</ToolBtn>
         {onConvert && <ToolBtn title="เปลี่ยนโน้ตนี้เป็นงานหรือนัดหมาย" onClick={onConvert}>🔄</ToolBtn>}
         <ToolBtn title="สี" onClick={() => setPickerOpen(v => !v)} active={pickerOpen}>🎨</ToolBtn>
-        <ToolBtn title="แชร์/คัดลอกข้อความ" onClick={() => shareText({ title: titleValue, text: contentRef.current }, toast)}>📤</ToolBtn>
+        <ToolBtn title="แชร์/คัดลอกข้อความ" onClick={() => shareText({ title: titleValue, text: stripImageMarkers(contentRef.current) }, toast)}>📤</ToolBtn>
       </div>
       {pickerOpen && (
         <div className="note-swatch-row">
