@@ -3,7 +3,7 @@
 // page: toasts with "เลิกทำ" (undo) for deletes, loading skeletons,
 // an error state with retry, the mobile "+" button, and apiGet().
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { loadDraft, saveDraft, clearDraft } from '../../lib/draft';
 
 // ---------- API helper ----------
@@ -218,3 +218,16 @@ export async function shareText({ title, text }, toast) {
     if (e?.name !== 'AbortError') toast?.show('แชร์ไม่สำเร็จ', { tone: 'error' });
   }
 }
+
+// ---------- dialogs that pop up over the note editor ----------
+// A tap inside such a dialog must not reach what is behind it (React sends events from a portal up to the component that opened it, and
+// a phone sends a "ghost click" to whatever is under the finger once the dialog has gone), and the keyboard of the note must not stay up
+// behind it. So: put the focus nowhere while the dialog is open, swallow every pointer event at its root, and close on a COMPLETED tap.
+export function useDialogGuard() {
+  useLayoutEffect(() => { try { const a = document.activeElement; if (a && a !== document.body && typeof a.blur === 'function') a.blur(); } catch { /* ignore */ } }, []);
+}
+const swallow = e => e.stopPropagation();
+export const dialogGuard = onBackdrop => ({
+  onMouseDown: swallow, onMouseUp: swallow, onPointerDown: swallow, onPointerUp: swallow, onTouchStart: swallow, onTouchEnd: swallow, onTouchMove: swallow, onKeyDown: swallow,
+  onClick: e => { e.stopPropagation(); if (onBackdrop && e.target === e.currentTarget) onBackdrop(); },
+});

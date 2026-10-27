@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { dialogGuard, useDialogGuard } from './_ui';
 
 export const KIND_LABEL = { note: '📝 โน้ต', task: '✅ งาน', event: '📅 นัดหมาย' };
 const KIND_WORD = { note: 'โน้ต', task: 'งาน', event: 'นัดหมาย' };
@@ -27,11 +28,12 @@ export function useEscape(onClose) {
 }
 
 export function ConvertChooser({ from, recurring, onPick, onCancel }) {
+  useDialogGuard();
   const [busy, setBusy] = useState(false);
   useEscape(onCancel);
   async function pick(to) { if (busy) return; setBusy(true); try { await onPick(to); } finally { setBusy(false); } }
   return createPortal(
-    <div className="convert-overlay" onMouseDown={e => { e.stopPropagation(); if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="convert-overlay" {...dialogGuard(onCancel)}>
       <div className="convert-sheet" role="dialog" aria-modal="true" aria-label={`เปลี่ยน${KIND_WORD[from]}เป็น`}>
         <h2 className="convert-title">🔄 เปลี่ยน{KIND_WORD[from]}นี้เป็น…</h2>
         <div style={{ display: 'grid', gap: '0.6rem' }}>

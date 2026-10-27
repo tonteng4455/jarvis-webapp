@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { BlockEditor, ToolBtn, EditorOverlay } from './_noteEditor';
 import { DueFields } from './_due';
-import { useToast } from './_ui';
+import { useToast, dialogGuard } from './_ui';
 import { useEscape } from './_convert';
 import { buildDue, dueInputs } from '../../lib/taskDue';
 import { previewText, plainText } from '../../lib/noteBlocks';
@@ -245,7 +245,7 @@ export function ConvertToTaskSheet({ note, source, initialDue, heading = '✅ �
     setBusy(false);
   }
   return createPortal(
-    <div className="convert-overlay" onMouseDown={e => e.stopPropagation()}>
+    <div className="convert-overlay" {...dialogGuard(null)}>
       <div className="convert-sheet" role="dialog" aria-modal="true" aria-label={heading}>
         <h2 className="convert-title">{heading}</h2>
         <label className="te-label">ชื่องาน</label>
@@ -315,7 +315,7 @@ export function ConvertToEventSheet({ task, source, heading = '📅 เปลี
     setBusy(false);
   }
   return createPortal(
-    <div className="convert-overlay" onMouseDown={e => e.stopPropagation()}>
+    <div className="convert-overlay" {...dialogGuard(null)}>
       <div className="convert-sheet" role="dialog" aria-modal="true" aria-label={heading}>
         <h2 className="convert-title">{heading}</h2>
         <label className="te-label">หัวเรื่อง</label>

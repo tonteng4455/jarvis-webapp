@@ -47,6 +47,8 @@ const ICON = {
   pin: svg(<><circle cx="12" cy="12" r="9" /><text x="12" y="16.2" textAnchor="middle" fontSize="11.5" fontWeight="700" fill="currentColor" stroke="none">1</text></>),
   tipDot: svg(<><path d="M4 20L15 9" /><circle cx="17" cy="7" r="3" fill="currentColor" /></>),
   fill: svg(<><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 000 16z" fill="currentColor" /></>),
+  straight: svg(<path d="M4 18L20 6" />),
+  bent: svg(<path d="M4 18h8V6h8" />),
   endsNone: svg(<path d="M3 12h18" />),
   endsEnd: svg(<><path d="M3 12h16" /><path d="M14 7l6 5-6 5z" fill="currentColor" /></>),
   endsBoth: svg(<><path d="M5 12h14" /><path d="M10 7L4 12l6 5zM14 7l6 5-6 5z" fill="currentColor" /></>),
@@ -59,7 +61,7 @@ const ICON = {
 const GROUPS = [
   { id: 'draw', label: 'วาด', tools: [['pen', '✏️', 'ปากกา'], ['marker', '🖍️', 'ไฮไลต์'], ['eraser', '🧽', 'ลบ'], ['hand', '✋', 'เลื่อนกระดาน']] },
   { id: 'style', label: 'สี/ขนาด', tools: [] },
-  { id: 'shape', label: 'รูปทรง', tools: [['rect', '▭', 'สี่เหลี่ยม'], ['ellipse', '◯', 'วงรี'], ['diamond', '◇', 'ข้าวหลามตัด'], ['line', '╱', 'เส้นตรง'], ['arrow', '➜', 'ลูกศร'], ['elbow', '↱', 'ลูกศรหักมุม']] },
+  { id: 'shape', label: 'รูปทรง', tools: [['rect', '▭', 'สี่เหลี่ยม'], ['ellipse', '◯', 'วงรี'], ['diamond', '◇', 'ข้าวหลามตัด'], ['arrow', '➜', 'เส้น / ลูกศร']] },
   { id: 'mark', label: 'วัด/ชี้', tools: [['dim', ICON.dim, 'เส้นวัดระยะ'], ['callout', ICON.callout, 'กรอบมีตัวชี้'], ['pin', ICON.pin, 'หมายเลขจุด'], ['text', 'T', 'ข้อความ']] },
   { id: 'edit', label: 'เลือก/จัดการ', tools: [['select', '👆', 'เลือก / ย้าย']] },
 ];
@@ -69,7 +71,7 @@ const HINTS = {
   pen: 'ใช้นิ้วหรือปากกาเขียนได้เลย · สองนิ้วเพื่อเลื่อนและซูม (แท็บเล็ตที่มีปากกา: ปากกาเขียน นิ้วเลื่อน)', marker: 'ไฮไลต์ทับข้อความหรือเส้น สีจางโปร่งแสง', eraser: 'ลากผ่านเส้นหรือรูปทรงที่ต้องการลบ (ลบทั้งชิ้น)', hand: 'ลากเพื่อเลื่อนกระดาน',
   select: 'แตะเพื่อเลือก ลากเพื่อย้าย ลากมุม/ปลายลูกศรเพื่อปรับ · แก้ข้อความ: แตะสองครั้ง หรือเลือกแล้วกดปุ่ม ✎ (หรือ Enter)',
   rect: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', ellipse: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', diamond: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ',
-  line: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง เส้นจะติดกับรูปและตามเมื่อย้าย', arrow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะติดกับรูปและตามเมื่อย้าย', elbow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะหักเป็นมุมฉาก ติดกับรูปและตามเมื่อย้าย', multi: 'แตะรูปหลายชิ้นเพื่อเลือก/เลิกเลือก หรือลากคลุมให้ครอบรูปทั้งชิ้น แล้วลากเพื่อย้ายพร้อมกัน', text: 'แตะตรงที่ต้องการพิมพ์',
+  arrow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง เส้นจะติดกับรูปและตามเมื่อย้าย · แถบด้านบนกระดาน: เลือกปลาย (ลูกศร/จุด/ไม่มีหัว) ตรงหรือหักมุม ทึบหรือประ', multi: 'แตะรูปหลายชิ้นเพื่อเลือก/เลิกเลือก หรือลากคลุมให้ครอบรูปทั้งชิ้น แล้วลากเพื่อย้ายพร้อมกัน', text: 'แตะตรงที่ต้องการพิมพ์',
   dim: 'ลากจากจุดเริ่มไปจุดสิ้นสุดของระยะที่วัด แล้วพิมพ์ตัวเลขและหน่วย (พิมพ์เองตามที่ต้องการ) · ปุ่มสลับแบบ: แบบง่าย / แบบแบบแปลน', callout: 'กดที่จุดที่ต้องการชี้ แล้วลากไปวางกรอบข้อความ จากนั้นพิมพ์ข้อความ ลากหัวชี้เพื่อย้ายตำแหน่งที่ชี้', pin: 'แตะที่จุดเพื่อปักหมายเลข (เรียง 1, 2, 3… ให้เอง) แตะต่อได้เรื่อย ๆ · เสร็จแล้วเลือกเครื่องมือ 👆 เพื่อย้าย',
 };
 
@@ -121,6 +123,7 @@ async function decodePhoto(bytes, mime, normalise) {
 
 // imageUrl: reopen an existing picture · draftKey: where the on-device backup lives · onSave(blob) → Promise<boolean> · onCancel()
 export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
+  useLayoutEffect(() => { try { const a = document.activeElement; if (a && a !== document.body && a.blur) a.blur(); } catch { /* ignore */ } }, []);       // the note's keyboard must not stay up behind the pad
   const stageRef = useRef(null), baseRef = useRef(null), liveRef = useRef(null), taRef = useRef(null);
   const view = useRef({ x: 24, y: 24, k: 1 });
   const items = useRef([]);
@@ -142,8 +145,9 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const [widthIdx, setWidthIdx] = useState(1);
   const [fill, setFill] = useState(false);
   const [dimStyle, setDimStyle] = useState('simple');   // how the next measured distance looks: 'simple' | 'plan'
-  const [tipStyle, setTipStyle] = useState('arrow');   // how the next callout's pointer ends: 'arrow' | 'dot'
-  const [lineOpts, setLineOpts] = useState({ ends: null, dash: false });   // how the next line / arrow looks (ends null = the tool's own default)
+  const [tipStyle, setTipStyle] = useState('arrow');   // how the next callout's pointer ends: 'arrow' | 'dot' | 'none'
+  const [dimEnds, setDimEnds] = useState(null);        // how the next measure's ends look: null (arrows / slanted ticks) | 'dot' | 'none'
+  const [lineOpts, setLineOpts] = useState({ ends: 'end', elbow: false, dash: false });   // how the next line / arrow looks
   const [customW, setCustomW] = useState(null);         // a thickness typed in by hand (null = the three presets)
   const [sizeText, setSizeText] = useState(null);
   const [selIds, setSelIds] = useState([]);
@@ -161,6 +165,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const fillRef = useRef(fill); fillRef.current = fill;
   const dimStyleRef = useRef(dimStyle); dimStyleRef.current = dimStyle;
   const tipStyleRef = useRef(tipStyle); tipStyleRef.current = tipStyle;
+  const dimEndsRef = useRef(dimEnds); dimEndsRef.current = dimEnds;
   const lineOptsRef = useRef(lineOpts); lineOptsRef.current = lineOpts;
   const customWRef = useRef(customW); customWRef.current = customW;
   const selRef = useRef(selIds); selRef.current = selIds;
@@ -340,10 +345,6 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     const shapes = selectedItems().filter(isShape);
     if (shapes.length) { const on = !shapes.every(i => i.f); updateSel(i => (isShape(i) ? { f: on } : null)); setFill(on); } else setFill(f => !f);
   };
-  const toggleElbow = () => {
-    const lines = selectedItems().filter(isLine); if (!lines.length) return;
-    const on = !lines.every(i => i.elbow); updateSel(i => (isLine(i) ? { elbow: on } : null));
-  };
   const deleteSelected = () => { if (!selRef.current.length) return; commit(removeItems(items.current, selRef.current)); setSel([]); };
   const duplicateSelected = () => {
     if (!selRef.current.length) return;
@@ -354,6 +355,8 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   // options that belong to a tool: they apply to the selected items of that kind AND to what is drawn next
   const setDimStyleOpt = v => { updateSel(i => (isDim(i) ? { style: v } : null)); setDimStyle(v); };
   const setTipOpt = v => { updateSel(i => (i.k === 'callout' ? { tipStyle: v } : null)); setTipStyle(v); };
+  const setDimEndsOpt = v => { updateSel(i => (isDim(i) ? { ends: v || undefined } : null)); setDimEnds(v); };
+  const setElbowOpt = v => { updateSel(i => (isLine(i) ? { elbow: v } : null)); setLineOpts(o => ({ ...o, elbow: v })); };
   const setEndsOpt = v => { updateSel(i => (isLine(i) ? { ends: v } : null)); setLineOpts(o => ({ ...o, ends: v })); };
   const setDashOpt = v => { updateSel(i => (isLine(i) ? { dash: v } : null)); setLineOpts(o => ({ ...o, dash: v })); };
   const applySize = v => {
@@ -399,14 +402,14 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   };
   const startLine = e => {
     const [x, y] = toWorld(e.clientX, e.clientY), from = shapeAt(items.current, x, y);
-    const elbow = toolRef.current === 'elbow';
-    cur.current = { k: elbow ? 'arrow' : toolRef.current, id: uid(), c: colorRef.current, w: wNow(), a: [x, y], e: [x, y], from: from ? from.id : null, to: null, elbow, ...(lineOptsRef.current.ends ? { ends: lineOptsRef.current.ends } : null), ...(lineOptsRef.current.dash ? { dash: true } : null), fromTouch: e.pointerType === 'touch' };
+    const lo = lineOptsRef.current, elbow = !!lo.elbow;
+    cur.current = { k: 'arrow', id: uid(), c: colorRef.current, w: wNow(), a: [x, y], e: [x, y], from: from ? from.id : null, to: null, elbow, ...(lo.ends !== 'end' ? { ends: lo.ends } : null), ...(lo.dash ? { dash: true } : null), fromTouch: e.pointerType === 'touch' };
     g.current = { type: 'line', pid: e.pointerId, from: from ? from.id : null }; schedule('live');
   };
   // a measured distance: drag from one point to the other, then type what it measures
   const startDim = e => {
     const [x, y] = toWorld(e.clientX, e.clientY);
-    cur.current = { k: 'dim', id: uid(), c: colorRef.current, w: wNow(), a: [x, y], e: [x, y], style: dimStyleRef.current, off: Math.round(48 * unit()), t: '', fromTouch: e.pointerType === 'touch' };
+    cur.current = { k: 'dim', id: uid(), c: colorRef.current, w: wNow(), a: [x, y], e: [x, y], style: dimStyleRef.current, off: Math.round(48 * unit()), t: '', ...(dimEndsRef.current ? { ends: dimEndsRef.current } : null), fromTouch: e.pointerType === 'touch' };
     g.current = { type: 'dim', pid: e.pointerId }; schedule('live');
   };
   // a callout: press on the spot to point at, drag to where its box should sit
@@ -473,7 +476,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     if (tl === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32))) return startErase(e);
     if (tl === 'select') return startSelect(e);
     if (tl === 'rect' || tl === 'ellipse' || tl === 'diamond') return startShape(e);
-    if (tl === 'line' || tl === 'arrow' || tl === 'elbow') return startLine(e);
+    if (tl === 'arrow') return startLine(e);
     if (tl === 'dim') return startDim(e);
     if (tl === 'callout') return startCallout(e);
     if (tl === 'pin') { g.current = { type: 'pin', pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }     // placed when the pointer lifts, so a drag / second finger is not a stray pin
@@ -697,12 +700,13 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   );
   // what the thin options bar shows: the options of the selected items' kind, else of the tool in hand
   const optKinds = new Set(chosen.map(i => (isDim(i) ? 'dim' : i.k === 'callout' ? 'callout' : isLine(i) ? 'line' : 'other')));
-  const toolKind = tool === 'dim' ? 'dim' : tool === 'callout' ? 'callout' : (tool === 'line' || tool === 'arrow' || tool === 'elbow') ? 'line' : null;
+  const toolKind = tool === 'dim' ? 'dim' : tool === 'callout' ? 'callout' : tool === 'arrow' ? 'line' : null;
   const optKind = chosen.length ? (optKinds.size === 1 && !optKinds.has('other') ? [...optKinds][0] : null) : toolKind;
   const dimNow = chosen.some(isDim) ? (chosen.filter(isDim).every(d => d.style === 'plan') ? 'plan' : 'simple') : dimStyle;
   const tipNow = chosen.some(i => i.k === 'callout') ? (chosen.filter(i => i.k === 'callout').every(d => d.tipStyle === 'dot') ? 'dot' : 'arrow') : tipStyle;
-  const toolEnds = tool === 'line' ? 'none' : 'end';
-  const endsNow = chosenLines.length ? (chosenLines.every(l => endsOf(l) === endsOf(chosenLines[0])) ? endsOf(chosenLines[0]) : null) : (lineOpts.ends || toolEnds);
+  const endsNow = chosenLines.length ? (chosenLines.every(l => endsOf(l) === endsOf(chosenLines[0])) ? endsOf(chosenLines[0]) : null) : lineOpts.ends;
+  const dimEndsNow = chosen.some(isDim) ? (chosen.filter(isDim).every(d => (d.ends || null) === (chosen.find(isDim).ends || null)) ? (chosen.find(isDim).ends || null) : undefined) : dimEnds;
+  const elbowNow = chosenLines.length ? chosenLines.every(l => l.elbow) : lineOpts.elbow;
   const dashNow = chosenLines.length ? chosenLines.every(l => l.dash) : lineOpts.dash;
   const sizeDerived = chosen.length ? Math.round(chosen[0].k === 'text' ? chosen[0].s : isPin(chosen[0]) ? chosen[0].r : chosen[0].w) : Math.round(customW ?? WIDTHS[widthIdx] * unitFor(bgRef.current));
   const groupBody = (g, pop) => {
@@ -713,7 +717,6 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
         <input type="number" className="sk-num" min="1" max="200" inputMode="numeric" title="กำหนดขนาดเส้นเอง (ตัวเลข) — ใช้กับที่เลือกอยู่และที่วาดต่อไป" aria-label="ขนาดเส้น (ตัวเลข)"
           value={sizeText ?? sizeDerived} onChange={e => { setSizeText(e.target.value); const v = parseFloat(e.target.value); if (Number.isFinite(v) && v >= 1) applySize(v); }} onBlur={() => setSizeText(null)} />
         <button type="button" className={`sk-btn${shownFill ? ' on' : ''}`} title="เติมสีอ่อนในรูปทรง" aria-label="เติมสี" aria-pressed={!!shownFill} onClick={toggleFill}>{ICON.fill}</button>
-        <button type="button" className={`sk-btn${chosenLines.length && chosenLines.every(i => i.elbow) ? ' on' : ''}`} title="เส้น/ลูกศรที่เลือก: หักมุมฉาก ⇄ ตรง" aria-label="หักมุม" aria-pressed={!!(chosenLines.length && chosenLines.every(i => i.elbow))} disabled={!chosenLines.length} onClick={toggleElbow}>⌐</button>
       </>
     );
     const own = g.tools.map(([key, icon, label]) => toolBtn(key, icon, label, pop));
@@ -752,7 +755,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     return { left: vx + editing.x * vk, top: vy + editing.y * vk, minWidth: 80, width: Math.max(120, 260 * vk), height: editing.size * 1.3 * vk * 2.2, fontSize: editing.size * vk, color: editing.c };
   })();
   return createPortal(
-    <div className="sketch-overlay" role="dialog" aria-modal="true" aria-label="เขียนด้วยมือ" onMouseDown={stop} onPointerDown={stop} onClick={stop}>
+    <div className="sketch-overlay" role="dialog" aria-modal="true" aria-label="เขียนด้วยมือ" onMouseDown={stop} onMouseUp={stop} onPointerDown={stop} onPointerUp={stop} onTouchStart={stop} onTouchEnd={stop} onClick={stop}>
       <div className={`sketch-bar${lay.wrap ? ' wrap' : ''}${lay.stack ? ' stack' : ''}`} ref={barRef}>
         <div className="sk-fixed">
           <button type="button" className="sk-btn" title="ปิด (ทิ้งที่วาด)" aria-label="ปิด" onClick={cancel}>✕</button>
@@ -792,20 +795,28 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
         {optKind && (
           <div className="sk-opts" role="group" aria-label="ตัวเลือกของเครื่องมือ" onPointerDown={stop} onMouseDown={stop} onClick={stop}>
             {optKind === 'dim' && (<>
-              <span className="sk-opts-t">เส้นวัดระยะ</span>
+              <span className="sk-opts-t">เส้นวัด</span>
               <button type="button" className={`sk-opt${dimNow === 'simple' ? ' on' : ''}`} aria-label="วัดระยะแบบง่าย" aria-pressed={dimNow === 'simple'} onClick={() => setDimStyleOpt('simple')}>{ICON.dim}<span>แบบง่าย</span></button>
               <button type="button" className={`sk-opt${dimNow === 'plan' ? ' on' : ''}`} aria-label="วัดระยะแบบแบบแปลน" aria-pressed={dimNow === 'plan'} onClick={() => setDimStyleOpt('plan')}>{ICON.dimPlan}<span>แบบแปลน</span></button>
+              <span className="sk-opts-t sep">ปลาย</span>
+              {[[null, 'วัดระยะหัวปกติ', ICON.endsBoth], ['dot', 'วัดระยะปลายจุดกลม', ICON.endsDot], ['none', 'วัดระยะไม่มีหัว', ICON.endsNone]].map(([v, label, ic]) => (
+                <button key={String(v)} type="button" className={`sk-opt icon${dimEndsNow === v ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={dimEndsNow === v} onClick={() => setDimEndsOpt(v)}>{ic}</button>
+              ))}
             </>)}
             {optKind === 'callout' && (<>
               <span className="sk-opts-t">ปลายชี้</span>
-              <button type="button" className={`sk-opt${tipNow === 'arrow' ? ' on' : ''}`} aria-label="ปลายชี้เป็นลูกศร" aria-pressed={tipNow === 'arrow'} onClick={() => setTipOpt('arrow')}>{ICON.tipArrow}<span>ลูกศร</span></button>
-              <button type="button" className={`sk-opt${tipNow === 'dot' ? ' on' : ''}`} aria-label="ปลายชี้เป็นจุดกลม" aria-pressed={tipNow === 'dot'} onClick={() => setTipOpt('dot')}>{ICON.tipDot}<span>จุดกลม</span></button>
+              {[['arrow', 'ปลายชี้เป็นลูกศร', ICON.endsEnd], ['dot', 'ปลายชี้เป็นจุดกลม', ICON.endsDot], ['none', 'ปลายชี้ไม่มีหัว', ICON.endsNone]].map(([v, label, ic]) => (
+                <button key={v} type="button" className={`sk-opt icon${tipNow === v ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tipNow === v} onClick={() => setTipOpt(v)}>{ic}</button>
+              ))}
             </>)}
             {optKind === 'line' && (<>
               <span className="sk-opts-t">ปลาย</span>
               {[['none', 'ปลายไม่มีหัว', ICON.endsNone], ['end', 'ปลายลูกศร', ICON.endsEnd], ['both', 'ปลายลูกศรสองข้าง', ICON.endsBoth], ['dot', 'ปลายจุดกลม', ICON.endsDot]].map(([v, label, ic]) => (
                 <button key={v} type="button" className={`sk-opt icon${endsNow === v ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={endsNow === v} onClick={() => setEndsOpt(v)}>{ic}</button>
               ))}
+              <span className="sk-opts-t sep">รูปร่าง</span>
+              <button type="button" className={`sk-opt icon${!elbowNow ? ' on' : ''}`} title="เส้นตรง" aria-label="รูปร่างเส้น: ตรง" aria-pressed={!elbowNow} onClick={() => setElbowOpt(false)}>{ICON.straight}</button>
+              <button type="button" className={`sk-opt icon${elbowNow ? ' on' : ''}`} title="หักมุมฉาก" aria-label="รูปร่างเส้น: หักมุม" aria-pressed={!!elbowNow} onClick={() => setElbowOpt(true)}>{ICON.bent}</button>
               <span className="sk-opts-t sep">เส้น</span>
               <button type="button" className={`sk-opt icon${!dashNow ? ' on' : ''}`} title="เส้นทึบ" aria-label="เส้นทึบ" aria-pressed={!dashNow} onClick={() => setDashOpt(false)}>{ICON.solid}</button>
               <button type="button" className={`sk-opt icon${dashNow ? ' on' : ''}`} title="เส้นประ" aria-label="เส้นประ" aria-pressed={!!dashNow} onClick={() => setDashOpt(true)}>{ICON.dashed}</button>

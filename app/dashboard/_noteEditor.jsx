@@ -17,7 +17,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useImperativeHandle, forw
 import { createPortal, flushSync } from 'react-dom';
 import { MAX_NOTE_IMAGES } from '../../lib/noteImages';
 import { CategorySelect } from './_components';
-import { shareText, useToast } from './_ui';
+import { shareText, useToast, useDialogGuard, dialogGuard } from './_ui';
 import { notesToPdf, saveFile } from '../../lib/notePdf';
 import { notesToMarkdownFiles } from '../../lib/noteMarkdown';
 import SketchEditor from './_sketch';
@@ -370,17 +370,7 @@ export function NoteImageButton({ state }) {
         📷{images.length > 0 && <span className="ne-badge">{images.length}</span>}
       </ToolBtn>
       <ToolBtn title="เขียน/วาดด้วยมือ" disabled={full} onClick={() => { state.rememberCaret(); state.openSketch(null, true); }}>✏️</ToolBtn>
-      {menu && createPortal(
-        <div className="convert-overlay" onMouseDown={e => { e.stopPropagation(); if (e.target === e.currentTarget) setMenu(false); }} onClick={e => e.stopPropagation()}>
-          <div className="convert-sheet" role="dialog" aria-modal="true" aria-label="เพิ่มรูป">
-            <h2 className="convert-title">📷 เพิ่มรูปใต้บรรทัดที่เคอร์เซอร์อยู่</h2>
-            <div style={{ display: 'grid', gap: '0.6rem' }}>
-              <button type="button" className="convert-choice" data-src="camera" onClick={() => { setMenu(false); camRef.current?.click(); }}><b>📸 ถ่ายรูป</b><span className="muted">เปิดแอปกล้องของเครื่องทันที</span></button>
-              <button type="button" className="convert-choice" data-src="gallery" onClick={() => { setMenu(false); galRef.current?.click(); }}><b>🖼️ เลือกจากเครื่อง</b><span className="muted">เลือกได้หลายรูปพร้อมกัน</span></button>
-            </div>
-            <button type="button" className="glass-btn-outline" style={{ width: '100%', marginTop: '0.8rem' }} onClick={() => setMenu(false)}>ยกเลิก</button>
-          </div>
-        </div>, document.body)}
+      {menu && <PhotoSourceSheet onClose={() => setMenu(false)} onCamera={() => { setMenu(false); camRef.current?.click(); }} onGallery={() => { setMenu(false); galRef.current?.click(); }} />}
       {pending && <PhotoChoiceSheet pending={pending} onChoose={a => {
         if (a === 'retake') { state.choosePending('cancel'); (pending.source === 'camera' ? camRef : galRef).current?.click(); } else state.choosePending(a);
       }} />}
@@ -388,8 +378,29 @@ export function NoteImageButton({ state }) {
   );
 }
 
+// 📷: take a photo / pick from the device
+function PhotoSourceSheet({ onClose, onCamera, onGallery }) {
+  useDialogGuard();
+  useEffect(() => {
+    const k = e => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    document.addEventListener('keydown', k, true); return () => document.removeEventListener('keydown', k, true);
+  }, [onClose]);
+  return createPortal(
+    <div className="convert-overlay" {...dialogGuard(onClose)}>
+      <div className="convert-sheet" role="dialog" aria-modal="true" aria-label="เพิ่มรูป">
+        <h2 className="convert-title">📷 เพิ่มรูปใต้บรรทัดที่เคอร์เซอร์อยู่</h2>
+        <div style={{ display: 'grid', gap: '0.6rem' }}>
+          <button type="button" className="convert-choice" data-src="camera" onClick={onCamera}><b>📸 ถ่ายรูป</b><span className="muted">เปิดแอปกล้องของเครื่องทันที</span></button>
+          <button type="button" className="convert-choice" data-src="gallery" onClick={onGallery}><b>🖼️ เลือกจากเครื่อง</b><span className="muted">เลือกได้หลายรูปพร้อมกัน</span></button>
+        </div>
+        <button type="button" className="glass-btn-outline" style={{ width: '100%', marginTop: '0.8rem' }} onClick={onClose}>ยกเลิก</button>
+      </div>
+    </div>, document.body);
+}
+
 // the photo(s) just taken or picked: put them in the note now, or draw on them first (asked every time, so camera and gallery behave the same)
 function PhotoChoiceSheet({ pending, onChoose }) {
+  useDialogGuard();
   const [urls, setUrls] = useState([]);
   useEffect(() => {                                           // (made here, not while rendering, so React's double-run in development cannot revoke them early)
     const made = pending.files.slice(0, 4).map(f => URL.createObjectURL(f));
@@ -402,7 +413,7 @@ function PhotoChoiceSheet({ pending, onChoose }) {
   }, [onChoose]);
   const n = pending.files.length, camera = pending.source === 'camera';
   return createPortal(
-    <div className="convert-overlay" onMouseDown={e => { e.stopPropagation(); }} onClick={e => e.stopPropagation()}>
+    <div className="convert-overlay" {...dialogGuard(null)}>
       <div className="convert-sheet" role="dialog" aria-modal="true" aria-label="รูปที่เพิ่งได้มา">
         <div className="photo-previews" data-count={n}>{urls.map((u, i) => <img key={i} src={u} alt="" />)}{n > 4 && <span className="photo-more">+{n - 4}</span>}</div>
         <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.7rem' }}>
@@ -610,7 +621,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
       const cur = blocksRef.current, want = at?.id || activeId.current, id = want && cur.some(x => x.id === want) ? want : null;
       const el = id ? els.current.get(id) : null;
       const res = insertImage(cur, id, at && at.id === id ? at.pos : (el ? Math.max(0, el.selectionStart - 1) : 0), fileId);
-      if (res && res.blocks !== cur) commit(res);
+      if (res && res.blocks !== cur) { commit({ blocks: res.blocks }); if (res.focus) activeId.current = res.focus.id; }       // no focus: a photo arriving must not raise the keyboard
     },
     replaceImage(oldId, newId) { const res = replaceImage(blocksRef.current, oldId, newId); if (!res) return false; commit(res); return true; },
     removeImageBlock(fileId) { const res = removeImageBlock(blocksRef.current, fileId); if (res) commit(res); },
@@ -1016,6 +1027,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
 // ---------- "download": one dialog for every format (Markdown / PDF) ----------
 // count > 1 also asks whether to make one file or one file per note (the answer is remembered on this device).
 export function DownloadSheet({ count, onPick, onClose }) {
+  useDialogGuard();
   const [pack, setPack] = useState(() => { try { return localStorage.getItem('jarvis.dlPack') === 'zip' ? 'zip' : 'one'; } catch { return 'one'; } });
   const choose = v => { setPack(v); try { localStorage.setItem('jarvis.dlPack', v); } catch { /* ignore */ } };
   useEffect(() => {
@@ -1025,7 +1037,7 @@ export function DownloadSheet({ count, onPick, onClose }) {
   }, [onClose]);
   return createPortal(
     // portal to <body> (the editor's click-outside handler must not see these clicks)
-    <div className="convert-overlay" onMouseDown={e => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }} onClick={e => e.stopPropagation()}>
+    <div className="convert-overlay" {...dialogGuard(onClose)}>
       <div className="convert-sheet" role="dialog" aria-modal="true" aria-label="ดาวน์โหลดโน้ต">
         <h2 className="convert-title">⬇️ ดาวน์โหลด{count > 1 ? ` ${count} โน้ต` : 'โน้ตนี้'}</h2>
         {count > 1 && (

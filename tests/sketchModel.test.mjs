@@ -244,3 +244,8 @@ test('lines: ends and dash load back; the default ends depend on the kind (an ar
   assert.equal(out[1].ends, undefined); assert.equal(out[1].dash, undefined);
   assert.equal(out[2].ends, 'dot');
 });
+
+test('dim and callout: the "no head" / dot ends load back and anything else falls back to the default', () => {
+  const out = cleanItems([dim({ ends: 'dot' }), dim({ id: 'D2', ends: 'none' }), dim({ id: 'D3', ends: 'x' }), call({ tipStyle: 'none' })]);
+  assert.equal(out[0].ends, 'dot'); assert.equal(out[1].ends, 'none'); assert.equal(out[2].ends, undefined); assert.equal(out[3].tipStyle, 'none');
+});
