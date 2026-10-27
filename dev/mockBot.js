@@ -45,7 +45,7 @@ export async function mockBotInternal(path, payload) {
       let deleted = 0, skipped = 0;
       for (const id of (payload.driveFileIds || []).slice(0, 10)) {
         const f = store().get(id);
-        if (f && /sketch_/.test(f.name || '') && f.mimeType === 'image/png') { store().delete(id); deleted++; } else skipped++;
+        if (f && /sketch_/.test(f.name || '') && /^image\/(png|jpeg)$/.test(f.mimeType)) { store().delete(id); deleted++; } else skipped++;
       }
       return { ok: true, deleted, skipped };
     }

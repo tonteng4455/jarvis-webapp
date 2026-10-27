@@ -142,7 +142,7 @@ export function useNoteImages(initial, scope = 'note') {
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { uploadingRef.current = uploading > 0; }, [uploading]);
 
-  async function addFiles(fileList) {
+  async function addFiles(fileList, inline = false) {          // inline: put each photo at the caret (else it joins the strip)
     const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
     setError('');
@@ -161,6 +161,7 @@ export function useNoteImages(initial, scope = 'note') {
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.image) {
           setImages(prev => [...prev, data.image]);
+          if (inline) { try { hooks.current.saved?.(data.image, null, true); } catch { /* it is in the note's list anyway */ } }
         } else if (data.error === 'google_not_connected') {
           setConnectUrl(data.connectUrl || '');
           setError(data.connectUrl
@@ -180,6 +181,7 @@ export function useNoteImages(initial, scope = 'note') {
   }
 
   // ----- hand-drawn pictures -----
+  const [viewing, setViewing] = useState(null);             // the photo shown full size
   const [sketch, setSketch] = useState(null);                // null | { image, inline } (image = null for a new one; inline = place it at the caret)
   const openSketch = (image, inline = false) => {
     if (!image && imagesRef.current.length >= MAX_NOTE_IMAGES) { setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต`); return; }
@@ -191,7 +193,8 @@ export function useNoteImages(initial, scope = 'note') {
     setError(''); setConnectUrl('');
     try {
       const form = new FormData();
-      form.append('file', new File([blob], 'sketch.png', { type: 'image/png' })); form.append('kind', 'sketch');
+      const jpg = blob.type === 'image/jpeg';
+      form.append('file', new File([blob], jpg ? 'sketch.jpg' : 'sketch.png', { type: jpg ? 'image/jpeg' : 'image/png' })); form.append('kind', 'sketch');
       const res = await fetch('/api/notes/images', { method: 'POST', body: form });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.image) {
@@ -215,7 +218,7 @@ export function useNoteImages(initial, scope = 'note') {
     setImages(prev => prev.filter(im => im.drive_file_id !== id));
     if (gone?.kind === 'sketch') trashLater(id);           // a drawing is only a file of ours; a photo stays in Drive on purpose
   }
-  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage, sketch, setSketch, openSketch, saveSketch, scope, inlineIds, setInlineIds, hooks };
+  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage, sketch, setSketch, openSketch, saveSketch, scope, inlineIds, setInlineIds, hooks, viewing, setViewing };
 }
 
 function ImageThumb({ image, onOpen, onRemove }) {
@@ -244,7 +247,7 @@ function InlineImage({ image, onOpen, onRemove }) {
     <div className="kl-imgbox" data-img={image?.drive_file_id || ''}>
       {image && !failed ? (
         <img src={driveImageSrc(image.drive_file_id)} alt="ลายมือในโน้ต" loading="lazy" referrerPolicy="no-referrer"
-          title="แตะเพื่อแก้ไข" onClick={() => onOpen(image)} onError={() => setFailed(true)} />
+          title={image.kind === 'sketch' ? 'แตะเพื่อแก้ไข' : 'แตะเพื่อดู / เขียนทับ'} onClick={() => onOpen(image)} onError={() => setFailed(true)} />
       ) : (
         <div className="kl-imgmissing">🖼️ โหลดภาพไม่ได้</div>
       )}
@@ -323,8 +326,8 @@ export function NoteImageButton({ state }) {
   return (
     <>
       <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-        onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
-      <ToolBtn title={`เพิ่มรูป (${images.length}/${MAX_NOTE_IMAGES})`} disabled={images.length >= MAX_NOTE_IMAGES}
+        onChange={e => { addFiles(e.target.files, true); e.target.value = ''; }} />
+      <ToolBtn title={`เพิ่มรูปตรงเคอร์เซอร์ (${images.length}/${MAX_NOTE_IMAGES})`} disabled={images.length >= MAX_NOTE_IMAGES}
         onClick={() => inputRef.current?.click()}>
         📷{images.length > 0 && <span className="ne-badge">{images.length}</span>}
       </ToolBtn>
@@ -337,7 +340,7 @@ export function NoteImageButton({ state }) {
 export function NoteImageStrip({ state }) {
   const { uploading, error, connectUrl, removeImage, sketch } = state;
   const images = state.images.filter(im => !state.inlineIds.has(im.drive_file_id));      // a picture placed in the text is shown there
-  const [viewing, setViewing] = useState(null);
+  const { viewing, setViewing } = state;
   return (
     <>
       {sketch && (
@@ -369,6 +372,8 @@ export function NoteImageStrip({ state }) {
         <div className="note-lightbox" onMouseDown={e => e.stopPropagation()} onClick={() => setViewing(null)}>
           <img src={driveImageSrc(viewing.drive_file_id)} alt={viewing.name || 'รูปในโน้ต'} referrerPolicy="no-referrer" />
           <button type="button" className="note-lightbox-close" title="ปิด">✕</button>
+          <button type="button" className="note-lightbox-draw" title="ขีดเขียน วงหรือเขียนข้อความทับรูปนี้ (รูปเดิมไม่เสียหาย)"
+            onClick={e => { e.stopPropagation(); const im = viewing; setViewing(null); state.openSketch(im); }}>✏️ เขียนทับรูป</button>
         </div>,
         document.body
       )}
@@ -1018,7 +1023,7 @@ export function NoteEditorPanel({
       <input className="note-title-input" placeholder="หัวข้อ" value={titleValue} onChange={e => onTitle(e.target.value)} autoFocus={isNew}
         enterKeyHint="next" onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); bodyRef.current?.focusStart(); } }} />
       <BlockEditor key={editorKey} ref={bodyRef} initial={initialContent} onChange={handleChange} onActive={setInfo}
-        images={imgState.images} onOpenImage={im => imgState.openSketch(im)}
+        images={imgState.images} onOpenImage={im => (im.kind === 'sketch' ? imgState.openSketch(im) : imgState.setViewing(im))}
         onRemoveImage={id => { bodyRef.current?.removeImageBlock(id); imgState.removeImage(id); }} />
 
       <div className="ne-bottom" onMouseDown={e => e.stopPropagation()}>

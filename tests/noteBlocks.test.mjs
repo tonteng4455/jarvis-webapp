@@ -398,13 +398,13 @@ test('image: Backspace at the start of the line under a picture does not eat the
   assert.deepEqual(types(r.blocks), ['text:"x"', `img:"${FID}"`, 'text:"yy"']);
 });
 
-test('image: insert after a list row, in the middle of a text block, and at the end', () => {
+test('image: insert under the line the caret is on (list row or text line), and at the end', () => {
   const l = parseContent('- a\n- b');
   let r = insertImage(l, l[0].id, 0, FID);
   assert.deepEqual(types(r.blocks), ['bullet:"a"', `img:"${FID}"`, 'text:""', 'bullet:"b"']);
   const t = parseContent('one\ntwo\nthree');
   r = insertImage(t, t[0].id, 'one\ntw'.length, FID);
-  assert.deepEqual(types(r.blocks), ['text:"one"', `img:"${FID}"`, 'text:"two\\nthree"']);
+  assert.deepEqual(types(r.blocks), ['text:"one\\ntwo"', `img:"${FID}"`, 'text:"three"']);   // under the line the caret is on
   r = insertImage(t, t[0].id, t[0].text.length, FID);
   assert.deepEqual(types(r.blocks), ['text:"one\\ntwo\\nthree"', `img:"${FID}"`, 'text:""']);
   r = insertImage(l, null, 0, FID); assert.equal(r.blocks.filter(x => x.type === 'img').length, 1);

@@ -9,6 +9,8 @@
 // • Tablet with a pen: the pen draws, fingers move and zoom the board (a resting palm never leaves a mark).
 //   Phone / no pen: one finger draws, two fingers move and zoom.
 // • Saved as a PNG with the drawing embedded (lib/sketchPng.js) → the same picture can be opened and edited again.
+// • A PHOTO can be opened to draw on (circle / arrow / write on it): saved as a JPEG with the strokes AND the original photo inside
+//   (lib/sketchJpeg.js), so it can be edited again and "erase all" brings the photo back.
 // • Backed up on this device while drawing (lib/draft.js), so a phone call or an app switch loses nothing.
 // The paper is always white (so ink reads in light and dark themes). The model / geometry lives in lib/sketchModel.js,
 // the painting in lib/sketchDraw.js.
@@ -16,6 +18,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { embedScene, readScene } from '../../lib/sketchPng';
+import { embedInJpeg, readFromJpeg, sniffImageType } from '../../lib/sketchJpeg';
 import { loadDraft, saveDraft, clearDraft } from '../../lib/draft';
 import {
   FONT, TEXT_SIZES, LABEL_SIZE, clamp, uid, isShape, isLine, cleanItems, serializeItems, sig, byIdMap, sceneBounds, boundsOf,
@@ -53,6 +56,37 @@ async function exportPng(items, bg) {
   try { return new Blob([await embedScene(png, { v: 2, items: serializeItems(items) })], { type: 'image/png' }); } catch { return blob; }
 }
 
+// a drawing on a photo → a JPEG (photo + strokes painted together) that also carries the strokes and the original photo
+async function exportOnPhoto(items, bg, original) {
+  const b = sceneBounds(items, bg, measureText); if (!b || !original) return null;
+  const x0 = Math.floor(b[0]), y0 = Math.floor(b[1]), w = Math.max(64, Math.ceil(b[2]) - x0), h = Math.max(64, Math.ceil(b[3]) - y0);
+  const scale = Math.min(1, EXPORT_MAX_SIDE / Math.max(w, h), Math.sqrt(EXPORT_MAX_PIXELS / (w * h)));
+  const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(w * scale)); cv.height = Math.max(1, Math.round(h * scale));
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.translate(-x0 * scale, -y0 * scale); paintItems(ctx, items, bg, scale, byIdMap(items));
+  const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.88));
+  if (!blob) return null;
+  const jpeg = new Uint8Array(await blob.arrayBuffer());
+  try { return new Blob([await embedInJpeg(jpeg, { v: 2, items: serializeItems(items) }, original)], { type: 'image/jpeg' }); } catch { return blob; }
+}
+
+const PHOTO_MAX_EDGE = 1600;
+// bytes of any photo → { img, w, h, url } to paint, and the same photo as a bounded JPEG to keep inside the saved file
+async function decodePhoto(bytes, mime, normalise) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: mime || 'application/octet-stream' }));
+  const img = await new Promise((ok, no) => { const el = new Image(); el.onload = () => ok(el); el.onerror = no; el.src = url; });
+  if (!normalise) return { bg: { img, w: img.naturalWidth, h: img.naturalHeight, url }, original: { bytes, mime } };
+  const k = Math.min(1, PHOTO_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+  URL.revokeObjectURL(url);
+  const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.9));
+  if (!blob) throw new Error('jpeg');
+  const norm = new Uint8Array(await blob.arrayBuffer());
+  return decodePhoto(norm, 'image/jpeg', false);
+}
+
 // imageUrl: reopen an existing picture · draftKey: where the on-device backup lives · onSave(blob) → Promise<boolean> · onCancel()
 export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const stageRef = useRef(null), baseRef = useRef(null), liveRef = useRef(null), taRef = useRef(null);
@@ -60,6 +94,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const items = useRef([]);
   const undo = useRef([]), redo = useRef([]);
   const bgRef = useRef(null);
+  const originalRef = useRef(null);                // the photo under a drawing-on-a-photo: { bytes, mime } (kept inside the saved file)
   const cur = useRef(null);                     // the item being drawn right now (stroke / shape / line preview)
   const ptrs = useRef(new Map());
   const g = useRef(null);                       // the running gesture: { type, pid, … }
@@ -163,14 +198,15 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
           const res = await fetch(imageUrl, { credentials: 'same-origin' });
           if (!res.ok) throw new Error(String(res.status));
           const bytes = new Uint8Array(await res.arrayBuffer());
-          const scene = await readScene(bytes);
-          const list = scene?.items || scene?.strokes;                          // v2 (items) · v1 (strokes only)
+          const scene = await readScene(bytes);                                 // a PNG drawing (v2 items · v1 strokes)
+          const onPhoto = scene ? null : await readFromJpeg(bytes);             // a JPEG: a drawing on a photo
+          const list = (onPhoto ? onPhoto.scene : scene)?.items || scene?.strokes;
           if (Array.isArray(list)) loaded = cleanItems(list);
-          else {
-            const url = URL.createObjectURL(new Blob([bytes]));
-            const img = await new Promise((ok, no) => { const el = new Image(); el.onload = () => ok(el); el.onerror = no; el.src = url; });
-            bgRef.current = { img, w: img.naturalWidth, h: img.naturalHeight, url };
-            setLoadNote('รูปนี้ไม่มีข้อมูลเส้นให้แก้ — วาดทับได้ แต่ของเดิมลบไม่ได้');
+          if (onPhoto?.bg) { const d = await decodePhoto(onPhoto.bg.bytes, onPhoto.bg.mime, false); bgRef.current = d.bg; originalRef.current = d.original; }
+          else if (!Array.isArray(list)) {                                      // a plain photo / picture: draw on top of it
+            const d = await decodePhoto(bytes, sniffImageType(bytes), true);
+            bgRef.current = d.bg; originalRef.current = d.original;
+            setLoadNote('เขียนทับรูปได้ — เส้นที่วาดแก้/ลบทีหลังได้ รูปเดิมยังอยู่ครบในไฟล์');
           }
         } catch { if (alive) setError('เปิดรูปไม่สำเร็จ ลองอีกครั้งครับ'); }
       }
@@ -372,6 +408,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
 
   const onDown = e => {
     e.preventDefault();
+    if (loadNote) setLoadNote('');
     if (editRef.current) endEdit(true);
     if (e.pointerType === 'pen') penSeen.current = true;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
@@ -520,7 +557,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     setSaving(true); setError('');
     const failed = () => { closedClean.current = false; writeBackup(); setError('บันทึกไม่สำเร็จ — ที่วาดยังอยู่ ลองกด ✓ อีกครั้งครับ'); setSaving(false); };
     try {
-      const blob = await exportPng(items.current, bgRef.current);
+      const blob = bgRef.current ? await exportOnPhoto(items.current, bgRef.current, originalRef.current) : await exportPng(items.current, null);
       if (!blob) throw new Error('export');
       closedClean.current = true;                    // set BEFORE handing over: a successful save closes this pad, and the pad must not re-back-up on its way out
       const ok = await onSave(blob);
@@ -582,7 +619,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
       </div>
       {/* one fixed-height line, so the board never jumps when the tool (and its hint) changes */}
       <div className={`sketch-hint${error ? ' err' : (restored || loadNote) ? ' note' : ''}`} role="status">{error || loadNote || (restored ? '📝 กู้คืนที่วาดค้างไว้ให้แล้ว' : (multi ? HINTS.multi : HINTS[tool]) || '')}</div>
-      <div className={`sketch-stage tool-${tool}`} ref={stageRef} data-strokes={n} data-tool={tool} data-selected={sel ? sel.k : ''} data-selcount={chosen.length} data-loading={loading ? '1' : '0'}
+      <div className={`sketch-stage tool-${tool}`} ref={stageRef} data-strokes={n} data-tool={tool} data-selected={sel ? sel.k : ''} data-selcount={chosen.length} data-loading={loading ? '1' : '0'} data-bg={bgRef.current ? '1' : '0'}
         data-view={`${Math.round(vx)},${Math.round(vy)},${vk.toFixed(3)}`}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={e => e.preventDefault()}>
         <canvas ref={baseRef} className="sketch-canvas" />
