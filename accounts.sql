@@ -21,7 +21,7 @@ create index if not exists user_identities_user on user_identities (user_id);
 create or replace function merge_accounts(p_from text, p_to text) returns void
 language plpgsql as $$
 declare
-  t text;
+  tbl text;
   r record;
   c record;
   tables text[] := array['notes','tasks','calendar_events','expenses','user_files','user_lexicon','google_accounts','contacts',
@@ -35,17 +35,17 @@ begin
       from users f where f.line_user_id = p_from;
   end if;
 
-  foreach t in array tables loop
-    if to_regclass('public.' || t) is null then continue; end if;
-    if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = t and column_name = 'user_id') then continue; end if;
+  foreach tbl in array tables loop
+    if to_regclass('public.' || tbl) is null then continue; end if;
+    if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = tbl and column_name = 'user_id') then continue; end if;
     begin
-      execute format('update %I set user_id = $1 where user_id = $2', t) using p_to, p_from;
+      execute format('update %I set user_id = $1 where user_id = $2', tbl) using p_to, p_from;
     exception when unique_violation then
-      for r in execute format('select ctid::text as c from %I where user_id = $1', t) using p_from loop
+      for r in execute format('select ctid::text as c from %I where user_id = $1', tbl) using p_from loop
         begin
-          execute format('update %I set user_id = $1 where ctid = $2::tid', t) using p_to, r.c;
+          execute format('update %I set user_id = $1 where ctid = $2::tid', tbl) using p_to, r.c;
         exception when unique_violation then
-          execute format('delete from %I where ctid = $1::tid', t) using r.c;
+          execute format('delete from %I where ctid = $1::tid', tbl) using r.c;
         end;
       end loop;
     end;
@@ -54,11 +54,11 @@ begin
   -- the person row: fill what p_to is missing from p_from, add up the storage used
   for c in select column_name from information_schema.columns
             where table_schema = 'public' and table_name = 'users' and column_name not in ('line_user_id', 'used_storage_bytes', 'created_at') loop
-    execute format('update users t set %1$I = f.%1$I from users f where t.line_user_id = $1 and f.line_user_id = $2 and t.%1$I is null and f.%1$I is not null', c.column_name) using p_to, p_from;
+    execute format('update users tu set %1$I = fu.%1$I from users fu where tu.line_user_id = $1 and fu.line_user_id = $2 and tu.%1$I is null and fu.%1$I is not null', c.column_name) using p_to, p_from;
   end loop;
   if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'users' and column_name = 'used_storage_bytes') then
-    update users t set used_storage_bytes = coalesce(t.used_storage_bytes, 0) + coalesce(f.used_storage_bytes, 0)
-      from users f where t.line_user_id = p_to and f.line_user_id = p_from;
+    update users tu set used_storage_bytes = coalesce(tu.used_storage_bytes, 0) + coalesce(fu.used_storage_bytes, 0)
+      from users fu where tu.line_user_id = p_to and fu.line_user_id = p_from;
   end if;
   delete from users where line_user_id = p_from;
 
