@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { linePath, translateMany, duplicateItems, itemsInRect, cleanItems, edgePoint, lineEnds, insideShape, shapeAt, hitItem, topItemAt, translateItem, resizeShape, removeItems, byIdMap, sceneBounds, boundsOf, duplicateItem, serializeItems } from '../lib/sketchModel.js';
+import { dimOffsetHandle, dimOffsetFor, isShape, dimGeom, dimLabelBox, calloutLine, nextPinNumber, linePath, translateMany, duplicateItems, itemsInRect, cleanItems, edgePoint, lineEnds, insideShape, shapeAt, hitItem, topItemAt, translateItem, resizeShape, removeItems, byIdMap, sceneBounds, boundsOf, duplicateItem, serializeItems } from '../lib/sketchModel.js';
 
 const rect = (o = {}) => ({ k: 'rect', id: 'r1', c: '#000', w: 3, f: false, x: 100, y: 100, bw: 200, bh: 100, t: '', ...o });
 const arrow = (o = {}) => ({ k: 'arrow', id: 'a1', c: '#000', w: 3, a: [0, 0], e: [50, 0], from: null, to: null, ...o });
@@ -170,4 +170,69 @@ test('marquee picks only what lies completely inside', () => {
   assert.deepEqual(itemsInRect([a, b], [-10, -10, 150, 100]), ['A']);
   assert.deepEqual(itemsInRect([a, b], [450, 300, -10, -10]).sort(), ['A', 'B']);
   assert.deepEqual(itemsInRect([a, b], [50, 50, 90, 90]), []);
+});
+
+// ---- measured distances, callouts, pins ----
+const dim = (o = {}) => ({ k: 'dim', id: 'D', c: '#e03131', w: 4, a: [0, 0], e: [300, 0], style: 'simple', off: 48, t: '3.50 ม.', ...o });
+const call = (o = {}) => ({ k: 'callout', id: 'C', c: '#f08c00', w: 3, f: true, x: 200, y: 100, bw: 160, bh: 60, t: 'รอยร้าว', tip: [50, 20], tipStyle: 'arrow', ...o });
+const pin = (o = {}) => ({ k: 'pin', id: 'P', c: '#e03131', x: 10, y: 20, n: 1, r: 18, ...o });
+
+test('dim: the simple style measures a → e; the plan style draws the dimension line beside it with extension lines', () => {
+  const g = dimGeom(dim());
+  assert.deepEqual(g.p0, [0, 0]); assert.deepEqual(g.p1, [300, 0]); assert.equal(g.ext.length, 0); assert.deepEqual(g.mid, [150, 0]);
+  const p = dimGeom(dim({ style: 'plan', off: 50 }));
+  assert.ok(Math.abs(p.p0[1] - 50) < 1e-9 && Math.abs(p.p1[1] - 50) < 1e-9, 'offset to one side, parallel');
+  assert.equal(p.ext.length, 2); assert.ok(p.ext[0][1][1] > 50, 'the extension line runs a little past the dimension line');
+  const q = dimGeom(dim({ style: 'plan', off: -50 })); assert.ok(q.p0[1] < 0, 'a negative offset goes to the other side');
+});
+
+test('dim: the label is centred on the line and never rotated (its box is wider than tall for a horizontal reading)', () => {
+  const v = dim({ a: [0, 0], e: [0, 300] }), b = dimLabelBox(v);
+  assert.ok(Math.abs((b[0] + b[2]) / 2) < 1e-9 && Math.abs((b[1] + b[3]) / 2 - 150) < 1e-9);
+  assert.ok(b[2] - b[0] > b[3] - b[1]);
+});
+
+test('dim / callout / pin load back, with defaults and limits', () => {
+  const out = cleanItems([dim({ off: 99999, t: 'x'.repeat(200) }), call({ tip: undefined, tipStyle: 'zzz' }), pin({ n: 0, r: 1000 }), { k: 'dim', a: [0], e: [1, 2] }]);
+  assert.equal(out.length, 3);
+  assert.equal(out[0].off, 4000); assert.equal(out[0].t.length, 80);
+  assert.equal(out[1].tipStyle, 'arrow'); assert.equal(out[1].tip.length, 2);
+  assert.equal(out[2].n, 1); assert.equal(out[2].r, 80);
+});
+
+test('callout: it is a shape (can be glued, resized, labelled), its pointer is part of it for hit testing and bounds', () => {
+  const c = call(); assert.equal(isShape(c), true);
+  const [[sx, sy], [tx, ty]] = calloutLine(c); assert.deepEqual([tx, ty], [50, 20]); assert.ok(sx >= 200 && sx <= 360);
+  const byId = byIdMap([c]);
+  assert.equal(hitItem(c, 120, 60, 6, byId), true, 'on the pointer, away from the box');
+  assert.equal(hitItem(c, 120, 200, 6, byId), false);
+  const bb = boundsOf(c, byId); assert.ok(bb[0] <= 50 && bb[1] <= 20 && bb[2] >= 360);
+});
+
+test('callout / dim / pin move as a whole (a callout takes its tip along)', () => {
+  const c = translateItem(call(), 10, 5); assert.deepEqual(c.tip, [60, 25]); assert.equal(c.x, 210);
+  const d = translateItem(dim(), 7, 9); assert.deepEqual(d.a, [7, 9]); assert.deepEqual(d.e, [307, 9]);
+  const p = translateItem(pin(), 1, 2); assert.equal(p.x, 11); assert.equal(p.y, 22);
+});
+
+test('pins: the next number counts on; duplicating pins numbers the copies on', () => {
+  assert.equal(nextPinNumber([]), 1);
+  assert.equal(nextPinNumber([pin({ id: 'a', n: 1 }), pin({ id: 'b', n: 4 })]), 5);
+  const { copies } = duplicateItems([pin({ id: 'a', n: 1 }), pin({ id: 'b', n: 2 })], ['a', 'b']);
+  assert.deepEqual(copies.map(c => c.n), [3, 4]);
+});
+
+test('dim: a label click selects it; the line and extension lines are hit too', () => {
+  const d = dim({ style: 'plan', off: 50 }), byId = byIdMap([d]);
+  assert.equal(hitItem(d, 150, 50, 6, byId), true);       // the label
+  assert.equal(hitItem(d, 20, 50, 6, byId), true);        // the dimension line
+  assert.equal(hitItem(d, 0, 20, 6, byId), true);         // an extension line
+  assert.equal(hitItem(d, 150, 200, 6, byId), false);
+});
+
+test('dim: the offset follows the pointer (signed, along the normal) and the handle sits on the dimension line', () => {
+  const d = dim({ style: 'plan', off: 50 });
+  assert.ok(Math.abs(dimOffsetFor(d, 120, 80) - 80) < 1e-9);
+  assert.ok(Math.abs(dimOffsetFor(d, 120, -30) + 30) < 1e-9);
+  const h = dimOffsetHandle(d); assert.ok(Math.abs(h[1] - 50) < 1e-9 && Math.abs(h[0] - 75) < 1e-9);
 });

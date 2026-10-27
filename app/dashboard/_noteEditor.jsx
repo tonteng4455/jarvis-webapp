@@ -138,6 +138,9 @@ export function useNoteImages(initial, scope = 'note') {
   const uploadingRef = useRef(false);
   const [inlineIds, setInlineIds] = useState(() => new Set());   // pictures placed inside the note's text (not shown in the strip)
   const hooks = useRef({});                                       // the editor body registers what to do with a saved drawing
+  const caretRef = useRef(null);                                  // where the caret was when 📷 / ✏️ was pressed (used once, then the live caret follows the new picture)
+  const rememberCaret = () => { try { caretRef.current = hooks.current.caret?.() || null; } catch { caretRef.current = null; } };
+  const takeCaret = () => { const c = caretRef.current; caretRef.current = null; return c; };
   const imagesRef = useRef(images);
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { uploadingRef.current = uploading > 0; }, [uploading]);
@@ -161,7 +164,7 @@ export function useNoteImages(initial, scope = 'note') {
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.image) {
           setImages(prev => [...prev, data.image]);
-          if (inline) { try { hooks.current.saved?.(data.image, null, true); } catch { /* it is in the note's list anyway */ } }
+          if (inline) { try { hooks.current.saved?.(data.image, null, true, takeCaret()); } catch { /* it is in the note's list anyway */ } }
         } else if (data.error === 'google_not_connected') {
           setConnectUrl(data.connectUrl || '');
           setError(data.connectUrl
@@ -182,6 +185,8 @@ export function useNoteImages(initial, scope = 'note') {
 
   // ----- hand-drawn pictures -----
   const [viewing, setViewing] = useState(null);             // the photo shown full size
+  const [pending, setPending] = useState(null);              // photos just taken / picked, waiting for "insert now / draw on it first": { files, source }
+  const drawQueue = useRef([]);                              // the rest of a batch that is being drawn on one by one
   const [sketch, setSketch] = useState(null);                // null | { image, inline } (image = null for a new one; inline = place it at the caret)
   const openSketch = (image, inline = false) => {
     if (!image && imagesRef.current.length >= MAX_NOTE_IMAGES) { setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต`); return; }
@@ -200,8 +205,10 @@ export function useNoteImages(initial, scope = 'note') {
       if (res.ok && data.image) {
         setImages(prev => replaceId ? prev.map(im => im.drive_file_id === replaceId ? data.image : im) : [...prev, data.image]);
         if (replaceId) trashLater(replaceId);
-        try { hooks.current.saved?.(data.image, replaceId, inline); } catch { /* the picture is in the note's list anyway */ }
+        try { hooks.current.saved?.(data.image, replaceId, inline, takeCaret()); } catch { /* the picture is in the note's list anyway */ }
+        if (sketch?.photoUrl) URL.revokeObjectURL(sketch.photoUrl);
         setSketch(null);
+        if (sketch?.photoUrl) drawNextPhoto();
         return true;
       }
       if (data.error === 'google_not_connected') {
@@ -213,12 +220,35 @@ export function useNoteImages(initial, scope = 'note') {
     } catch { return false; }
   }
 
+  // ----- a photo just taken / picked: insert it, or draw on it first -----
+  const pickFiles = (fileList, source) => {
+    const files = Array.from(fileList || []).filter(f => f.type.startsWith('image/')); if (!files.length) return;
+    setError(''); setPending({ files, source });
+  };
+  async function drawNextPhoto() {
+    const file = drawQueue.current.shift(); if (!file) return;
+    if (imagesRef.current.length >= MAX_NOTE_IMAGES) { setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต`); drawQueue.current = []; return; }
+    const small = await shrinkImage(file);
+    setSketch({ image: null, inline: true, photoUrl: URL.createObjectURL(small), photoFile: small, photoKey: `p${Date.now().toString(36)}` });
+  }
+  const choosePending = action => {
+    const p = pending; setPending(null); if (!p) return;
+    if (action === 'insert') addFiles(p.files, true);
+    else if (action === 'draw') { drawQueue.current = [...p.files]; drawNextPhoto(); }
+  };
+  // closing the pad on a photo that was not drawn on (or whose drawing was thrown away) still puts the photo in the note
+  async function cancelPhotoSketch() {
+    const sk = sketch; setSketch(null);
+    if (sk?.photoUrl) { URL.revokeObjectURL(sk.photoUrl); if (sk.photoFile) await addFiles([sk.photoFile], true); }
+    drawNextPhoto();
+  }
+
   function removeImage(id) {
     const gone = imagesRef.current.find(im => im.drive_file_id === id);
     setImages(prev => prev.filter(im => im.drive_file_id !== id));
     if (gone?.kind === 'sketch') trashLater(id);           // a drawing is only a file of ours; a photo stays in Drive on purpose
   }
-  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage, sketch, setSketch, openSketch, saveSketch, scope, inlineIds, setInlineIds, hooks, viewing, setViewing };
+  return { images, setImages, uploading, uploadingRef, error, connectUrl, addFiles, removeImage, sketch, setSketch, openSketch, saveSketch, scope, inlineIds, setInlineIds, hooks, rememberCaret, viewing, setViewing, pending, pickFiles, choosePending, cancelPhotoSketch };
 }
 
 function ImageThumb({ image, onOpen, onRemove }) {
@@ -321,19 +351,68 @@ function keepCaretVisible(ta) {
 
 // ---------- photos: the add button lives in the toolbar, the thumbnails sit under it ----------
 export function NoteImageButton({ state }) {
-  const { images, addFiles } = state;
-  const inputRef = useRef(null);
+  const { images, pickFiles, pending } = state;
+  const camRef = useRef(null), galRef = useRef(null);
+  const [menu, setMenu] = useState(false);                     // "take a photo / pick from the device"
+  useEffect(() => {
+    if (!menu) return undefined;
+    const k = e => { if (e.key === 'Escape') { e.stopPropagation(); setMenu(false); } };
+    document.addEventListener('keydown', k, true); return () => document.removeEventListener('keydown', k, true);
+  }, [menu]);
+  const full = images.length >= MAX_NOTE_IMAGES;
   return (
     <>
-      <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-        onChange={e => { addFiles(e.target.files, true); e.target.value = ''; }} />
-      <ToolBtn title={`เพิ่มรูปตรงเคอร์เซอร์ (${images.length}/${MAX_NOTE_IMAGES})`} disabled={images.length >= MAX_NOTE_IMAGES}
-        onClick={() => inputRef.current?.click()}>
+      <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} data-src="camera"
+        onChange={e => { pickFiles(e.target.files, 'camera'); e.target.value = ''; }} />
+      <input ref={galRef} type="file" accept="image/*" multiple style={{ display: 'none' }} data-src="gallery"
+        onChange={e => { pickFiles(e.target.files, 'gallery'); e.target.value = ''; }} />
+      <ToolBtn title={`เพิ่มรูปตรงเคอร์เซอร์: ถ่ายรูปหรือเลือกจากเครื่อง (${images.length}/${MAX_NOTE_IMAGES})`} disabled={full} onClick={() => { state.rememberCaret(); setMenu(true); }}>
         📷{images.length > 0 && <span className="ne-badge">{images.length}</span>}
       </ToolBtn>
-      <ToolBtn title="เขียน/วาดด้วยมือ" disabled={images.length >= MAX_NOTE_IMAGES} onClick={() => state.openSketch(null, true)}>✏️</ToolBtn>
+      <ToolBtn title="เขียน/วาดด้วยมือ" disabled={full} onClick={() => { state.rememberCaret(); state.openSketch(null, true); }}>✏️</ToolBtn>
+      {menu && createPortal(
+        <div className="convert-overlay" onMouseDown={e => { e.stopPropagation(); if (e.target === e.currentTarget) setMenu(false); }} onClick={e => e.stopPropagation()}>
+          <div className="convert-sheet" role="dialog" aria-modal="true" aria-label="เพิ่มรูป">
+            <h2 className="convert-title">📷 เพิ่มรูปใต้บรรทัดที่เคอร์เซอร์อยู่</h2>
+            <div style={{ display: 'grid', gap: '0.6rem' }}>
+              <button type="button" className="convert-choice" data-src="camera" onClick={() => { setMenu(false); camRef.current?.click(); }}><b>📸 ถ่ายรูป</b><span className="muted">เปิดแอปกล้องของเครื่องทันที</span></button>
+              <button type="button" className="convert-choice" data-src="gallery" onClick={() => { setMenu(false); galRef.current?.click(); }}><b>🖼️ เลือกจากเครื่อง</b><span className="muted">เลือกได้หลายรูปพร้อมกัน</span></button>
+            </div>
+            <button type="button" className="glass-btn-outline" style={{ width: '100%', marginTop: '0.8rem' }} onClick={() => setMenu(false)}>ยกเลิก</button>
+          </div>
+        </div>, document.body)}
+      {pending && <PhotoChoiceSheet pending={pending} onChoose={a => {
+        if (a === 'retake') { state.choosePending('cancel'); (pending.source === 'camera' ? camRef : galRef).current?.click(); } else state.choosePending(a);
+      }} />}
     </>
   );
+}
+
+// the photo(s) just taken or picked: put them in the note now, or draw on them first (asked every time, so camera and gallery behave the same)
+function PhotoChoiceSheet({ pending, onChoose }) {
+  const [urls, setUrls] = useState([]);
+  useEffect(() => {                                           // (made here, not while rendering, so React's double-run in development cannot revoke them early)
+    const made = pending.files.slice(0, 4).map(f => URL.createObjectURL(f));
+    setUrls(made);
+    return () => made.forEach(u => URL.revokeObjectURL(u));
+  }, [pending]);
+  useEffect(() => {
+    const k = e => { if (e.key === 'Escape') { e.stopPropagation(); onChoose('cancel'); } };
+    document.addEventListener('keydown', k, true); return () => document.removeEventListener('keydown', k, true);
+  }, [onChoose]);
+  const n = pending.files.length, camera = pending.source === 'camera';
+  return createPortal(
+    <div className="convert-overlay" onMouseDown={e => { e.stopPropagation(); }} onClick={e => e.stopPropagation()}>
+      <div className="convert-sheet" role="dialog" aria-modal="true" aria-label="รูปที่เพิ่งได้มา">
+        <div className="photo-previews" data-count={n}>{urls.map((u, i) => <img key={i} src={u} alt="" />)}{n > 4 && <span className="photo-more">+{n - 4}</span>}</div>
+        <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.7rem' }}>
+          <button type="button" className="convert-choice" data-act="insert" onClick={() => onChoose('insert')}><b>⬇️ แทรกเลย{n > 1 ? ` ${n} รูป` : ''}</b><span className="muted">ใส่ในโน้ตใต้บรรทัดที่เคอร์เซอร์อยู่</span></button>
+          <button type="button" className="convert-choice" data-act="draw" onClick={() => onChoose('draw')}><b>✏️ เขียนบนรูปก่อน</b><span className="muted">{n > 1 ? 'เปิดกระดานทีละรูป วัดระยะ ชี้จุด ขีดเขียน แล้วกด ✓ จึงแทรก' : 'เปิดกระดาน วัดระยะ ชี้จุด ขีดเขียน แล้วกด ✓ จึงแทรก'}</span></button>
+          <button type="button" className="convert-choice" data-act="retake" onClick={() => onChoose('retake')}><b>🔁 {camera ? 'ถ่ายใหม่' : 'เลือกใหม่'}</b><span className="muted">ทิ้งรูปนี้ แล้ว{camera ? 'ถ่าย' : 'เลือก'}อีกครั้ง</span></button>
+          <button type="button" className="glass-btn-outline" data-act="cancel" onClick={() => onChoose('cancel')}>ยกเลิก (ไม่ใส่รูป)</button>
+        </div>
+      </div>
+    </div>, document.body);
 }
 
 // Thumbnails (one scrollable row), upload errors, and the full-size viewer.
@@ -344,9 +423,9 @@ export function NoteImageStrip({ state }) {
   return (
     <>
       {sketch && (
-        <SketchEditor key={sketch.image?.drive_file_id || 'new'} imageUrl={sketch.image ? driveImageSrc(sketch.image.drive_file_id) : null}
-          draftKey={`${state.scope}:${sketch.image?.drive_file_id || 'new'}`}
-          onSave={blob => state.saveSketch(blob, sketch.image?.drive_file_id || null, !!sketch.inline)} onCancel={() => state.setSketch(null)} />
+        <SketchEditor key={sketch.image?.drive_file_id || sketch.photoKey || 'new'} imageUrl={sketch.image ? driveImageSrc(sketch.image.drive_file_id) : (sketch.photoUrl || null)}
+          draftKey={`${state.scope}:${sketch.image?.drive_file_id || sketch.photoKey || 'new'}`}
+          onSave={blob => state.saveSketch(blob, sketch.image?.drive_file_id || null, !!sketch.inline)} onCancel={() => (sketch.photoUrl ? state.cancelPhotoSketch() : state.setSketch(null))} />
       )}
       {(images.length > 0 || uploading > 0) && (
         <div className="note-image-strip">
@@ -523,10 +602,14 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
       const caret = el ? Math.max(0, el.selectionStart - 1) : (cur.find(x => x.id === id)?.text.length || 0);
       commit(cycleList(cur, id, caret), id);
     },
-    insertImage(fileId) {
-      const cur = blocksRef.current, id = activeId.current && cur.some(x => x.id === activeId.current) ? activeId.current : null;
+    caretInfo() {                                              // where the caret is now (remembered when a menu / the pad takes the focus away)
+      const id = activeId.current, el = id ? els.current.get(id) : null;
+      return id && el ? { id, pos: Math.max(0, el.selectionStart - 1) } : null;
+    },
+    insertImage(fileId, at = null) {
+      const cur = blocksRef.current, want = at?.id || activeId.current, id = want && cur.some(x => x.id === want) ? want : null;
       const el = id ? els.current.get(id) : null;
-      const res = insertImage(cur, id, el ? Math.max(0, el.selectionStart - 1) : 0, fileId);
+      const res = insertImage(cur, id, at && at.id === id ? at.pos : (el ? Math.max(0, el.selectionStart - 1) : 0), fileId);
       if (res && res.blocks !== cur) commit(res);
     },
     replaceImage(oldId, newId) { const res = replaceImage(blocksRef.current, oldId, newId); if (!res) return false; commit(res); return true; },
@@ -999,10 +1082,11 @@ export function NoteEditorPanel({
   }, [onContent, setInlineIds]);
   useLayoutEffect(() => { setInlineIds(inlineImageIds(initialContent)); }, [editorKey]);   // eslint-disable-line react-hooks/exhaustive-deps
   // a drawing saved from ✏️ goes where the caret is; a re-saved one keeps its place
-  imgState.hooks.current.saved = (image, replaceId, inline) => {
+  imgState.hooks.current.caret = () => bodyRef.current?.caretInfo?.() || null;
+  imgState.hooks.current.saved = (image, replaceId, inline, caret) => {
     const body = bodyRef.current; if (!body) return;
     if (replaceId && body.replaceImage(replaceId, image.drive_file_id)) return;
-    if (inline && !replaceId) body.insertImage(image.drive_file_id);
+    if (inline && !replaceId) body.insertImage(image.drive_file_id, caret);
   };
 
   return (

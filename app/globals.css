@@ -509,6 +509,10 @@ a { color: inherit; }
   overscroll-behavior: contain;
 }
 .note-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+.photo-previews { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; max-height: 40vh; overflow: hidden; border-radius: 12px; position: relative; }
+.photo-previews[data-count="1"] { grid-template-columns: 1fr; }
+.photo-previews img { width: 100%; height: 100%; max-height: 30vh; object-fit: cover; border-radius: 10px; background: #000; }
+.photo-more { position: absolute; right: 8px; bottom: 8px; padding: 2px 10px; border-radius: 999px; background: rgba(0,0,0,0.6); color: #fff; font-size: 0.85rem; }
 .note-lightbox-draw { position: absolute; left: 50%; bottom: calc(1.2rem + env(safe-area-inset-bottom)); transform: translateX(-50%); padding: 0.65rem 1.2rem; border: none; border-radius: 999px; background: var(--accent, #14a39a); color: #fff; font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
 .note-lightbox-close {
   position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border-radius: 50%;
@@ -854,8 +858,30 @@ html[data-fs="lg"] { font-size: 18px; }
 
 /* ----- hand-writing pad (app/dashboard/_sketch.jsx) ----- */
 .sketch-overlay { position: fixed; inset: 0; z-index: 3000; display: flex; flex-direction: column; background: var(--bg, #f4f5f7); overscroll-behavior: contain; touch-action: none; }
-.sketch-bar { display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; padding-top: max(4px, env(safe-area-inset-top)); background: var(--surface, #fff); border-bottom: 1px solid var(--border, #ddd); flex: 0 0 auto; }
-.sk-row { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.sketch-bar { position: relative; display: flex; align-items: center; gap: 4px; padding: 5px 6px; padding-top: max(5px, env(safe-area-inset-top)); background: var(--surface, #fff); border-bottom: 1px solid var(--border, #ddd); flex: 0 0 auto; }
+.sketch-bar.wrap { flex-wrap: wrap; row-gap: 3px; }
+.sk-fixed { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.sk-groups { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.sketch-bar.wrap .sk-groups { order: 3; flex: 1 1 100%; }
+.sketch-bar.wrap .sk-save { margin-left: auto; }
+.sketch-bar:not(.wrap) .sk-save { margin-left: auto; }
+.sk-grp { display: flex; align-items: center; gap: 1px; padding: 2px 4px; border-radius: 11px; background: color-mix(in srgb, var(--border, #ddd) 35%, transparent); flex: 0 0 auto; }
+.sk-chip { flex: 0 0 auto; height: 40px; border-radius: 11px; border: 1px solid var(--border, #ddd); background: var(--surface, #fff); color: var(--text-primary, #111); display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; font: inherit; font-size: 0.85rem; line-height: 1; cursor: pointer; white-space: nowrap; }
+.sk-chip.cur { border-color: var(--accent, #14a39a); }
+.sk-chip.open { background: var(--accent-soft, #dff3f0); border-color: var(--accent, #14a39a); }
+.sk-ico { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 24px; font-size: 1.1rem; line-height: 1; }
+.sk-ico svg { display: block; }
+.sk-dotmini { display: block; width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(150,150,150,0.75); }
+.sk-caret { font-size: 0.6rem; color: var(--text-secondary, #777); }
+/* very narrow: the folded buttons share the line, icon (with the arrow) over the name */
+.sketch-bar.stack .sk-groups { gap: 4px; }
+.sketch-bar.stack .sk-chip { flex: 1 1 0; min-width: 0; height: 50px; flex-direction: column; justify-content: center; align-items: center; gap: 2px; padding: 3px 2px 2px; position: relative; }
+.sketch-bar.stack .sk-cap { font-size: 0.62rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.sketch-bar.stack .sk-caret { position: absolute; right: 4px; top: 4px; }
+.sk-pop { position: absolute; left: 6px; right: 6px; top: calc(100% + 4px); z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 6px; background: var(--editor-bg, #fff); border: 1px solid var(--accent, #14a39a); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+.sk-pop-t { width: 100%; font-size: 0.72rem; color: var(--text-secondary, #777); padding: 0 4px 2px; }
+.sk-pop .sk-btn { padding: 0 9px; gap: 6px; }
+.sk-lbl { font-size: 0.78rem; font-weight: 500; }
 .sk-btn { flex: 0 0 auto; min-width: 40px; height: 40px; border-radius: 10px; border: 1px solid transparent; background: transparent; color: var(--text-primary, #111); font-size: 1.1rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .sk-btn:disabled { opacity: 0.35; cursor: default; }
 .sk-btn.on { background: var(--accent-soft, #dff3f0); border-color: var(--accent, #14a39a); }
@@ -864,8 +890,6 @@ html[data-fs="lg"] { font-size: 18px; }
 .sk-w { display: block; border-radius: 50%; background: currentColor; }
 .sk-dot { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--surface, #fff); box-shadow: 0 0 0 1.5px rgba(150,150,150,0.75); cursor: pointer; }
 .sk-dot.on { box-shadow: 0 0 0 2px var(--accent, #14a39a); transform: scale(1.12); }
-.sk-sep { flex: 0 0 1px; align-self: stretch; margin: 6px 4px; background: var(--border, #ddd); }
-.sk-spacer { flex: 1 1 auto; }
 .sketch-stage { position: relative; flex: 1 1 auto; min-height: 0; background: #fff; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; overflow: hidden; }
 .sketch-stage.tool-hand { cursor: grab; }
 .sketch-stage.tool-eraser { cursor: cell; }
@@ -876,25 +900,7 @@ html[data-fs="lg"] { font-size: 18px; }
 .sketch-hint.err { background: #fde8e8; color: #9b1c1c; font-size: 0.85rem; }
 .sketch-text-edit { position: absolute; z-index: 2; margin: 0; border: 1.5px dashed var(--accent, #14a39a); border-radius: 6px; background: rgba(255,255,255,0.92); outline: none; resize: none; line-height: 1.3; padding: 2px 4px; box-sizing: border-box; overflow: hidden; touch-action: auto; user-select: text; -webkit-user-select: text; cursor: text; }
 .sketch-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.85); color: #333; }
-@media (min-width: 900px) { .sk-btn { height: 36px; min-width: 36px; } }
-/* wide / landscape screens: all the tools sit on ONE line (it wraps only if the window is really too narrow) */
-@media (min-width: 1000px) {
-  .sketch-bar { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 3px; row-gap: 0; }
-  .sketch-bar .sk-row { display: contents; }
-  .sketch-bar .sk-spacer { flex: 0 0 8px; }
-  .sketch-bar .sk-save { margin-left: auto; order: 99; }
-  .sk-btn { min-width: 34px; }
-  .sk-dot { width: 22px; height: 22px; }
-}
-@media (min-width: 1000px) and (max-width: 1199px) {          /* a 10–11" tablet held sideways: squeeze a little so it still fits on one line */
-  .sketch-bar { column-gap: 1px; padding-left: 4px; padding-right: 4px; }
-  .sk-btn { min-width: 29px; height: 34px; font-size: 1rem; border-radius: 8px; }
-  .sk-dot { width: 20px; height: 20px; }
-  .sk-sep { margin: 6px 2px; }
-  .sketch-bar .sk-spacer { flex-basis: 4px; }
-}
-@media (min-width: 1000px) and (max-width: 1399px) { .sk-btn.sk-zoom { display: none; } }   /* a tablet pinches; the wheel and ⤢ still work */
-@media (max-width: 440px) { .sk-btn { min-width: 36px; height: 38px; } .sk-dot { width: 24px; height: 24px; }.sk-btn.sk-zoom { display: none; } }   /* phones pinch to zoom */
+@media (min-width: 900px) { .sk-btn { height: 36px; min-width: 36px; } .sk-chip { height: 38px; } }
 
 .note-image-badge { position: absolute; left: 3px; bottom: 3px; z-index: 1; font-size: 0.7rem; line-height: 1; padding: 2px 3px; border-radius: 6px; background: rgba(255,255,255,0.88); }
 .note-image-thumb.is-sketch { background: #fff; }

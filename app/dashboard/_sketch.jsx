@@ -15,30 +15,56 @@
 // The paper is always white (so ink reads in light and dark themes). The model / geometry lives in lib/sketchModel.js,
 // the painting in lib/sketchDraw.js.
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { embedScene, readScene } from '../../lib/sketchPng';
 import { embedInJpeg, readFromJpeg, sniffImageType } from '../../lib/sketchJpeg';
 import { loadDraft, saveDraft, clearDraft } from '../../lib/draft';
 import {
-  FONT, TEXT_SIZES, LABEL_SIZE, clamp, uid, isShape, isLine, cleanItems, serializeItems, sig, byIdMap, sceneBounds, boundsOf,
+  FONT, TEXT_SIZES, LABEL_SIZE, clamp, uid, isShape, isLine, isDim, isPin, dimOffsetHandle, dimOffsetFor, dimLabelBox, dimLabelSize, nextPinNumber, cleanItems, serializeItems, sig, byIdMap, sceneBounds, boundsOf,
   hitItem, topItemAt, shapeAt, resizeShape, cornerPoints, lineEnds, removeItems, translateMany, duplicateItems, itemsInRect,
 } from '../../lib/sketchModel';
 import { paintItems, drawItem, drawSelection, drawGroupSelection, drawMarquee, measureText } from '../../lib/sketchDraw';
 
 const INK = ['#1c1c1e', '#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5'];
 const WIDTHS = [2, 4, 8];
+const PIN_R = [14, 18, 26];                 // a pin's size follows the thickness setting
+const CALLOUT_W = 180, CALLOUT_H = 60;       // a new callout's box
+// on a photo the board is the photo's pixels (up to 1600 wide): pens, text, labels, pins and callouts are made bigger to match, so they read when the picture is shown small
+const unitFor = bg => (bg ? clamp(Math.max(bg.w, bg.h) / 600, 1, 3) : 1);
+const editable = it => !!it && (it.k === 'text' || isShape(it) || isDim(it));       // things that carry words
 const MIN_K = 0.1, MAX_K = 6;
 const EXPORT_SCALE = 2, EXPORT_MAX_SIDE = 4096, EXPORT_MAX_PIXELS = 16e6;
 const MAX_DRAFT_CHARS = 1.5e6;
 const DOUBLE_TAP_MS = 380;
 
-const TOOLS_ROW_C = [['select', '👆', 'เลือก / ย้าย'], ['rect', '▭', 'สี่เหลี่ยม'], ['ellipse', '◯', 'วงรี'], ['diamond', '◇', 'ข้าวหลามตัด'], ['line', '╱', 'เส้นตรง'], ['arrow', '➜', 'ลูกศร'], ['elbow', '↱', 'ลูกศรหักมุม'], ['text', 'T', 'ข้อความ']];
+// small drawn icons for the tools that have no good emoji (they say what the tool makes)
+const svg = body => <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{body}</svg>;
+const ICON = {
+  dim: svg(<><path d="M3 12h18M3 8v8M21 8v8" /><path d="M7.5 9.5L4 12l3.5 2.5M16.5 9.5L20 12l-3.5 2.5" /></>),
+  dimPlan: svg(<><path d="M5 3v11M19 3v11M3 17h18" /><path d="M3 19.5l4-5M17 19.5l4-5" /></>),
+  callout: svg(<><rect x="9" y="3" width="12" height="8" rx="2" /><path d="M11 11L5 18" /><circle cx="4" cy="19.5" r="1.8" fill="currentColor" /></>),
+  pin: svg(<><circle cx="12" cy="12" r="9" /><text x="12" y="16.2" textAnchor="middle" fontSize="11.5" fontWeight="700" fill="currentColor" stroke="none">1</text></>),
+  tipDot: svg(<><path d="M4 20L15 9" /><circle cx="17" cy="7" r="3" fill="currentColor" /></>),
+  fill: svg(<><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 000 16z" fill="currentColor" /></>),
+  tipArrow: svg(<><path d="M4 20L18 6M18 6h-7M18 6v7" /></>),
+};
+// the tools in groups. A group is shown open when the bar is wide enough, else as ONE button (its last-used tool + the group's name)
+const GROUPS = [
+  { id: 'draw', label: 'วาด', tools: [['pen', '✏️', 'ปากกา'], ['marker', '🖍️', 'ไฮไลต์'], ['eraser', '🧽', 'ลบ'], ['hand', '✋', 'เลื่อนกระดาน']] },
+  { id: 'style', label: 'สี/ขนาด', tools: [] },
+  { id: 'shape', label: 'รูปทรง', tools: [['rect', '▭', 'สี่เหลี่ยม'], ['ellipse', '◯', 'วงรี'], ['diamond', '◇', 'ข้าวหลามตัด'], ['line', '╱', 'เส้นตรง'], ['arrow', '➜', 'ลูกศร'], ['elbow', '↱', 'ลูกศรหักมุม']] },
+  { id: 'mark', label: 'วัด/ชี้', tools: [['dim', ICON.dim, 'เส้นวัดระยะ'], ['callout', ICON.callout, 'กรอบมีตัวชี้'], ['pin', ICON.pin, 'หมายเลขจุด'], ['text', 'T', 'ข้อความ']] },
+  { id: 'edit', label: 'เลือก/จัดการ', tools: [['select', '👆', 'เลือก / ย้าย']] },
+];
+const COLLAPSE_ORDER = ['edit', 'mark', 'shape', 'style', 'draw'];          // the least important group folds first
+const ALL_OPEN = { expand: { draw: true, style: true, shape: true, mark: true, edit: true }, wrap: false, stack: false };
 const HINTS = {
   pen: 'ใช้นิ้วหรือปากกาเขียนได้เลย · สองนิ้วเพื่อเลื่อนและซูม (แท็บเล็ตที่มีปากกา: ปากกาเขียน นิ้วเลื่อน)', marker: 'ไฮไลต์ทับข้อความหรือเส้น สีจางโปร่งแสง', eraser: 'ลากผ่านเส้นหรือรูปทรงที่ต้องการลบ (ลบทั้งชิ้น)', hand: 'ลากเพื่อเลื่อนกระดาน',
   select: 'แตะเพื่อเลือก ลากเพื่อย้าย ลากมุม/ปลายลูกศรเพื่อปรับ · แก้ข้อความ: แตะสองครั้ง หรือเลือกแล้วกดปุ่ม ✎ (หรือ Enter)',
   rect: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', ellipse: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ', diamond: 'ลากเพื่อวาด (แตะครั้งเดียวได้ขนาดมาตรฐาน) แล้วแตะสองครั้งเพื่อใส่ข้อความ',
   line: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง เส้นจะติดกับรูปและตามเมื่อย้าย', arrow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะติดกับรูปและตามเมื่อย้าย', elbow: 'ลากจากรูปทรงหนึ่งไปอีกรูปทรง ลูกศรจะหักเป็นมุมฉาก ติดกับรูปและตามเมื่อย้าย', multi: 'แตะรูปหลายชิ้นเพื่อเลือก/เลิกเลือก หรือลากคลุมให้ครอบรูปทั้งชิ้น แล้วลากเพื่อย้ายพร้อมกัน', text: 'แตะตรงที่ต้องการพิมพ์',
+  dim: 'ลากจากจุดเริ่มไปจุดสิ้นสุดของระยะที่วัด แล้วพิมพ์ตัวเลขและหน่วย (พิมพ์เองตามที่ต้องการ) · ปุ่มสลับแบบ: แบบง่าย / แบบแบบแปลน', callout: 'กดที่จุดที่ต้องการชี้ แล้วลากไปวางกรอบข้อความ จากนั้นพิมพ์ข้อความ ลากหัวชี้เพื่อย้ายตำแหน่งที่ชี้', pin: 'แตะที่จุดเพื่อปักหมายเลข (เรียง 1, 2, 3… ให้เอง) แตะต่อได้เรื่อย ๆ · เสร็จแล้วเลือกเครื่องมือ 👆 เพื่อย้าย',
 };
 
 async function exportPng(items, bg) {
@@ -109,6 +135,8 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const [color, setColor] = useState(INK[0]);
   const [widthIdx, setWidthIdx] = useState(1);
   const [fill, setFill] = useState(false);
+  const [dimStyle, setDimStyle] = useState('simple');   // how the next measured distance looks: 'simple' | 'plan'
+  const [tipStyle, setTipStyle] = useState('arrow');   // how the next callout's pointer ends: 'arrow' | 'dot'
   const [selIds, setSelIds] = useState([]);
   const [multi, setMulti] = useState(false);
   const [editing, setEditing] = useState(null);     // { mode:'new'|'text'|'label', id, x, y, text, size, c, box? }
@@ -122,6 +150,8 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const colorRef = useRef(color); colorRef.current = color;
   const widthRef = useRef(widthIdx); widthRef.current = widthIdx;
   const fillRef = useRef(fill); fillRef.current = fill;
+  const dimStyleRef = useRef(dimStyle); dimStyleRef.current = dimStyle;
+  const tipStyleRef = useRef(tipStyle); tipStyleRef.current = tipStyle;
   const selRef = useRef(selIds); selRef.current = selIds;
   const multiRef = useRef(multi); multiRef.current = multi;
   const editRef = useRef(editing); editRef.current = editing;
@@ -272,7 +302,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
       const it = items.current.find(i => i.id === ed.id);
       if (it) commit(text.trim() ? items.current.map(i => (i.id === ed.id ? { ...i, t: text } : i)) : items.current.filter(i => i.id !== ed.id));
       if (!text.trim()) setSel([]);
-    } else if (ed.mode === 'label') {
+    } else if (ed.mode === 'label' || ed.mode === 'dim') {
       commit(items.current.map(i => (i.id === ed.id ? { ...i, t: text } : i)));
     }
     schedule('both');
@@ -281,7 +311,8 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
 
   const startEditing = it => {
     if (it.k === 'text') openEditor({ mode: 'text', id: it.id, x: it.x, y: it.y, text: it.t, size: it.s, c: it.c });
-    else if (isShape(it)) openEditor({ mode: 'label', id: it.id, x: it.x, y: it.y, text: it.t || '', size: LABEL_SIZE, c: it.c, box: [it.x, it.y, it.bw, it.bh] });
+    else if (isShape(it)) openEditor({ mode: 'label', id: it.id, x: it.x, y: it.y, text: it.t || '', size: it.ls || LABEL_SIZE, c: it.c, box: [it.x, it.y, it.bw, it.bh] });
+    else if (isDim(it)) { const b = dimLabelBox(it, measureText); const W = Math.max(b[2] - b[0], 140), cx = (b[0] + b[2]) / 2; openEditor({ mode: 'dim', id: it.id, x: cx - W / 2, y: b[1], text: it.t || '', size: dimLabelSize(it), c: it.c, box: [cx - W / 2, b[1], W, b[3] - b[1]] }); }
   };
 
   // ----- style of the selection (or of what is drawn next) -----
@@ -293,7 +324,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     return true;
   };
   const chooseColor = c => { setColor(c); if (selRef.current.length) updateSel({ c }); else if (toolRef.current === 'eraser' || toolRef.current === 'hand') setTool('pen'); };
-  const chooseWidth = i => { setWidthIdx(i); if (selRef.current.length) updateSel(it => (it.k === 'text' ? { s: TEXT_SIZES[i] } : { w: WIDTHS[i] })); };
+  const chooseWidth = i => { setWidthIdx(i); if (selRef.current.length) updateSel(it => (it.k === 'text' ? { s: Math.round(TEXT_SIZES[i] * unit()) } : isPin(it) ? { r: Math.round(PIN_R[i] * unit()) } : { w: WIDTHS[i] * unit() })); };
   const toggleFill = () => {
     const shapes = selectedItems().filter(isShape);
     if (shapes.length) { const on = !shapes.every(i => i.f); updateSel(i => (isShape(i) ? { f: on } : null)); setFill(on); } else setFill(f => !f);
@@ -308,7 +339,15 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     const { copies } = duplicateItems(items.current, selRef.current); if (!copies.length) return;
     commit([...items.current, ...copies]); setSel(copies.map(c => c.id));
   };
-  const editSelected = () => { const it = selected(); if (it && (it.k === 'text' || isShape(it))) startEditing(it); };
+  const editSelected = () => { const it = selected(); if (editable(it)) startEditing(it); };
+  const toggleDimStyle = () => {
+    const dims = selectedItems().filter(isDim);
+    if (dims.length) { const to = dims.every(d => d.style === 'plan') ? 'simple' : 'plan'; updateSel(i => (isDim(i) ? { style: to } : null)); setDimStyle(to); } else setDimStyle(v => (v === 'plan' ? 'simple' : 'plan'));
+  };
+  const toggleTipStyle = () => {
+    const calls = selectedItems().filter(i => i.k === 'callout');
+    if (calls.length) { const to = calls.every(d => d.tipStyle === 'dot') ? 'arrow' : 'dot'; updateSel(i => (i.k === 'callout' ? { tipStyle: to } : null)); setTipStyle(to); } else setTipStyle(v => (v === 'dot' ? 'arrow' : 'dot'));
+  };
   const pickTool = t => { endEdit(); setTool(t); if (t !== 'select') { setSel([]); setMulti(false); } };
   const toggleMulti = () => { endEdit(); const on = !multi; setMulti(on); if (on) setTool('select'); };
 
@@ -335,26 +374,46 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     if (n >= 3) { const dx = wx - p[n - 3], dy = wy - p[n - 2]; if (dx * dx + dy * dy < (0.8 / view.current.k) ** 2) return; }
     p.push(Math.round(wx * 10) / 10, Math.round(wy * 10) / 10, Math.round(pressureOf(e) * 100) / 100);
   };
+  const unit = () => unitFor(bgRef.current), wNow = () => WIDTHS[widthRef.current] * unit();
   const startDraw = e => {
-    cur.current = { k: 'stroke', id: uid(), c: colorRef.current, w: WIDTHS[widthRef.current], tool: toolRef.current === 'marker' ? 'marker' : 'pen', p: [], fromTouch: e.pointerType === 'touch' };
+    cur.current = { k: 'stroke', id: uid(), c: colorRef.current, w: wNow(), tool: toolRef.current === 'marker' ? 'marker' : 'pen', p: [], fromTouch: e.pointerType === 'touch' };
     g.current = { type: 'draw', pid: e.pointerId }; addPoint(e); schedule('live');
   };
   const startShape = e => {
     const [x, y] = toWorld(e.clientX, e.clientY);
-    cur.current = { k: toolRef.current, id: uid(), c: colorRef.current, w: WIDTHS[widthRef.current], f: fillRef.current, x, y, bw: 0, bh: 0, t: '', fromTouch: e.pointerType === 'touch' };
+    cur.current = { k: toolRef.current, id: uid(), c: colorRef.current, w: wNow(), f: fillRef.current, x, y, bw: 0, bh: 0, t: '', ...(unit() > 1 ? { ls: Math.round(LABEL_SIZE * unit()) } : null), fromTouch: e.pointerType === 'touch' };
     g.current = { type: 'shape', pid: e.pointerId, ox: x, oy: y }; schedule('live');
   };
   const startLine = e => {
     const [x, y] = toWorld(e.clientX, e.clientY), from = shapeAt(items.current, x, y);
     const elbow = toolRef.current === 'elbow';
-    cur.current = { k: elbow ? 'arrow' : toolRef.current, id: uid(), c: colorRef.current, w: WIDTHS[widthRef.current], a: [x, y], e: [x, y], from: from ? from.id : null, to: null, elbow, fromTouch: e.pointerType === 'touch' };
+    cur.current = { k: elbow ? 'arrow' : toolRef.current, id: uid(), c: colorRef.current, w: wNow(), a: [x, y], e: [x, y], from: from ? from.id : null, to: null, elbow, fromTouch: e.pointerType === 'touch' };
     g.current = { type: 'line', pid: e.pointerId, from: from ? from.id : null }; schedule('live');
+  };
+  // a measured distance: drag from one point to the other, then type what it measures
+  const startDim = e => {
+    const [x, y] = toWorld(e.clientX, e.clientY);
+    cur.current = { k: 'dim', id: uid(), c: colorRef.current, w: wNow(), a: [x, y], e: [x, y], style: dimStyleRef.current, off: Math.round(48 * unit()), t: '', fromTouch: e.pointerType === 'touch' };
+    g.current = { type: 'dim', pid: e.pointerId }; schedule('live');
+  };
+  // a callout: press on the spot to point at, drag to where its box should sit
+  const startCallout = e => {
+    const [x, y] = toWorld(e.clientX, e.clientY);
+    const u = unit(), bw = Math.round(CALLOUT_W * u), bh = Math.round(CALLOUT_H * u);
+    cur.current = { k: 'callout', id: uid(), c: colorRef.current, w: wNow(), f: true, x: x - bw / 2, y: y - 80 * u - bh / 2, bw, bh, t: '', ...(u > 1 ? { ls: Math.round(LABEL_SIZE * u) } : null), tip: [x, y], tipStyle: tipStyleRef.current, fromTouch: e.pointerType === 'touch' };
+    g.current = { type: 'callout', pid: e.pointerId, tx: x, ty: y, moved: false, bw, bh }; schedule('live');
   };
   const startSelect = e => {
     const [x, y] = toWorld(e.clientX, e.clientY), list = items.current, byId = byIdMap(list), t = 14 / view.current.k;
     const sel = selected();
     if (sel && isShape(sel)) {                                          // a corner handle of the selected shape?
       for (const [which, [hx, hy]] of Object.entries(cornerPoints(sel))) if (Math.hypot(hx - x, hy - y) <= t) { g.current = { type: 'resize', pid: e.pointerId, base: list, id: sel.id, which, orig: sel }; return; }
+    }
+    if (sel && sel.k === 'callout' && Math.hypot(sel.tip[0] - x, sel.tip[1] - y) <= t) { g.current = { type: 'tip', pid: e.pointerId, base: list, id: sel.id, orig: sel }; return; }
+    if (sel && isDim(sel)) {                                            // an end of the measured line, or (plan style) its offset handle
+      if (Math.hypot(sel.a[0] - x, sel.a[1] - y) <= t) { g.current = { type: 'dimend', pid: e.pointerId, base: list, id: sel.id, which: 'a', orig: sel }; return; }
+      if (Math.hypot(sel.e[0] - x, sel.e[1] - y) <= t) { g.current = { type: 'dimend', pid: e.pointerId, base: list, id: sel.id, which: 'e', orig: sel }; return; }
+      if (sel.style === 'plan') { const [hx, hy] = dimOffsetHandle(sel); if (Math.hypot(hx - x, hy - y) <= t) { g.current = { type: 'dimoff', pid: e.pointerId, base: list, id: sel.id, orig: sel }; return; } }
     }
     if (sel && isLine(sel)) {                                           // an end of the selected line / arrow?
       const [ax, ay, ex, ey] = lineEnds(sel, byId);
@@ -371,7 +430,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
       setSel([]); startPan(e); return;                                                  // empty space: drag moves the board
     }
     const wasIn = ids.includes(hit.id);
-    const double = !toggle && ids.length <= 1 && lastTap.current.id === hit.id && Date.now() - lastTap.current.t < DOUBLE_TAP_MS && (hit.k === 'text' || isShape(hit));
+    const double = !toggle && ids.length <= 1 && lastTap.current.id === hit.id && Date.now() - lastTap.current.t < DOUBLE_TAP_MS && editable(hit);
     lastTap.current = { id: hit.id, t: Date.now() };
     let move = ids, narrow = false, toggleOff = false;
     if (toggle) { if (wasIn) toggleOff = true; else move = [...ids, hit.id]; }
@@ -385,7 +444,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     const [x, y] = toWorld(e.clientX, e.clientY), list = items.current;
     const hit = topItemAt(list, x, y, tol(), measureText) || shapeAt(list, x, y);
     if (!hit) { lastTap.current = { id: null, t: 0 }; if (selRef.current.length && !multiRef.current) setSel([]); return; }
-    const double = lastTap.current.id === hit.id && Date.now() - lastTap.current.t < DOUBLE_TAP_MS + 150 && (hit.k === 'text' || isShape(hit));
+    const double = lastTap.current.id === hit.id && Date.now() - lastTap.current.t < DOUBLE_TAP_MS + 150 && editable(hit);
     lastTap.current = { id: hit.id, t: Date.now() };
     if (double) { setSel([hit.id]); startEditing(hit); return; }
     const ids = selRef.current;
@@ -393,7 +452,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   };
   const placeText = e => {
     const [x, y] = toWorld(e.clientX, e.clientY);
-    openEditor({ mode: 'new', id: 'new', x, y, text: '', size: TEXT_SIZES[widthRef.current], c: colorRef.current });
+    openEditor({ mode: 'new', id: 'new', x, y, text: '', size: Math.round(TEXT_SIZES[widthRef.current] * unit()), c: colorRef.current });
   };
   const startTool = e => {
     const tl = toolRef.current;
@@ -402,6 +461,9 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     if (tl === 'select') return startSelect(e);
     if (tl === 'rect' || tl === 'ellipse' || tl === 'diamond') return startShape(e);
     if (tl === 'line' || tl === 'arrow' || tl === 'elbow') return startLine(e);
+    if (tl === 'dim') return startDim(e);
+    if (tl === 'callout') return startCallout(e);
+    if (tl === 'pin') { g.current = { type: 'pin', pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }     // placed when the pointer lifts, so a drag / second finger is not a stray pin
     if (tl === 'text') { g.current = { type: 'text', pid: e.pointerId, x: e.clientX, y: e.clientY }; return; }     // the box opens when the finger lifts (a phone only raises the keyboard inside a tap)
     return startDraw(e);
   };
@@ -452,6 +514,14 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
       const [x, y] = toWorld(e.clientX, e.clientY);
       Object.assign(cur.current, { x: Math.min(gg.ox, x), y: Math.min(gg.oy, y), bw: Math.abs(x - gg.ox), bh: Math.abs(y - gg.oy) }); schedule('live');
     } else if (gg.type === 'line' && cur.current) { cur.current.e = toWorld(e.clientX, e.clientY); schedule('live'); }
+    else if (gg.type === 'dim' && cur.current) { cur.current.e = toWorld(e.clientX, e.clientY); schedule('live'); }
+    else if (gg.type === 'callout' && cur.current) {
+      const [x, y] = toWorld(e.clientX, e.clientY);
+      if (Math.hypot(x - gg.tx, y - gg.ty) * view.current.k >= 12) gg.moved = true;
+      if (gg.moved) { cur.current.x = x - gg.bw / 2; cur.current.y = y - gg.bh / 2; } schedule('live');
+    } else if (gg.type === 'tip') { const [x, y] = toWorld(e.clientX, e.clientY); gg.moved = true; items.current = gg.base.map(i => (i.id === gg.id ? { ...gg.orig, tip: [x, y] } : i)); schedule(); }
+    else if (gg.type === 'dimend') { const [x, y] = toWorld(e.clientX, e.clientY); gg.moved = true; items.current = gg.base.map(i => (i.id === gg.id ? { ...gg.orig, [gg.which]: [x, y] } : i)); schedule(); }
+    else if (gg.type === 'dimoff') { const [x, y] = toWorld(e.clientX, e.clientY); gg.moved = true; items.current = gg.base.map(i => (i.id === gg.id ? { ...gg.orig, off: Math.round(dimOffsetFor(gg.orig, x, y)) } : i)); schedule(); }
     else if (gg.type === 'marquee' && marq.current) { const [x, y] = toWorld(e.clientX, e.clientY); marq.current = [marq.current[0], marq.current[1], x, y]; schedule('live'); }
     else if (gg.type === 'move') {
       const [x, y] = toWorld(e.clientX, e.clientY), dx = x - gg.sx, dy = y - gg.sy;
@@ -487,6 +557,18 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
         const to = shapeAt(items.current, l.e[0], l.e[1], gg.from);
         if (Math.hypot(l.e[0] - l.a[0], l.e[1] - l.a[1]) * view.current.k < 12) schedule('live');
         else { l.to = to ? to.id : null; commit([...items.current, l]); setSel([l.id]); setTool('select'); }
+      } else if (gg.type === 'dim' && cur.current) {
+        const d = cur.current; cur.current = null; delete d.fromTouch;
+        if (Math.hypot(d.e[0] - d.a[0], d.e[1] - d.a[1]) * view.current.k < 12) schedule('live');
+        else { commit([...items.current, d]); setSel([d.id]); setTool('select'); setTimeout(() => startEditing(d), 0); }      // the label is typed straight away
+      } else if (gg.type === 'callout' && cur.current) {
+        const c = cur.current; cur.current = null; delete c.fromTouch;
+        commit([...items.current, c]); setSel([c.id]); setTool('select'); setTimeout(() => startEditing(c), 0);
+      } else if (gg.type === 'pin') {
+        if (Math.hypot(e.clientX - gg.x, e.clientY - gg.y) < 12) {
+          const [x, y] = toWorld(gg.x, gg.y), r = Math.round(PIN_R[widthRef.current] * unit());
+          commit([...items.current, { k: 'pin', id: uid(), c: colorRef.current, x, y, n: nextPinNumber(items.current), r }]);          // the tool stays on: tap again for the next number
+        }
       } else if (gg.type === 'text') {
         if (Math.hypot(e.clientX - gg.x, e.clientY - gg.y) < 12) placeText(e);
       } else if (gg.type === 'pan' && gg.tap) {
@@ -497,7 +579,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
           const inside = itemsInRect(items.current, r, measureText);
           setSel(gg.add ? [...new Set([...gg.keep, ...inside])] : inside);
         } else if (!gg.add) setSel([]);
-      } else if (gg.type === 'move' || gg.type === 'resize' || gg.type === 'endpoint') {
+      } else if (gg.type === 'move' || gg.type === 'resize' || gg.type === 'endpoint' || gg.type === 'tip' || gg.type === 'dimend' || gg.type === 'dimoff') {
         if (gg.moved) { const after = items.current; items.current = gg.base; commit(after); }
         else if (gg.type === 'move') {
           if (gg.toggleOff) setSel(selRef.current.filter(id => id !== gg.id));
@@ -538,7 +620,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     const down = e => {
       if (e.key === ' ' && !typing()) { space.current = true; e.preventDefault(); }
       if (e.key === 'Escape') { if (editRef.current) endEdit(false); else if (selRef.current.length) setSel([]); else cancelRef.current(); }
-      if ((e.key === 'Enter' || e.key === 'F2') && !typing() && !editRef.current) { const it = selected(); if (it && (it.k === 'text' || isShape(it))) { e.preventDefault(); startEditing(it); } }
+      if ((e.key === 'Enter' || e.key === 'F2') && !typing() && !editRef.current) { const it = selected(); if (editable(it)) { e.preventDefault(); startEditing(it); } }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !typing() && selRef.current.length) { e.preventDefault(); deleteSelected(); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !typing()) { e.preventDefault(); setTool('select'); setSel(items.current.map(i => i.id)); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing()) { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); }
@@ -568,54 +650,115 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
 
   if (process.env.NEXT_PUBLIC_MOCK_MODE === '1' && typeof window !== 'undefined') window.__sketchItems = () => serializeItems(items.current);   // test hook (local mock mode only)
 
-  const stop = e => e.stopPropagation();
   const n = items.current.length, sel = selected(), chosen = selectedItems();
   const chosenShapes = chosen.filter(isShape), chosenLines = chosen.filter(isLine);
   const shownColor = chosen.length ? (chosen.every(i => i.c === chosen[0].c) ? chosen[0].c : null) : color;
   const shownFill = chosenShapes.length ? chosenShapes.every(i => i.f) : fill;
+  // ----- the grouped toolbar: groups open while they fit, fold into one button each when they do not -----
+  const barRef = useRef(null), groupsRef = useRef(null), barW = useRef(0);
+  const [lay, setLay] = useState(ALL_OPEN);
+  const [openGroup, setOpenGroup] = useState(null);
+  const [lastTool, setLastTool] = useState({ draw: 'pen', shape: 'rect', mark: 'dim', edit: 'select' });
+  useEffect(() => { const g = GROUPS.find(x => x.tools.some(t => t[0] === tool)); if (g) setLastTool(m => (m[g.id] === tool ? m : { ...m, [g.id]: tool })); }, [tool]);
+  useLayoutEffect(() => {
+    const bar = barRef.current, grp = groupsRef.current; if (!bar || !grp) return;
+    const w = bar.clientWidth;
+    if (barW.current !== w) { barW.current = w; if (lay !== ALL_OPEN) { setLay(ALL_OPEN); return; } }       // the width changed: start again from "everything open"
+    if (bar.scrollWidth <= bar.clientWidth + 1 && grp.scrollWidth <= grp.clientWidth + 1) return;               // it fits
+    const next = COLLAPSE_ORDER.find(id => lay.expand[id]);
+    if (next) { setLay({ ...lay, expand: { ...lay.expand, [next]: false } }); return; }
+    if (!lay.wrap) { setLay({ expand: ALL_OPEN.expand, wrap: true, stack: false }); return; }                  // even all folded does not fit: the groups get a second line
+    if (!lay.stack) setLay({ ...lay, stack: true });                                                           // still not: the buttons share the line, the name under the icon
+  });
+  useEffect(() => {                                                          // a tap outside the open group's panel closes it
+    if (!openGroup) return undefined;
+    const down = e => { if (!(e.target instanceof Element) || !e.target.closest('.sk-pop, .sk-chip')) setOpenGroup(null); };
+    document.addEventListener('pointerdown', down, true);
+    return () => document.removeEventListener('pointerdown', down, true);
+  }, [openGroup]);
+  useEffect(() => { if (lay.expand && openGroup && lay.expand[openGroup]) setOpenGroup(null); }, [lay, openGroup]);
+
+  const toolBtn = (key, icon, label, pop) => (
+    <button key={key} type="button" className={`sk-btn${tool === key ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tool === key}
+      onClick={() => { pickTool(key); if (pop) setOpenGroup(null); }}>{icon}{pop && <span className="sk-lbl">{label}</span>}</button>
+  );
+  const dimPlan = chosen.some(isDim) ? chosen.filter(isDim).every(d => d.style === 'plan') : dimStyle === 'plan';
+  const tipDot = chosen.some(i => i.k === 'callout') ? chosen.filter(i => i.k === 'callout').every(d => d.tipStyle === 'dot') : tipStyle === 'dot';
+  const groupBody = (g, pop) => {
+    if (g.id === 'style') return (
+      <>
+        {INK.map(c => <button key={c} type="button" className={`sk-dot${shownColor === c ? ' on' : ''}`} style={{ background: c }} title="สี" aria-label={`สี ${c}`} aria-pressed={shownColor === c} onClick={() => chooseColor(c)} />)}
+        {WIDTHS.map((w, i) => <button key={w} type="button" className={`sk-btn${widthIdx === i ? ' on' : ''}`} title={`ขนาดเส้น/ตัวอักษร ${i + 1}`} aria-label={`ขนาด ${i + 1}`} aria-pressed={widthIdx === i} onClick={() => chooseWidth(i)}><span className="sk-w" style={{ width: 6 + i * 4, height: 6 + i * 4 }} /></button>)}
+        <button type="button" className={`sk-btn${shownFill ? ' on' : ''}`} title="เติมสีอ่อนในรูปทรง" aria-label="เติมสี" aria-pressed={!!shownFill} onClick={toggleFill}>{ICON.fill}</button>
+        <button type="button" className={`sk-btn${chosenLines.length && chosenLines.every(i => i.elbow) ? ' on' : ''}`} title="เส้น/ลูกศรที่เลือก: หักมุมฉาก ⇄ ตรง" aria-label="หักมุม" aria-pressed={!!(chosenLines.length && chosenLines.every(i => i.elbow))} disabled={!chosenLines.length} onClick={toggleElbow}>⌐</button>
+      </>
+    );
+    const own = g.tools.map(([key, icon, label]) => toolBtn(key, icon, label, pop));
+    if (g.id === 'mark') return (
+      <>
+        {own}
+        <button type="button" className={`sk-btn${dimPlan ? ' on' : ''}`} title="เส้นวัดระยะ: แบบแบบแปลน (มีเส้นช่วยยื่น) ⇄ แบบง่าย" aria-label="เส้นวัดแบบแบบแปลน" aria-pressed={dimPlan} onClick={toggleDimStyle}>{ICON.dimPlan}{pop && <span className="sk-lbl">วัดแบบแบบแปลน</span>}</button>
+        <button type="button" className={`sk-btn${tipDot ? ' on' : ''}`} title="กรอบมีตัวชี้: ปลายเป็นจุดกลม ⇄ ลูกศร" aria-label="ปลายตัวชี้เป็นจุดกลม" aria-pressed={tipDot} onClick={toggleTipStyle}>{tipDot ? ICON.tipDot : ICON.tipArrow}{pop && <span className="sk-lbl">ปลายชี้: {tipDot ? 'จุด' : 'ลูกศร'}</span>}</button>
+      </>
+    );
+    if (g.id === 'edit') return (
+      <>
+        {own}
+        <button type="button" className={`sk-btn${multi ? ' on' : ''}`} title="เลือกหลายชิ้น" aria-label="เลือกหลายชิ้น" aria-pressed={multi} onClick={toggleMulti}>☑{pop && <span className="sk-lbl">เลือกหลายชิ้น</span>}</button>
+        <button type="button" className="sk-btn" title="แก้ข้อความในรูป/กล่องข้อความที่เลือก" aria-label="แก้ข้อความ" disabled={!editable(sel)} onClick={editSelected}>✎{pop && <span className="sk-lbl">แก้ข้อความ</span>}</button>
+        <button type="button" className="sk-btn" title="ทำสำเนา" aria-label="ทำสำเนา" disabled={!chosen.length} onClick={duplicateSelected}>⧉{pop && <span className="sk-lbl">ทำสำเนา</span>}</button>
+        <button type="button" className="sk-btn" title="ลบที่เลือก" aria-label="ลบที่เลือก" disabled={!chosen.length} onClick={deleteSelected}>🗑️{pop && <span className="sk-lbl">ลบ</span>}</button>
+        <button type="button" className="sk-btn sk-zoom" title="ซูมออก" aria-label="ซูมออก" onClick={() => zoomBy(0.8)}>−</button>
+        <button type="button" className="sk-btn sk-zoom" title="ซูมเข้า" aria-label="ซูมเข้า" onClick={() => zoomBy(1.25)}>＋</button>
+        <button type="button" className="sk-btn" title="ดูทั้งหมด" aria-label="ดูทั้งหมด" onClick={fitView}>⤢{pop && <span className="sk-lbl">ดูทั้งหมด</span>}</button>
+      </>
+    );
+    return own;
+  };
+  const chipFace = g => {
+    if (g.id === 'style') return <span className="sk-ico"><span className="sk-dotmini" style={{ background: shownColor || color }} /></span>;
+    const key = lastTool[g.id] || g.tools[0][0], t = g.tools.find(x => x[0] === key) || g.tools[0];
+    return <span className="sk-ico">{t[1]}</span>;
+  };
+
+  const stop = e => e.stopPropagation();
   const { x: vx, y: vy, k: vk } = view.current;
   const ta = editing && (() => {
+    if (editing.mode === 'dim' && editing.box) {
+      const [bx, by, bw, bh] = editing.box, fs = editing.size * vk;
+      return { left: vx + bx * vk, top: vy + by * vk, width: bw * vk, height: bh * vk, fontSize: fs, fontWeight: 700, textAlign: 'center', paddingTop: Math.max(2, (bh * vk - fs * 1.3) / 2), color: editing.c };
+    }
     if (editing.mode === 'label' && editing.box) {
-      const [bx, by, bw, bh] = editing.box, lh = LABEL_SIZE * 1.3 * vk;
-      return { left: vx + bx * vk, top: vy + by * vk, width: bw * vk, height: bh * vk, fontSize: LABEL_SIZE * vk, textAlign: 'center', paddingTop: Math.max(2, (bh * vk - lh) / 2), color: editing.c };
+      const [bx, by, bw, bh] = editing.box, ls = editing.size || LABEL_SIZE, lh = ls * 1.3 * vk;
+      return { left: vx + bx * vk, top: vy + by * vk, width: bw * vk, height: bh * vk, fontSize: ls * vk, textAlign: 'center', paddingTop: Math.max(2, (bh * vk - lh) / 2), color: editing.c };
     }
     return { left: vx + editing.x * vk, top: vy + editing.y * vk, minWidth: 80, width: Math.max(120, 260 * vk), height: editing.size * 1.3 * vk * 2.2, fontSize: editing.size * vk, color: editing.c };
   })();
   return createPortal(
     <div className="sketch-overlay" role="dialog" aria-modal="true" aria-label="เขียนด้วยมือ" onMouseDown={stop} onPointerDown={stop} onClick={stop}>
-      <div className="sketch-bar">
-        <div className="sk-row">
+      <div className={`sketch-bar${lay.wrap ? ' wrap' : ''}${lay.stack ? ' stack' : ''}`} ref={barRef}>
+        <div className="sk-fixed">
           <button type="button" className="sk-btn" title="ปิด (ทิ้งที่วาด)" aria-label="ปิด" onClick={cancel}>✕</button>
           <button type="button" className="sk-btn" title="เลิกทำ" aria-label="เลิกทำ" disabled={!undo.current.length} onClick={doUndo}>↶</button>
           <button type="button" className="sk-btn" title="ทำซ้ำ" aria-label="ทำซ้ำ" disabled={!redo.current.length} onClick={doRedo}>↷</button>
-          <span className="sk-sep" />
-          {[['pen', '✏️', 'ปากกา'], ['marker', '🖍️', 'ไฮไลต์'], ['eraser', '🧽', 'ลบ'], ['hand', '✋', 'เลื่อนกระดาน']].map(([key, icon, label]) => (
-            <button key={key} type="button" className={`sk-btn${tool === key ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tool === key} onClick={() => pickTool(key)}>{icon}</button>
-          ))}
-          <span className="sk-spacer sk-spacer-a" />
-          <button type="button" className="sk-btn sk-save" title="บันทึก" aria-label="บันทึก" disabled={saving || loading || n === 0} onClick={save}>{saving ? '…' : '✓'}</button>
         </div>
-        <div className="sk-row">
-          {INK.map(c => <button key={c} type="button" className={`sk-dot${shownColor === c ? ' on' : ''}`} style={{ background: c }} title="สี" aria-label={`สี ${c}`} aria-pressed={shownColor === c} onClick={() => chooseColor(c)} />)}
-          <span className="sk-sep" />
-          {WIDTHS.map((w, i) => <button key={w} type="button" className={`sk-btn${widthIdx === i ? ' on' : ''}`} title={`ขนาดเส้น/ตัวอักษร ${i + 1}`} aria-label={`ขนาด ${i + 1}`} aria-pressed={widthIdx === i} onClick={() => chooseWidth(i)}><span className="sk-w" style={{ width: 6 + i * 4, height: 6 + i * 4 }} /></button>)}
-          <button type="button" className={`sk-btn${shownFill ? ' on' : ''}`} title="เติมสีอ่อนในรูปทรง" aria-label="เติมสี" aria-pressed={!!shownFill} onClick={toggleFill}>◐</button>
-          <button type="button" className={`sk-btn${chosenLines.length && chosenLines.every(i => i.elbow) ? ' on' : ''}`} title="เส้น/ลูกศรที่เลือก: หักมุมฉาก ⇄ ตรง" aria-label="หักมุม" aria-pressed={!!(chosenLines.length && chosenLines.every(i => i.elbow))} disabled={!chosenLines.length} onClick={toggleElbow}>⌐</button>
-          <span className="sk-spacer" />
-          <button type="button" className="sk-btn sk-zoom" title="ซูมออก" aria-label="ซูมออก" onClick={() => zoomBy(0.8)}>−</button>
-          <button type="button" className="sk-btn sk-zoom" title="ซูมเข้า" aria-label="ซูมเข้า" onClick={() => zoomBy(1.25)}>＋</button>
-          <button type="button" className="sk-btn" title="ดูทั้งหมด" aria-label="ดูทั้งหมด" onClick={fitView}>⤢</button>
+        <div className="sk-groups" ref={groupsRef}>
+          {GROUPS.map(g => (lay.expand[g.id]
+            ? <div key={g.id} className="sk-grp" role="group" aria-label={g.label} data-group={g.id}>{groupBody(g, false)}</div>
+            : (
+              <button key={g.id} type="button" className={`sk-chip${openGroup === g.id ? ' open' : ''}${g.tools.some(t => t[0] === tool) ? ' cur' : ''}`} aria-label={`กลุ่ม ${g.label}`} aria-expanded={openGroup === g.id} data-group={g.id}
+                onClick={() => setOpenGroup(v => (v === g.id ? null : g.id))}>
+                {chipFace(g)}<span className="sk-cap">{g.label}</span><span className="sk-caret" aria-hidden="true">▾</span>
+              </button>
+            )))}
         </div>
-        <div className="sk-row">
-          {TOOLS_ROW_C.map(([key, icon, label]) => (
-            <button key={key} type="button" className={`sk-btn${tool === key ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tool === key} onClick={() => pickTool(key)}>{icon}</button>
-          ))}
-          <button type="button" className={`sk-btn${multi ? ' on' : ''}`} title="เลือกหลายชิ้น" aria-label="เลือกหลายชิ้น" aria-pressed={multi} onClick={toggleMulti}>☑</button>
-          <button type="button" className="sk-btn" title="แก้ข้อความในรูป/กล่องข้อความที่เลือก" aria-label="แก้ข้อความ" disabled={!(sel && (sel.k === 'text' || isShape(sel)))} onClick={editSelected}>✎</button>
-          <span className="sk-spacer" />
-          <button type="button" className="sk-btn" title="ทำสำเนา" aria-label="ทำสำเนา" disabled={!chosen.length} onClick={duplicateSelected}>⧉</button>
-          <button type="button" className="sk-btn" title="ลบที่เลือก" aria-label="ลบที่เลือก" disabled={!chosen.length} onClick={deleteSelected}>🗑️</button>
-        </div>
+        <button type="button" className="sk-btn sk-save" title="บันทึก" aria-label="บันทึก" disabled={saving || loading || n === 0} onClick={save}>{saving ? '…' : '✓'}</button>
+        {openGroup && !lay.expand[openGroup] && (
+          <div className="sk-pop" role="group" aria-label={GROUPS.find(g => g.id === openGroup)?.label}>
+            <div className="sk-pop-t">{GROUPS.find(g => g.id === openGroup)?.label}</div>
+            {groupBody(GROUPS.find(g => g.id === openGroup), true)}
+          </div>
+        )}
       </div>
       {/* one fixed-height line, so the board never jumps when the tool (and its hint) changes */}
       <div className={`sketch-hint${error ? ' err' : (restored || loadNote) ? ' note' : ''}`} role="status">{error || loadNote || (restored ? '📝 กู้คืนที่วาดค้างไว้ให้แล้ว' : (multi ? HINTS.multi : HINTS[tool]) || '')}</div>
@@ -625,7 +768,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
         <canvas ref={baseRef} className="sketch-canvas" />
         <canvas ref={liveRef} className="sketch-canvas sketch-live" />
         {editing && (
-          <textarea ref={taRef} className="sketch-text-edit" style={{ ...ta, fontFamily: FONT }} defaultValue={editing.text} placeholder={editing.mode === 'label' ? 'ข้อความในรูปทรง' : 'พิมพ์ข้อความ'}
+          <textarea ref={taRef} className="sketch-text-edit" style={{ ...ta, fontFamily: FONT }} defaultValue={editing.text} placeholder={editing.mode === 'dim' ? 'ตัวเลข + หน่วย เช่น 3.50 ม.' : editing.mode === 'label' ? 'ข้อความในรูปทรง' : 'พิมพ์ข้อความ'}
             aria-label="ข้อความ" onPointerDown={stop} onMouseDown={stop} onClick={stop}
             onBlur={() => endEdit(true)} onKeyDown={ev => { if (ev.key === 'Escape') { ev.stopPropagation(); endEdit(false); } }} />
         )}
