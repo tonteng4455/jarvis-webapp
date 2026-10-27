@@ -98,7 +98,7 @@ async function exportOnPhoto(items, bg, original) {
   const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(w * scale)); cv.height = Math.max(1, Math.round(h * scale));
   const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.translate(-x0 * scale, -y0 * scale); paintItems(ctx, items, bg, scale, byIdMap(items));
-  const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.88));
+  const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.84));
   if (!blob) return null;
   const jpeg = new Uint8Array(await blob.arrayBuffer());
   try { return new Blob([await embedInJpeg(jpeg, { v: 2, items: serializeItems(items) }, original)], { type: 'image/jpeg' }); } catch { return blob; }
@@ -110,6 +110,7 @@ async function decodePhoto(bytes, mime, normalise) {
   const url = URL.createObjectURL(new Blob([bytes], { type: mime || 'application/octet-stream' }));
   const img = await new Promise((ok, no) => { const el = new Image(); el.onload = () => ok(el); el.onerror = no; el.src = url; });
   if (!normalise) return { bg: { img, w: img.naturalWidth, h: img.naturalHeight, url }, original: { bytes, mime } };
+  if (mime === 'image/jpeg' && Math.max(img.naturalWidth, img.naturalHeight) <= PHOTO_MAX_EDGE && bytes.length <= 700 * 1024) return { bg: { img, w: img.naturalWidth, h: img.naturalHeight, url }, original: { bytes, mime } };       // already a small JPEG: keep it as it is (no re-encoding, a smaller file to send)
   const k = Math.min(1, PHOTO_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
   const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h;

@@ -735,6 +735,10 @@ html[data-fs="lg"] { font-size: 18px; }
 .kl-r-img { padding: 0.25rem 0; align-items: stretch; }
 .kl-imgbox { position: relative; flex: 1; min-width: 0; display: flex; }
 .kl-imgbox img { display: block; max-width: 100%; max-height: 340px; background: #fff; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; object-fit: contain; }
+.kl-imgbox.working img { opacity: 0.8; cursor: progress; }
+.kl-imgwait { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 0.35rem 0.8rem; border-radius: 999px; background: rgba(0,0,0,0.6); color: #fff; font-size: 0.85rem; white-space: nowrap; pointer-events: none; }
+.img-busy { position: absolute; right: 3px; top: 3px; z-index: 1; font-size: 0.85rem; line-height: 1; padding: 2px 3px; border-radius: 6px; background: rgba(255,255,255,0.9); }
+.img-retry { margin-left: 2px; padding: 0.1rem 0.6rem; border-radius: 999px; border: 1px solid currentColor; background: transparent; color: inherit; font: inherit; font-size: 0.8rem; cursor: pointer; }
 .kl-imgmissing { padding: 1.2rem 1rem; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-secondary); font-size: 0.85rem; }
 .kl-imgx { position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; border: none; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.75rem; cursor: pointer; opacity: 0.9; }
 @media (max-width: 759px) { .kl-imgx { width: 34px; height: 34px; } }

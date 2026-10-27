@@ -1,7 +1,7 @@
 // node --test tests/   — the note-body logic (no browser needed)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, cycleList, pasteInto, rowInfo, previewText, plainText, normalizeRange, wholeRange, rangeText, deleteRange, insertImage, replaceImage, removeImageBlock, inlineImageIds, stripImageMarkers } from '../lib/noteBlocks.js';
+import { parseContent, serializeBlocks, numbering, setText, enterInText, enterInList, backspaceAtStart, appendRow, indentBlock, toggleCheck, doneLayout, moveSubtree, cycleList, pasteInto, rowInfo, previewText, plainText, normalizeRange, wholeRange, rangeText, deleteRange, insertImage, replaceImage, removeImageBlock, resolvePendingImage, inlineImageIds, stripImageMarkers } from '../lib/noteBlocks.js';
 
 const types = blocks => blocks.map(b => `${b.type}${b.indent ? '@' + b.indent : ''}${b.checked ? '✓' : ''}:${JSON.stringify(b.text)}`);
 const idOf = (blocks, n) => blocks[n].id;
@@ -432,4 +432,15 @@ test('image: copying a selection that holds a picture keeps its marker; deleting
   assert.equal(rangeText(b, span), `ne\n⟦img:${FID}⟧\ntw`);
   const r = deleteRange(b, span, '');
   assert.equal(serializeBlocks(r.blocks), 'oo');
+});
+
+test('image: a picture still uploading shows in the editor but has no line in the saved text until it is done', () => {
+  const b = parseContent('- a\n- b');
+  const r = insertImage(b, b[0].id, 0, 'pendingabc123', { pending: true });
+  assert.equal(r.blocks.some(x => x.type === 'img' && x.pending), true);
+  assert.equal(/⟦img/.test(serializeBlocks(r.blocks)), false);              // nothing to save yet: no marker line for a half-made picture
+  const done = resolvePendingImage(r.blocks, 'pendingabc123', FID);
+  assert.equal(serializeBlocks(done.blocks), `- a\n⟦img:${FID}⟧\n\n- b`);
+  assert.equal(done.blocks.some(x => x.pending), false);
+  assert.equal(resolvePendingImage(done.blocks, 'pendingabc123', FID2), null);
 });
