@@ -9,7 +9,9 @@
 
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
-import { createSessionToken, sessionCookieOptions } from '../../../../lib/session';
+import { createSessionToken, sessionCookieOptions, getSession, signShort, verifyShort } from '../../../../lib/session';
+import { cookies } from 'next/headers';
+import { isLineKey } from '../../../../lib/accounts';
 
 
 export async function GET(request) {
@@ -22,36 +24,53 @@ export async function GET(request) {
     return NextResponse.redirect(new URL('/login?error=state_mismatch', request.url));
   }
 
-  // --- Exchange authorization code for tokens ---
-  const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: process.env.LINE_LOGIN_REDIRECT_URI,
-      client_id: process.env.LINE_LOGIN_CHANNEL_ID,
-      client_secret: process.env.LINE_LOGIN_CHANNEL_SECRET,
-    }),
-  });
-  if (!tokenRes.ok) {
-    console.error('LINE token exchange failed:', await tokenRes.text());
-    return NextResponse.redirect(new URL('/login?error=token_exchange', request.url));
-  }
-  const tokenData = await tokenRes.json(); // { access_token, id_token, ... }
+  const mockLine = process.env.MOCK_MODE === '1' && process.env.NODE_ENV !== 'production' && code.startsWith('mock-line:');      // local tests only
+  let verified;
+  if (mockLine) verified = { sub: code.slice('mock-line:'.length), name: 'Mock LINE', picture: null };
+  else {
+    // --- Exchange authorization code for tokens ---
+    const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: process.env.LINE_LOGIN_REDIRECT_URI,
+        client_id: process.env.LINE_LOGIN_CHANNEL_ID,
+        client_secret: process.env.LINE_LOGIN_CHANNEL_SECRET,
+      }),
+    });
+    if (!tokenRes.ok) {
+      console.error('LINE token exchange failed:', await tokenRes.text());
+      return NextResponse.redirect(new URL('/login?error=token_exchange', request.url));
+    }
+    const tokenData = await tokenRes.json(); // { access_token, id_token, ... }
 
-  // --- Verify id_token signature + audience via LINE's verify endpoint ---
-  const verifyRes = await fetch('https://api.line.me/oauth2/v2.1/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ id_token: tokenData.id_token, client_id: process.env.LINE_LOGIN_CHANNEL_ID }),
-  });
-  if (!verifyRes.ok) {
-    console.error('LINE id_token verify failed:', await verifyRes.text());
-    return NextResponse.redirect(new URL('/login?error=id_token_invalid', request.url));
+    // --- Verify id_token signature + audience via LINE's verify endpoint ---
+    const verifyRes = await fetch('https://api.line.me/oauth2/v2.1/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ id_token: tokenData.id_token, client_id: process.env.LINE_LOGIN_CHANNEL_ID }),
+    });
+    if (!verifyRes.ok) {
+      console.error('LINE id_token verify failed:', await verifyRes.text());
+      return NextResponse.redirect(new URL('/login?error=id_token_invalid', request.url));
+    }
+    verified = await verifyRes.json(); // { sub, name, picture, ... }
   }
-  const verified = await verifyRes.json(); // { sub, name, picture, ... }
   const lineUserId = verified.sub;
+
+  // --- A person signed in with Google adds their LINE (started at /api/auth/link-line): nothing is signed in or changed here —
+  //     the two accounts are joined only after they confirm (the LINE key wins, so the bot keeps finding the data) ---
+  const link = await verifyShort('line-link', request.cookies.get('line_link')?.value);
+  if (link) {
+    const done = to => { const r = NextResponse.redirect(new URL(to, request.url)); r.cookies.delete('line_link'); r.cookies.delete('line_oauth_state'); return r; };
+    const session = await getSession(await cookies());
+    if (link.state !== state || !session || session.lineUserId !== link.key) return done('/dashboard/account?error=session_changed');
+    if (isLineKey(link.key)) return done(link.key === lineUserId ? '/dashboard/account?linked=already' : '/dashboard/account?error=line_already');
+    const mergeToken = await signShort('merge', { from: link.key, to: lineUserId, by: link.key }, 900);
+    return done(`/dashboard/account?merge=${encodeURIComponent(mergeToken)}`);
+  }
 
   // --- Upsert the user row (does not touch is_premium/quota fields —
   //     those are only ever changed by the admin console) ---

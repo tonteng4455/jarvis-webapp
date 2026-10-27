@@ -126,7 +126,8 @@ class Query {
     } else if (this.op === 'upsert') {
       const list = Array.isArray(this.payload) ? this.payload : [this.payload];
       result = list.map(p => {
-        const existing = rows.find(r => r[this.upsertKey] === p[this.upsertKey]);
+        const keys = this.upsertKey.split(',');
+        const existing = rows.find(r => keys.every(k => r[k] === p[k]));
         if (existing) { Object.assign(existing, clone(p)); return existing; }
         const row = this._fill(clone(p));
         rows.push(row);
@@ -160,9 +161,29 @@ class Query {
   }
 }
 
+const MERGE_TABLES = ['notes', 'tasks', 'calendar_events', 'expenses', 'user_files', 'user_lexicon', 'google_accounts', 'contacts', 'push_subscriptions'];
+// the same job as merge_accounts() in accounts.sql
+function mergeAccountsMock(from, to) {
+  const d = db();
+  if (!from || !to || from === to) return;
+  const users = d.users || (d.users = []);
+  const f = users.find(u => u.line_user_id === from);
+  let t = users.find(u => u.line_user_id === to);
+  if (!t && f) { t = { ...JSON.parse(JSON.stringify(f)), line_user_id: to }; users.push(t); }
+  for (const name of MERGE_TABLES) {
+    for (const row of d[name] || []) if (row.user_id === from) row.user_id = to;
+  }
+  if (f && t) { for (const k of Object.keys(f)) if (k !== 'line_user_id' && k !== 'used_storage_bytes' && (t[k] === null || t[k] === undefined) && f[k] != null) t[k] = f[k]; t.used_storage_bytes = (t.used_storage_bytes || 0) + (f.used_storage_bytes || 0); }
+  d.users = users.filter(u => u.line_user_id !== from);
+  for (const i of d.user_identities || []) if (i.user_id === from) i.user_id = to;
+}
+
 export function mockSupabase() {
   return {
     from: table => new Query(table),
-    rpc: async name => (name === 'effective_quota_bytes' ? { data: 1073741824, error: null } : { data: null, error: null }),
+    rpc: async (name, args) => {
+      if (name === 'merge_accounts') { mergeAccountsMock(args?.p_from, args?.p_to); return { data: null, error: null }; }
+      return name === 'effective_quota_bytes' ? { data: 1073741824, error: null } : { data: null, error: null };
+    },
   };
 }

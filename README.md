@@ -36,6 +36,14 @@ automatically every time a row is added to or removed from `user_files`
    `https://<your-pages-domain>/api/auth/callback`
 4. Scopes needed: `profile`, `openid` (defaults are fine)
 
+## 2b) Sign in with Google too (optional, free)
+People without LINE can sign in with Google, and one person can use both with the same data.
+1. Run `accounts.sql` once in Supabase → SQL editor (table `user_identities` + function `merge_accounts`). Until then the LINE sign-in works exactly as before.
+2. Google Cloud Console → APIs & Services → Credentials → **Create OAuth client ID → Web application**. Add the authorised redirect URI
+   `https://<your site>/api/auth/google/callback`. On the OAuth consent screen the scopes `openid`, `email`, `profile` are enough (no Google review needed).
+3. In Cloudflare add the variables `GOOGLE_LOGIN_CLIENT_ID` and `GOOGLE_LOGIN_CLIENT_SECRET` (and `GOOGLE_LOGIN_REDIRECT_URI` only if the site is served from a different host than the one in step 2).
+A Google-only person has the key `google:<id>`; when they link LINE, everything moves to their LINE key (the bot keeps working untouched). Accounts are never joined automatically from a matching e-mail — the person has to link them, and confirm.
+
 ## 3) File storage
 
 The web app no longer uses R2. Photos/files live in each user's own Google
