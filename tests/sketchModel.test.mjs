@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { endsOf, dimOffsetHandle, dimOffsetFor, isShape, dimGeom, dimLabelBox, calloutLine, nextPinNumber, linePath, translateMany, duplicateItems, itemsInRect, cleanItems, edgePoint, lineEnds, insideShape, shapeAt, hitItem, topItemAt, translateItem, resizeShape, removeItems, byIdMap, sceneBounds, boundsOf, duplicateItem, serializeItems } from '../lib/sketchModel.js';
+import { endsOf, dimOffsetHandle, dimOffsetFor, isShape, dimGeom, dimLabelBox, calloutLine, nextPinNumber, linePath, translateMany, duplicateItems, itemsInRect, cleanItems, edgePoint, lineEnds, insideShape, shapeAt, hitItem, topItemAt, translateItem, resizeShape, removeItems, byIdMap, sceneBounds, boundsOf, duplicateItem, serializeItems, normHex, hslToHex, hexToHsl } from '../lib/sketchModel.js';
 
 const rect = (o = {}) => ({ k: 'rect', id: 'r1', c: '#000', w: 3, f: false, x: 100, y: 100, bw: 200, bh: 100, t: '', ...o });
 const arrow = (o = {}) => ({ k: 'arrow', id: 'a1', c: '#000', w: 3, a: [0, 0], e: [50, 0], from: null, to: null, ...o });
@@ -237,15 +237,47 @@ test('dim: the offset follows the pointer (signed, along the normal) and the han
   const h = dimOffsetHandle(d); assert.ok(Math.abs(h[1] - 50) < 1e-9 && Math.abs(h[0] - 75) < 1e-9);
 });
 
-test('lines: ends and dash load back; the default ends depend on the kind (an arrow points, a line does not)', () => {
+test('lines: ends and the old dash flag (now ln: dash) load back; the default ends depend on the kind (an arrow points, a line does not)', () => {
   assert.equal(endsOf({ k: 'arrow' }), 'end'); assert.equal(endsOf({ k: 'line' }), 'none'); assert.equal(endsOf({ k: 'line', ends: 'both' }), 'both'); assert.equal(endsOf({ k: 'arrow', ends: 'none' }), 'none');
   const out = cleanItems([arrow({ ends: 'both', dash: true }), arrow({ id: 'b', ends: 'weird', dash: 'yes' }), arrow({ id: 'c', k: 'line', ends: 'dot' })]);
-  assert.equal(out[0].ends, 'both'); assert.equal(out[0].dash, true);
-  assert.equal(out[1].ends, undefined); assert.equal(out[1].dash, undefined);
+  assert.equal(out[0].ends, 'both'); assert.equal(out[0].ln, 'dash'); assert.equal(out[0].dash, undefined);
+  assert.equal(out[1].ends, undefined); assert.equal(out[1].ln, undefined);
   assert.equal(out[2].ends, 'dot');
 });
 
 test('dim and callout: the "no head" / dot ends load back and anything else falls back to the default', () => {
   const out = cleanItems([dim({ ends: 'dot' }), dim({ id: 'D2', ends: 'none' }), dim({ id: 'D3', ends: 'x' }), call({ tipStyle: 'none' })]);
   assert.equal(out[0].ends, 'dot'); assert.equal(out[1].ends, 'none'); assert.equal(out[2].ends, undefined); assert.equal(out[3].tipStyle, 'none');
+});
+
+test('line styles: kept on every outlined item, solid is dropped, the old dash flag reads as dash', () => {
+  const out = cleanItems([
+    { k: 'stroke', id: 's1', w: 4, tool: 'pen', p: [0, 0, 0.5, 5, 5, 0.5], ln: 'dot' },
+    { k: 'stroke', id: 's2', w: 4, tool: 'marker', p: [0, 0, 0.5, 5, 5, 0.5], ln: 'double' },
+    { k: 'rect', id: 'r1', x: 0, y: 0, bw: 50, bh: 40, ln: 'double' },
+    { k: 'arrow', id: 'a1', a: [0, 0], e: [50, 0], dash: true },
+    { k: 'arrow', id: 'a2', a: [0, 0], e: [50, 0], ln: 'solid', dash: true },
+    { k: 'line', id: 'l1', a: [0, 0], e: [50, 0], ln: 'zigzag' },
+    { k: 'dim', id: 'd1', a: [0, 0], e: [80, 0], ln: 'dashdot' },
+  ]);
+  const by = id => out.find(i => i.id === id);
+  assert.equal(by('s1').ln, 'dot');
+  assert.equal(by('s2').ln, undefined);           // a highlighter has no line style
+  assert.equal(by('r1').ln, 'double');
+  assert.equal(by('a1').ln, 'dash');
+  assert.equal('dash' in by('a1'), false);
+  assert.equal(by('a2').ln, undefined);           // an explicit solid beats the old flag
+  assert.equal(by('l1').ln, undefined);
+  assert.equal(by('d1').ln, 'dashdot');
+});
+
+test('colours: codes are normalised and the hue / saturation / lightness maths round-trips', () => {
+  assert.equal(normHex('#E8590C'), '#e8590c');
+  assert.equal(normHex('f80'), '#ff8800');
+  assert.equal(normHex('#12345'), null);
+  assert.equal(hslToHex(0, 100, 50), '#ff0000');
+  assert.equal(hslToHex(120, 100, 25), '#008000');
+  assert.equal(hslToHex(0, 0, 100), '#ffffff');
+  assert.deepEqual(hexToHsl('#0000ff'), { h: 240, s: 100, l: 50 });
+  for (const c of ['#e03131', '#1971c2', '#2f9e44', '#9c36b5']) { const { h, s, l } = hexToHsl(c); const back = hexToHsl(hslToHex(h, s, l)); assert.ok(Math.abs(back.h - h) <= 2 && Math.abs(back.s - s) <= 2 && Math.abs(back.l - l) <= 2, c); }
 });
