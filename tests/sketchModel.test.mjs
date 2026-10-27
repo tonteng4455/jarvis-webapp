@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dimOffsetHandle, dimOffsetFor, isShape, dimGeom, dimLabelBox, calloutLine, nextPinNumber, linePath, translateMany, duplicateItems, itemsInRect, cleanItems, edgePoint, lineEnds, insideShape, shapeAt, hitItem, topItemAt, translateItem, resizeShape, removeItems, byIdMap, sceneBounds, boundsOf, duplicateItem, serializeItems } from '../lib/sketchModel.js';
+import { endsOf, dimOffsetHandle, dimOffsetFor, isShape, dimGeom, dimLabelBox, calloutLine, nextPinNumber, linePath, translateMany, duplicateItems, itemsInRect, cleanItems, edgePoint, lineEnds, insideShape, shapeAt, hitItem, topItemAt, translateItem, resizeShape, removeItems, byIdMap, sceneBounds, boundsOf, duplicateItem, serializeItems } from '../lib/sketchModel.js';
 
 const rect = (o = {}) => ({ k: 'rect', id: 'r1', c: '#000', w: 3, f: false, x: 100, y: 100, bw: 200, bh: 100, t: '', ...o });
 const arrow = (o = {}) => ({ k: 'arrow', id: 'a1', c: '#000', w: 3, a: [0, 0], e: [50, 0], from: null, to: null, ...o });
@@ -235,4 +235,12 @@ test('dim: the offset follows the pointer (signed, along the normal) and the han
   assert.ok(Math.abs(dimOffsetFor(d, 120, 80) - 80) < 1e-9);
   assert.ok(Math.abs(dimOffsetFor(d, 120, -30) + 30) < 1e-9);
   const h = dimOffsetHandle(d); assert.ok(Math.abs(h[1] - 50) < 1e-9 && Math.abs(h[0] - 75) < 1e-9);
+});
+
+test('lines: ends and dash load back; the default ends depend on the kind (an arrow points, a line does not)', () => {
+  assert.equal(endsOf({ k: 'arrow' }), 'end'); assert.equal(endsOf({ k: 'line' }), 'none'); assert.equal(endsOf({ k: 'line', ends: 'both' }), 'both'); assert.equal(endsOf({ k: 'arrow', ends: 'none' }), 'none');
+  const out = cleanItems([arrow({ ends: 'both', dash: true }), arrow({ id: 'b', ends: 'weird', dash: 'yes' }), arrow({ id: 'c', k: 'line', ends: 'dot' })]);
+  assert.equal(out[0].ends, 'both'); assert.equal(out[0].dash, true);
+  assert.equal(out[1].ends, undefined); assert.equal(out[1].dash, undefined);
+  assert.equal(out[2].ends, 'dot');
 });

@@ -21,7 +21,7 @@ import { embedScene, readScene } from '../../lib/sketchPng';
 import { embedInJpeg, readFromJpeg, sniffImageType } from '../../lib/sketchJpeg';
 import { loadDraft, saveDraft, clearDraft } from '../../lib/draft';
 import {
-  FONT, TEXT_SIZES, LABEL_SIZE, clamp, uid, isShape, isLine, isDim, isPin, dimOffsetHandle, dimOffsetFor, dimLabelBox, dimLabelSize, nextPinNumber, cleanItems, serializeItems, sig, byIdMap, sceneBounds, boundsOf,
+  FONT, TEXT_SIZES, LABEL_SIZE, clamp, uid, isShape, isLine, isDim, isPin, endsOf, dimOffsetHandle, dimOffsetFor, dimLabelBox, dimLabelSize, nextPinNumber, cleanItems, serializeItems, sig, byIdMap, sceneBounds, boundsOf,
   hitItem, topItemAt, shapeAt, resizeShape, cornerPoints, lineEnds, removeItems, translateMany, duplicateItems, itemsInRect,
 } from '../../lib/sketchModel';
 import { paintItems, drawItem, drawSelection, drawGroupSelection, drawMarquee, measureText } from '../../lib/sketchDraw';
@@ -47,6 +47,12 @@ const ICON = {
   pin: svg(<><circle cx="12" cy="12" r="9" /><text x="12" y="16.2" textAnchor="middle" fontSize="11.5" fontWeight="700" fill="currentColor" stroke="none">1</text></>),
   tipDot: svg(<><path d="M4 20L15 9" /><circle cx="17" cy="7" r="3" fill="currentColor" /></>),
   fill: svg(<><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 000 16z" fill="currentColor" /></>),
+  endsNone: svg(<path d="M3 12h18" />),
+  endsEnd: svg(<><path d="M3 12h16" /><path d="M14 7l6 5-6 5z" fill="currentColor" /></>),
+  endsBoth: svg(<><path d="M5 12h14" /><path d="M10 7L4 12l6 5zM14 7l6 5-6 5z" fill="currentColor" /></>),
+  endsDot: svg(<><path d="M3 12h13" /><circle cx="18.5" cy="12" r="3" fill="currentColor" /></>),
+  solid: svg(<path d="M3 12h18" />),
+  dashed: svg(<path d="M3 12h4M10 12h4M17 12h4" />),
   tipArrow: svg(<><path d="M4 20L18 6M18 6h-7M18 6v7" /></>),
 };
 // the tools in groups. A group is shown open when the bar is wide enough, else as ONE button (its last-used tool + the group's name)
@@ -137,6 +143,9 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const [fill, setFill] = useState(false);
   const [dimStyle, setDimStyle] = useState('simple');   // how the next measured distance looks: 'simple' | 'plan'
   const [tipStyle, setTipStyle] = useState('arrow');   // how the next callout's pointer ends: 'arrow' | 'dot'
+  const [lineOpts, setLineOpts] = useState({ ends: null, dash: false });   // how the next line / arrow looks (ends null = the tool's own default)
+  const [customW, setCustomW] = useState(null);         // a thickness typed in by hand (null = the three presets)
+  const [sizeText, setSizeText] = useState(null);
   const [selIds, setSelIds] = useState([]);
   const [multi, setMulti] = useState(false);
   const [editing, setEditing] = useState(null);     // { mode:'new'|'text'|'label', id, x, y, text, size, c, box? }
@@ -152,6 +161,8 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const fillRef = useRef(fill); fillRef.current = fill;
   const dimStyleRef = useRef(dimStyle); dimStyleRef.current = dimStyle;
   const tipStyleRef = useRef(tipStyle); tipStyleRef.current = tipStyle;
+  const lineOptsRef = useRef(lineOpts); lineOptsRef.current = lineOpts;
+  const customWRef = useRef(customW); customWRef.current = customW;
   const selRef = useRef(selIds); selRef.current = selIds;
   const multiRef = useRef(multi); multiRef.current = multi;
   const editRef = useRef(editing); editRef.current = editing;
@@ -324,7 +335,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     return true;
   };
   const chooseColor = c => { setColor(c); if (selRef.current.length) updateSel({ c }); else if (toolRef.current === 'eraser' || toolRef.current === 'hand') setTool('pen'); };
-  const chooseWidth = i => { setWidthIdx(i); if (selRef.current.length) updateSel(it => (it.k === 'text' ? { s: Math.round(TEXT_SIZES[i] * unit()) } : isPin(it) ? { r: Math.round(PIN_R[i] * unit()) } : { w: WIDTHS[i] * unit() })); };
+  const chooseWidth = i => { setWidthIdx(i); setCustomW(null); if (selRef.current.length) updateSel(it => (it.k === 'text' ? { s: Math.round(TEXT_SIZES[i] * unit()) } : isPin(it) ? { r: Math.round(PIN_R[i] * unit()) } : { w: WIDTHS[i] * unit() })); };
   const toggleFill = () => {
     const shapes = selectedItems().filter(isShape);
     if (shapes.length) { const on = !shapes.every(i => i.f); updateSel(i => (isShape(i) ? { f: on } : null)); setFill(on); } else setFill(f => !f);
@@ -340,13 +351,15 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     commit([...items.current, ...copies]); setSel(copies.map(c => c.id));
   };
   const editSelected = () => { const it = selected(); if (editable(it)) startEditing(it); };
-  const toggleDimStyle = () => {
-    const dims = selectedItems().filter(isDim);
-    if (dims.length) { const to = dims.every(d => d.style === 'plan') ? 'simple' : 'plan'; updateSel(i => (isDim(i) ? { style: to } : null)); setDimStyle(to); } else setDimStyle(v => (v === 'plan' ? 'simple' : 'plan'));
-  };
-  const toggleTipStyle = () => {
-    const calls = selectedItems().filter(i => i.k === 'callout');
-    if (calls.length) { const to = calls.every(d => d.tipStyle === 'dot') ? 'arrow' : 'dot'; updateSel(i => (i.k === 'callout' ? { tipStyle: to } : null)); setTipStyle(to); } else setTipStyle(v => (v === 'dot' ? 'arrow' : 'dot'));
+  // options that belong to a tool: they apply to the selected items of that kind AND to what is drawn next
+  const setDimStyleOpt = v => { updateSel(i => (isDim(i) ? { style: v } : null)); setDimStyle(v); };
+  const setTipOpt = v => { updateSel(i => (i.k === 'callout' ? { tipStyle: v } : null)); setTipStyle(v); };
+  const setEndsOpt = v => { updateSel(i => (isLine(i) ? { ends: v } : null)); setLineOpts(o => ({ ...o, ends: v })); };
+  const setDashOpt = v => { updateSel(i => (isLine(i) ? { dash: v } : null)); setLineOpts(o => ({ ...o, dash: v })); };
+  const applySize = v => {
+    const val = clamp(v, 1, 200);
+    if (selRef.current.length) updateSel(it => (it.k === 'text' ? { s: Math.round(val) } : isPin(it) ? { r: val } : { w: val }));
+    if (!selRef.current.length || selectedItems().some(i => i.k !== 'text' && !isPin(i))) setCustomW(val);
   };
   const pickTool = t => { endEdit(); setTool(t); if (t !== 'select') { setSel([]); setMulti(false); } };
   const toggleMulti = () => { endEdit(); const on = !multi; setMulti(on); if (on) setTool('select'); };
@@ -374,7 +387,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     if (n >= 3) { const dx = wx - p[n - 3], dy = wy - p[n - 2]; if (dx * dx + dy * dy < (0.8 / view.current.k) ** 2) return; }
     p.push(Math.round(wx * 10) / 10, Math.round(wy * 10) / 10, Math.round(pressureOf(e) * 100) / 100);
   };
-  const unit = () => unitFor(bgRef.current), wNow = () => WIDTHS[widthRef.current] * unit();
+  const unit = () => unitFor(bgRef.current), wNow = () => customWRef.current ?? WIDTHS[widthRef.current] * unit();
   const startDraw = e => {
     cur.current = { k: 'stroke', id: uid(), c: colorRef.current, w: wNow(), tool: toolRef.current === 'marker' ? 'marker' : 'pen', p: [], fromTouch: e.pointerType === 'touch' };
     g.current = { type: 'draw', pid: e.pointerId }; addPoint(e); schedule('live');
@@ -387,7 +400,7 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
   const startLine = e => {
     const [x, y] = toWorld(e.clientX, e.clientY), from = shapeAt(items.current, x, y);
     const elbow = toolRef.current === 'elbow';
-    cur.current = { k: elbow ? 'arrow' : toolRef.current, id: uid(), c: colorRef.current, w: wNow(), a: [x, y], e: [x, y], from: from ? from.id : null, to: null, elbow, fromTouch: e.pointerType === 'touch' };
+    cur.current = { k: elbow ? 'arrow' : toolRef.current, id: uid(), c: colorRef.current, w: wNow(), a: [x, y], e: [x, y], from: from ? from.id : null, to: null, elbow, ...(lineOptsRef.current.ends ? { ends: lineOptsRef.current.ends } : null), ...(lineOptsRef.current.dash ? { dash: true } : null), fromTouch: e.pointerType === 'touch' };
     g.current = { type: 'line', pid: e.pointerId, from: from ? from.id : null }; schedule('live');
   };
   // a measured distance: drag from one point to the other, then type what it measures
@@ -682,25 +695,29 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
     <button key={key} type="button" className={`sk-btn${tool === key ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={tool === key}
       onClick={() => { pickTool(key); if (pop) setOpenGroup(null); }}>{icon}{pop && <span className="sk-lbl">{label}</span>}</button>
   );
-  const dimPlan = chosen.some(isDim) ? chosen.filter(isDim).every(d => d.style === 'plan') : dimStyle === 'plan';
-  const tipDot = chosen.some(i => i.k === 'callout') ? chosen.filter(i => i.k === 'callout').every(d => d.tipStyle === 'dot') : tipStyle === 'dot';
+  // what the thin options bar shows: the options of the selected items' kind, else of the tool in hand
+  const optKinds = new Set(chosen.map(i => (isDim(i) ? 'dim' : i.k === 'callout' ? 'callout' : isLine(i) ? 'line' : 'other')));
+  const toolKind = tool === 'dim' ? 'dim' : tool === 'callout' ? 'callout' : (tool === 'line' || tool === 'arrow' || tool === 'elbow') ? 'line' : null;
+  const optKind = chosen.length ? (optKinds.size === 1 && !optKinds.has('other') ? [...optKinds][0] : null) : toolKind;
+  const dimNow = chosen.some(isDim) ? (chosen.filter(isDim).every(d => d.style === 'plan') ? 'plan' : 'simple') : dimStyle;
+  const tipNow = chosen.some(i => i.k === 'callout') ? (chosen.filter(i => i.k === 'callout').every(d => d.tipStyle === 'dot') ? 'dot' : 'arrow') : tipStyle;
+  const toolEnds = tool === 'line' ? 'none' : 'end';
+  const endsNow = chosenLines.length ? (chosenLines.every(l => endsOf(l) === endsOf(chosenLines[0])) ? endsOf(chosenLines[0]) : null) : (lineOpts.ends || toolEnds);
+  const dashNow = chosenLines.length ? chosenLines.every(l => l.dash) : lineOpts.dash;
+  const sizeDerived = chosen.length ? Math.round(chosen[0].k === 'text' ? chosen[0].s : isPin(chosen[0]) ? chosen[0].r : chosen[0].w) : Math.round(customW ?? WIDTHS[widthIdx] * unitFor(bgRef.current));
   const groupBody = (g, pop) => {
     if (g.id === 'style') return (
       <>
         {INK.map(c => <button key={c} type="button" className={`sk-dot${shownColor === c ? ' on' : ''}`} style={{ background: c }} title="สี" aria-label={`สี ${c}`} aria-pressed={shownColor === c} onClick={() => chooseColor(c)} />)}
-        {WIDTHS.map((w, i) => <button key={w} type="button" className={`sk-btn${widthIdx === i ? ' on' : ''}`} title={`ขนาดเส้น/ตัวอักษร ${i + 1}`} aria-label={`ขนาด ${i + 1}`} aria-pressed={widthIdx === i} onClick={() => chooseWidth(i)}><span className="sk-w" style={{ width: 6 + i * 4, height: 6 + i * 4 }} /></button>)}
+        {WIDTHS.map((w, i) => <button key={w} type="button" className={`sk-btn${widthIdx === i && customW === null ? ' on' : ''}`} title={`ขนาดเส้น/ตัวอักษร ${i + 1}`} aria-label={`ขนาด ${i + 1}`} aria-pressed={widthIdx === i && customW === null} onClick={() => chooseWidth(i)}><span className="sk-w" style={{ width: 6 + i * 4, height: 6 + i * 4 }} /></button>)}
+        <input type="number" className="sk-num" min="1" max="200" inputMode="numeric" title="กำหนดขนาดเส้นเอง (ตัวเลข) — ใช้กับที่เลือกอยู่และที่วาดต่อไป" aria-label="ขนาดเส้น (ตัวเลข)"
+          value={sizeText ?? sizeDerived} onChange={e => { setSizeText(e.target.value); const v = parseFloat(e.target.value); if (Number.isFinite(v) && v >= 1) applySize(v); }} onBlur={() => setSizeText(null)} />
         <button type="button" className={`sk-btn${shownFill ? ' on' : ''}`} title="เติมสีอ่อนในรูปทรง" aria-label="เติมสี" aria-pressed={!!shownFill} onClick={toggleFill}>{ICON.fill}</button>
         <button type="button" className={`sk-btn${chosenLines.length && chosenLines.every(i => i.elbow) ? ' on' : ''}`} title="เส้น/ลูกศรที่เลือก: หักมุมฉาก ⇄ ตรง" aria-label="หักมุม" aria-pressed={!!(chosenLines.length && chosenLines.every(i => i.elbow))} disabled={!chosenLines.length} onClick={toggleElbow}>⌐</button>
       </>
     );
     const own = g.tools.map(([key, icon, label]) => toolBtn(key, icon, label, pop));
-    if (g.id === 'mark') return (
-      <>
-        {own}
-        <button type="button" className={`sk-btn${dimPlan ? ' on' : ''}`} title="เส้นวัดระยะ: แบบแบบแปลน (มีเส้นช่วยยื่น) ⇄ แบบง่าย" aria-label="เส้นวัดแบบแบบแปลน" aria-pressed={dimPlan} onClick={toggleDimStyle}>{ICON.dimPlan}{pop && <span className="sk-lbl">วัดแบบแบบแปลน</span>}</button>
-        <button type="button" className={`sk-btn${tipDot ? ' on' : ''}`} title="กรอบมีตัวชี้: ปลายเป็นจุดกลม ⇄ ลูกศร" aria-label="ปลายตัวชี้เป็นจุดกลม" aria-pressed={tipDot} onClick={toggleTipStyle}>{tipDot ? ICON.tipDot : ICON.tipArrow}{pop && <span className="sk-lbl">ปลายชี้: {tipDot ? 'จุด' : 'ลูกศร'}</span>}</button>
-      </>
-    );
+    if (g.id === 'mark') return own;
     if (g.id === 'edit') return (
       <>
         {own}
@@ -771,6 +788,29 @@ export default function SketchEditor({ imageUrl, draftKey, onSave, onCancel }) {
           <textarea ref={taRef} className="sketch-text-edit" style={{ ...ta, fontFamily: FONT }} defaultValue={editing.text} placeholder={editing.mode === 'dim' ? 'ตัวเลข + หน่วย เช่น 3.50 ม.' : editing.mode === 'label' ? 'ข้อความในรูปทรง' : 'พิมพ์ข้อความ'}
             aria-label="ข้อความ" onPointerDown={stop} onMouseDown={stop} onClick={stop}
             onBlur={() => endEdit(true)} onKeyDown={ev => { if (ev.key === 'Escape') { ev.stopPropagation(); endEdit(false); } }} />
+        )}
+        {optKind && (
+          <div className="sk-opts" role="group" aria-label="ตัวเลือกของเครื่องมือ" onPointerDown={stop} onMouseDown={stop} onClick={stop}>
+            {optKind === 'dim' && (<>
+              <span className="sk-opts-t">เส้นวัดระยะ</span>
+              <button type="button" className={`sk-opt${dimNow === 'simple' ? ' on' : ''}`} aria-label="วัดระยะแบบง่าย" aria-pressed={dimNow === 'simple'} onClick={() => setDimStyleOpt('simple')}>{ICON.dim}<span>แบบง่าย</span></button>
+              <button type="button" className={`sk-opt${dimNow === 'plan' ? ' on' : ''}`} aria-label="วัดระยะแบบแบบแปลน" aria-pressed={dimNow === 'plan'} onClick={() => setDimStyleOpt('plan')}>{ICON.dimPlan}<span>แบบแปลน</span></button>
+            </>)}
+            {optKind === 'callout' && (<>
+              <span className="sk-opts-t">ปลายชี้</span>
+              <button type="button" className={`sk-opt${tipNow === 'arrow' ? ' on' : ''}`} aria-label="ปลายชี้เป็นลูกศร" aria-pressed={tipNow === 'arrow'} onClick={() => setTipOpt('arrow')}>{ICON.tipArrow}<span>ลูกศร</span></button>
+              <button type="button" className={`sk-opt${tipNow === 'dot' ? ' on' : ''}`} aria-label="ปลายชี้เป็นจุดกลม" aria-pressed={tipNow === 'dot'} onClick={() => setTipOpt('dot')}>{ICON.tipDot}<span>จุดกลม</span></button>
+            </>)}
+            {optKind === 'line' && (<>
+              <span className="sk-opts-t">ปลาย</span>
+              {[['none', 'ปลายไม่มีหัว', ICON.endsNone], ['end', 'ปลายลูกศร', ICON.endsEnd], ['both', 'ปลายลูกศรสองข้าง', ICON.endsBoth], ['dot', 'ปลายจุดกลม', ICON.endsDot]].map(([v, label, ic]) => (
+                <button key={v} type="button" className={`sk-opt icon${endsNow === v ? ' on' : ''}`} title={label} aria-label={label} aria-pressed={endsNow === v} onClick={() => setEndsOpt(v)}>{ic}</button>
+              ))}
+              <span className="sk-opts-t sep">เส้น</span>
+              <button type="button" className={`sk-opt icon${!dashNow ? ' on' : ''}`} title="เส้นทึบ" aria-label="เส้นทึบ" aria-pressed={!dashNow} onClick={() => setDashOpt(false)}>{ICON.solid}</button>
+              <button type="button" className={`sk-opt icon${dashNow ? ' on' : ''}`} title="เส้นประ" aria-label="เส้นประ" aria-pressed={!!dashNow} onClick={() => setDashOpt(true)}>{ICON.dashed}</button>
+            </>)}
+          </div>
         )}
         {loading && <div className="sketch-loading">กำลังเปิด…</div>}
       </div>
