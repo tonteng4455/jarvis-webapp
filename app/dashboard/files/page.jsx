@@ -174,6 +174,15 @@ export default function FilesPage() {
   }
 
   useEffect(() => { load(); }, []);
+  // a link from the LINE bot (?id=<file id>) opens that file straight away
+  const wantedId = useRef(null);
+  useEffect(() => { try { wantedId.current = new URLSearchParams(window.location.search).get('id'); } catch { /* ignore */ } }, []);
+  useEffect(() => {
+    if (!data || !wantedId.current) return;
+    const f = (data.files || []).find(x => x.id === wantedId.current);
+    wantedId.current = null;
+    if (f) setOpen(f);
+  }, [data]);
   useRefreshOnReturn(load);
 
   async function deleteFile(f) {
