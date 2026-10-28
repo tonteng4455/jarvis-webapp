@@ -11,7 +11,8 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../lib/premium';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
-import { sanitizeNoteImages } from '../../../lib/noteImages';
+import { registerNoteImages, binImages } from '../../../lib/noteImageIndex';
+import { sanitizeNoteImages, replacedIds } from '../../../lib/noteImages';
 
 const NOTES_LIMIT_FREE = 50; // keep in sync with NOTES_LIMIT_FREE on the bot's Worker
 
@@ -85,6 +86,7 @@ export async function POST(request) {
 
   const { title, content, category, color, images, pinned } = await request.json();
   const cleanImages = sanitizeNoteImages(images);
+  const replaced = replacedIds(images);
   if (!title?.trim() && !content?.trim() && cleanImages.length === 0) {
     return NextResponse.json({ error: 'empty_note' }, { status: 400 });
   }
@@ -132,5 +134,9 @@ export async function POST(request) {
     .single();
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+  try {                                                                    // the image library is best-effort: it never fails the save
+    if (cleanImages.length) await registerNoteImages(supabase, session.lineUserId, data);
+    if (replaced.length) await binImages(supabase, session.lineUserId, replaced);
+  } catch (e) { console.error('image library:', e?.message); }
   return NextResponse.json({ note: data });
 }

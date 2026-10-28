@@ -12,6 +12,9 @@ import { DashNav } from '../_components';
 import { apiGet, ErrorState, ListSkeleton, useRefreshOnReturn, useToast } from '../_ui';
 
 const KIND_ICON = { image: '🖼️', video: '🎬', audio: '🎵', file: '📄' };
+// pictures made in a note are PRIVATE files in the person's Drive: they are shown through the app's signed-in proxy, never a public link
+const isNote = f => f.source === 'note';
+const noteSrc = f => `/api/notes/images/${encodeURIComponent(f.drive_file_id)}`;
 
 // Drive's own thumbnail endpoint works in an <img> for "anyone with the link" files (the old
 // uc?export=view address is increasingly refused when hot-linked). Fall back through the stored URL,
@@ -40,6 +43,7 @@ const viewerUrl = f => `https://drive.google.com/file/d/${encodeURIComponent(dri
 function previewSources(f, size) {
   const list = [];
   const id = driveId(f);
+  if (isNote(f)) { list.push(noteSrc(f)); return list; }
   if (f.kind === 'image') {
     if (id) list.push(`https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${size}`);
     if (f.url) list.push(f.url);
@@ -78,6 +82,7 @@ function Tile({ f, selecting, selected, onOpen, onToggle, onStartSelect }) {
         : <span className="ft-icon">{KIND_ICON[f.kind] || '📄'}{extOf(f.file_name) && <small>{extOf(f.file_name)}</small>}</span>}
       {canPreview && f.kind !== 'image' && !selecting && <span className="ft-badge">{extOf(f.file_name) || KIND_ICON[f.kind]}</span>}
       {selecting && <span className={`ft-check${selected ? ' on' : ''}`} aria-hidden>{selected ? '✓' : ''}</span>}
+      {isNote(f) && !f.note_id && !selecting && <span className="ft-badge lib" title="ไม่ได้อยู่ในโน้ตไหน">🗂️</span>}
       <span className="ft-name">{f.file_name}</span>
     </button>
   );
@@ -102,10 +107,12 @@ function PreviewSheet({ f, onClose, onDelete }) {
           ? <PreviewChain list={list} onAllFailed={() => setBroken(true)} alt={f.file_name} />
           : <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', background: 'var(--surface-muted)', borderRadius: 12 }}>{KIND_ICON[f.kind] || '📄'}</div>}
         <div style={{ marginTop: '0.7rem', fontWeight: 600, wordBreak: 'break-all' }}>{f.file_name}</div>
-        <div className="muted">{formatBytes(f.size_bytes)} · {formatDate(f.created_at)}</div>
+        <div className="muted">{isNote(f) ? (f.note_title ? `📝 อยู่ในโน้ต “${f.note_title}”` : '🗂️ อยู่ในคลัง ไม่ได้อยู่ในโน้ตไหน') : formatBytes(f.size_bytes)} · {formatDate(f.created_at)}</div>
         <div className="convert-actions" style={{ justifyContent: 'stretch' }}>
-          {f.url && <a href={f.url} target="_blank" rel="noopener noreferrer" className="glass-btn-outline" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>🔗 เปิดไฟล์เต็ม</a>}
-          <button type="button" className="glass-btn-danger" style={{ flex: 1 }} onClick={() => onDelete(f)}>🗑️ ลบ</button>
+          {isNote(f) && <a href={noteSrc(f)} target="_blank" rel="noopener noreferrer" className="glass-btn-outline" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>🔗 เปิดภาพเต็ม</a>}
+          {isNote(f) && f.note_id && <a href={`/dashboard?id=${encodeURIComponent(f.note_id)}`} className="glass-btn-outline" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>📝 เปิดโน้ต</a>}
+          {!isNote(f) && f.url && <a href={f.url} target="_blank" rel="noopener noreferrer" className="glass-btn-outline" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>🔗 เปิดไฟล์เต็ม</a>}
+          <button type="button" className="glass-btn-danger" style={{ flex: 1 }} onClick={() => onDelete(f)}>🗑️ {isNote(f) ? 'ลบทิ้ง' : 'ลบ'}</button>
         </div>
         <button type="button" className="glass-btn-outline" style={{ width: '100%', marginTop: '0.5rem' }} onClick={onClose}>ปิด</button>
       </div>
@@ -136,8 +143,9 @@ function formatDate(iso) {
 
 // Download = Drive's direct-download address in a hidden frame (the browser saves it, the page stays put).
 // One file at a time with a short gap — phones allow several downloads in a row after one "allow" prompt.
-const downloadUrl = f => { const id = driveId(f); return id ? `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}` : null; };
-function triggerDownload(url) {
+const downloadUrl = f => { if (isNote(f)) return noteSrc(f); const id = driveId(f); return id ? `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}` : null; };
+function triggerDownload(url, name) {
+  if (url.startsWith('/')) { const a = document.createElement('a'); a.href = url; a.download = name || 'image'; document.body.appendChild(a); a.click(); a.remove(); return; }
   const fr = document.createElement('iframe');
   fr.style.display = 'none'; fr.src = url;
   document.body.appendChild(fr);
@@ -150,6 +158,7 @@ export default function FilesPage() {
   const [error, setError] = useState(false);
   const toast = useToast();
   const [filterKind, setFilterKind] = useState('all');
+  const [filterSrc, setFilterSrc] = useState('all');        // all | note (pictures made in notes) | lib (…that are in no note now) | chat
   const [cols, setCols] = useState(3);
   const [open, setOpen] = useState(null);
   const [sel, setSel] = useState(null);          // null = normal; Set of ids = select mode
@@ -168,7 +177,7 @@ export default function FilesPage() {
   useRefreshOnReturn(load);
 
   async function deleteFile(f) {
-    if (!confirm('ลบไฟล์นี้ถาวรใช่ไหมครับ? กู้คืนไม่ได้แล้ว')) return;
+    if (!confirm(isNote(f) ? 'ลบรูปนี้ไหมครับ? จะย้ายไปถังขยะของ Google Drive (กู้คืนได้ภายใน 30 วัน)' : 'ลบไฟล์นี้ถาวรใช่ไหมครับ? กู้คืนไม่ได้แล้ว')) return;
     const res = await fetch(`/api/files/${f.id}`, { method: 'DELETE' });
     if (!res.ok) { toast.show('❌ ลบไม่สำเร็จ', { tone: 'error' }); return; }
     setData(prev => ({ ...prev, files: prev.files.filter(x => x.id !== f.id) }));
@@ -187,7 +196,8 @@ export default function FilesPage() {
 
   async function deleteSelected() {
     const ids = shown.filter(x => sel?.has(x.id)).map(x => x.id); if (!ids.length || busy) return;
-    if (!confirm(`ลบ ${ids.length} ไฟล์ถาวรใช่ไหมครับ? กู้คืนไม่ได้แล้ว`)) return;
+    const hasNote = shown.some(x => sel?.has(x.id) && isNote(x)), hasChat = shown.some(x => sel?.has(x.id) && !isNote(x));
+    if (!confirm(`ลบ ${ids.length} ไฟล์ใช่ไหมครับ?${hasNote ? '\nรูปจากโน้ตจะย้ายไปถังขยะของ Google Drive (กู้คืนได้ภายใน 30 วัน)' : ''}${hasChat ? '\nไฟล์จากแชทลบถาวร กู้คืนไม่ได้' : ''}`)) return;
     setBusy(true);
     const done = [];
     for (let i = 0; i < ids.length; i += 3) {
@@ -207,7 +217,7 @@ export default function FilesPage() {
     for (const f of chosen) {
       const url = downloadUrl(f);
       if (!url) { skipped++; continue; }
-      triggerDownload(url); n++;
+      triggerDownload(url, f.file_name); n++;
       await sleep(900);
     }
     setBusy(false);
@@ -215,7 +225,9 @@ export default function FilesPage() {
   }
 
   const files = data?.files || [];
-  const shown = filterKind === 'all' ? files : files.filter(f => f.kind === filterKind);
+  const srcOk = f => (filterSrc === 'all' ? true : filterSrc === 'note' ? isNote(f) && !!f.note_id : filterSrc === 'lib' ? isNote(f) && !f.note_id : !isNote(f));
+  const shown = files.filter(f => (filterKind === 'all' || f.kind === filterKind) && srcOk(f));
+  const srcCounts = { note: files.filter(f => isNote(f) && f.note_id).length, lib: files.filter(f => isNote(f) && !f.note_id).length, chat: files.filter(f => !isNote(f)).length };
   const visibleSelCount = sel ? shown.filter(x => sel.has(x.id)).length : 0;
   const kindCounts = files.reduce((acc, f) => { acc[f.kind] = (acc[f.kind] || 0) + 1; return acc; }, {});
 
@@ -249,6 +261,13 @@ export default function FilesPage() {
 
       {data && (
         <>
+          {(srcCounts.note + srcCounts.lib > 0) && (
+            <div className="dash-nav" style={{ margin: '0 0 0.6rem' }} role="group" aria-label="แหล่งที่มา">
+              {[['all', 'ทุกที่', files.length], ['note', '📝 รูปในโน้ต', srcCounts.note], ['lib', '🗂️ คลัง (ไม่อยู่ในโน้ตไหน)', srcCounts.lib], ['chat', '💬 จากแชท', srcCounts.chat]].map(([k, l, n]) => (
+                <span key={k} className={`dash-nav-item${filterSrc === k ? ' active' : ''}`} data-src={k} style={{ cursor: 'pointer' }} onClick={() => setFilterSrc(k)}>{l} {n}</span>
+              ))}
+            </div>
+          )}
           <div className="dash-nav" style={{ margin: '0 0 1rem' }}>
             <span className={`dash-nav-item${filterKind === 'all' ? ' active' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setFilterKind('all')}>
               ทั้งหมด {files.length}

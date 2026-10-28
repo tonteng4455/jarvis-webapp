@@ -11,7 +11,8 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../../lib/premium';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
-import { sanitizeNoteImages } from '../../../../lib/noteImages';
+import { sanitizeNoteImages, replacedIds } from '../../../../lib/noteImages';
+import { registerNoteImages, releaseOtherImages, releaseNote, binImages } from '../../../../lib/noteImageIndex';
 import { learnCategory } from '../../../../lib/lexicon';
 
 const EDITABLE_FIELDS = ['title', 'content', 'category', 'color', 'images', 'pinned', 'archived', 'sort_order'];
@@ -31,6 +32,7 @@ export async function PATCH(request, { params }) {
   for (const key of EDITABLE_FIELDS) {
     if (key in body) updates[key] = body[key];
   }
+  const replaced = 'images' in updates ? replacedIds(updates.images) : [];
   if ('images' in updates) updates.images = sanitizeNoteImages(updates.images);
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'no_fields' }, { status: 400 });
@@ -53,6 +55,14 @@ export async function PATCH(request, { params }) {
     .single();
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+  if ('images' in updates && data) {                                  // the image library follows the note (best-effort: never fails the save)
+    const uid = session.lineUserId;
+    try {
+      await registerNoteImages(supabase, uid, data);
+      await releaseOtherImages(supabase, uid, data.id, (data.images || []).map(i => i.drive_file_id));
+      if (replaced.length) await binImages(supabase, uid, replaced);            // an older version of a drawing that was saved again
+    } catch (e) { console.error('image library:', e?.message); }
+  }
   if ('category' in updates && data && prevCategory !== undefined && prevCategory !== updates.category) await learnCategory(supabase, session.lineUserId, 'note', data.title || String(data.content || '').split('\n')[0], updates.category);
   return NextResponse.json({ note: data });
 }
@@ -63,6 +73,7 @@ export async function DELETE(request, { params }) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
+  await releaseNote(supabase, session.lineUserId, id).catch(() => {});        // its pictures stay in the library (delete them there)
   const { error } = await supabase
     .from('notes')
     .delete()

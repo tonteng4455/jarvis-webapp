@@ -184,8 +184,8 @@ export function useNoteImages(initial, scope = 'note') {
     if (job.replaceId) {
       PREVIEWS.delete(job.replaceId);
       setBusyIds(set => { const n = new Set(set); n.delete(job.replaceId); return n; });
-      setImages(prev => prev.map(im => (im.drive_file_id === job.replaceId ? image : im)));
-      trashLater(job.replaceId);
+      // the older file goes to the Drive bin when the NOTE is saved (the server does it; nothing here can be lost by closing the page)
+      setImages(prev => prev.map(im => (im.drive_file_id === job.replaceId ? { ...image, replaces: [job.replaceId, ...[].concat(im.replaces || [])] } : im)));
       try { hooks.current.saved?.(image, job.replaceId, false, null); } catch { /* it is in the note's list anyway */ }
     } else {
       setImages(prev => [...prev, image]);
@@ -237,8 +237,6 @@ export function useNoteImages(initial, scope = 'note') {
     if (!image && imagesRef.current.length >= MAX_NOTE_IMAGES) { setError(`แนบรูปได้สูงสุด ${MAX_NOTE_IMAGES} รูปต่อโน้ต`); return; }
     setError(''); setSketch({ image: image || null, inline: !!inline && !image });
   };
-  // an old drawing's file is removed a little AFTER the note has saved the new one (so a failed save never leaves a broken picture)
-  const trashLater = id => { setTimeout(() => { fetch(`/api/notes/images/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }).catch(() => {}); }, 12000); };
   // ✓ in the pad: the pad closes AT ONCE and the picture goes up in the background (it shows in the note from this device's copy meanwhile)
   async function saveSketch(blob, replaceId, inline = false) {
     setError(''); setConnectUrl('');
@@ -274,12 +272,41 @@ export function useNoteImages(initial, scope = 'note') {
     drawNextPhoto();
   }
 
-  function removeImage(id) {
-    const gone = imagesRef.current.find(im => im.drive_file_id === id);
-    setImages(prev => prev.filter(im => im.drive_file_id !== id));
-    if (gone?.kind === 'sketch') trashLater(id);           // a drawing is only a file of ours; a photo stays in Drive on purpose
+  // ✕ on a picture asks what to do with it (see RemoveSheet)
+  const [asking, setAsking] = useState(null);               // { id, inline } | null
+  const askRemove = (id, inline) => setAsking({ id, inline: !!inline });
+  async function removeChoice(choice) {                     // 'text' (only out of the text) | 'library' (out of the note, kept) | 'delete' (to the Drive bin)
+    const a = asking; setAsking(null); if (!a) return;
+    if (choice === 'text') { try { hooks.current.removeBlock?.(a.id); } catch { /* ignore */ } return; }
+    try { hooks.current.removeBlock?.(a.id); } catch { /* ignore */ }
+    setImages(prev => prev.filter(im => im.drive_file_id !== a.id));
+    PREVIEWS.delete(a.id);
+    if (choice === 'delete') {
+      try { const r = await fetch(`/api/notes/images/${encodeURIComponent(a.id)}`, { method: 'DELETE' }); const d = await r.json().catch(() => ({})); if (!r.ok || !d.ok) setError('ลบไฟล์ใน Drive ไม่สำเร็จ ภาพถูกเอาออกจากโน้ตแล้ว ไปลบทีหลังได้ที่หน้า “ไฟล์”'); }
+      catch { setError('ลบไฟล์ใน Drive ไม่สำเร็จ ภาพถูกเอาออกจากโน้ตแล้ว ไปลบทีหลังได้ที่หน้า “ไฟล์”'); }
+    }
   }
-  return { images, setImages, uploading, tile, busyIds, failed, retryFailed, dropFailed, uploadingRef, error, connectUrl, addFiles, removeImage, sketch, setSketch, openSketch, saveSketch, scope, inlineIds, setInlineIds, hooks, rememberCaret, viewing, setViewing, pending, pickFiles, choosePending, cancelPhotoSketch };
+  return { images, setImages, uploading, tile, busyIds, failed, retryFailed, dropFailed, uploadingRef, error, connectUrl, addFiles, asking, setAsking, askRemove, removeChoice, sketch, setSketch, openSketch, saveSketch, scope, inlineIds, setInlineIds, hooks, rememberCaret, viewing, setViewing, pending, pickFiles, choosePending, cancelPhotoSketch };
+}
+
+// ✕ on a picture: asked every time, so nothing is thrown away by a slip
+function RemoveSheet({ inline, onChoose, onClose }) {
+  useDialogGuard();
+  const choose = (c, e) => { e?.stopPropagation(); onChoose(c); };
+  return createPortal(
+    <div className="convert-overlay" {...dialogGuard(onClose)}>
+      <div className="convert-sheet" role="dialog" aria-label="เอารูปนี้ออก">
+        <div className="convert-title">เอารูปนี้ออก</div>
+        <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.7rem' }}>
+          {inline && <button type="button" className="convert-choice" data-act="text" onClick={e => choose('text', e)}><b>📎 เอาออกจากเนื้อหา</b><span>ยังแนบกับโน้ต อยู่ในแถบรูปใต้หัวข้อ แทรกกลับได้ทีหลัง</span></button>}
+          <button type="button" className="convert-choice" data-act="library" onClick={e => choose('library', e)}><b>🗂️ เก็บไว้ในคลังรูป</b><span>เอาออกจากโน้ตนี้ แต่ยังเก็บไฟล์ไว้ ดูและลบทีหลังได้ที่หน้า “ไฟล์” หรือถามบอท</span></button>
+          <button type="button" className="convert-choice" data-act="delete" onClick={e => choose('delete', e)}><b>🗑️ ลบทิ้ง</b><span>ย้ายไฟล์ไปถังขยะของ Google Drive กู้คืนได้ภายใน 30 วัน</span></button>
+        </div>
+        <button type="button" className="glass-btn-outline" style={{ width: '100%', marginTop: '0.6rem' }} onClick={onClose}>ยกเลิก</button>
+      </div>
+    </div>,
+    document.body
+  );
 }
 
 function ImageThumb({ image, busy, onOpen, onRemove }) {
@@ -464,7 +491,7 @@ function PhotoChoiceSheet({ pending, onChoose }) {
 
 // Thumbnails (one scrollable row), upload errors, and the full-size viewer.
 export function NoteImageStrip({ state }) {
-  const { uploading, tile, error, connectUrl, removeImage, sketch } = state;
+  const { uploading, tile, error, connectUrl, sketch } = state;
   const images = state.images.filter(im => !state.inlineIds.has(im.drive_file_id));      // a picture placed in the text is shown there
   const { viewing, setViewing } = state;
   return (
@@ -474,10 +501,11 @@ export function NoteImageStrip({ state }) {
           draftKey={`${state.scope}:${sketch.image?.drive_file_id || sketch.photoKey || 'new'}`}
           onSave={blob => state.saveSketch(blob, sketch.image?.drive_file_id || null, !!sketch.inline)} onCancel={() => (sketch.photoUrl ? state.cancelPhotoSketch() : state.setSketch(null))} />
       )}
+      {state.asking && <RemoveSheet inline={state.asking.inline} onChoose={state.removeChoice} onClose={() => state.setAsking(null)} />}
       {(images.length > 0 || tile > 0) && (
         <div className="note-image-strip">
           {images.map(im => (
-            <ImageThumb key={im.drive_file_id} image={im} busy={state.busyIds.has(im.drive_file_id)} onOpen={i => (i.kind === 'sketch' ? state.openSketch(i) : setViewing(i))} onRemove={removeImage} />
+            <ImageThumb key={im.drive_file_id} image={im} busy={state.busyIds.has(im.drive_file_id)} onOpen={i => (i.kind === 'sketch' ? state.openSketch(i) : setViewing(i))} onRemove={id => state.askRemove(id, false)} />
           ))}
           {tile > 0 && <div className="note-image-thumb note-image-loading">⏳</div>}
         </div>
@@ -1151,6 +1179,7 @@ export function NoteEditorPanel({
   imgState.hooks.current.pending = (tmp, caret, focus) => bodyRef.current?.insertPendingImage(tmp, caret, focus);
   imgState.hooks.current.resolved = (tmp, real) => !!bodyRef.current?.resolveImage(tmp, real);
   imgState.hooks.current.dropPending = tmp => bodyRef.current?.removeImageBlock(tmp);
+  imgState.hooks.current.removeBlock = id => bodyRef.current?.removeImageBlock(id);
   imgState.hooks.current.saved = (image, replaceId, inline, caret) => {
     const body = bodyRef.current; if (!body) return;
     if (replaceId && body.replaceImage(replaceId, image.drive_file_id)) return;
@@ -1176,7 +1205,7 @@ export function NoteEditorPanel({
         enterKeyHint="next" onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); bodyRef.current?.focusStart(); } }} />
       <BlockEditor key={editorKey} ref={bodyRef} initial={initialContent} onChange={handleChange} onActive={setInfo}
         images={imgState.images} busyIds={imgState.busyIds} onOpenImage={im => (im.kind === 'sketch' ? imgState.openSketch(im) : imgState.setViewing(im))}
-        onRemoveImage={id => { bodyRef.current?.removeImageBlock(id); imgState.removeImage(id); }} />
+        onRemoveImage={id => imgState.askRemove(id, true)} />
 
       <div className="ne-bottom" onMouseDown={e => e.stopPropagation()}>
         <div className="ne-cat"><CategorySelect options={categories} value={category} onChange={onCategory} /></div>

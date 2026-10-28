@@ -932,3 +932,5 @@ html[data-fs="lg"] { font-size: 18px; }
 .note-image-badge { position: absolute; left: 3px; bottom: 3px; z-index: 1; font-size: 0.7rem; line-height: 1; padding: 2px 3px; border-radius: 6px; background: rgba(255,255,255,0.88); }
 .note-image-thumb.is-sketch { background: #fff; }
 .note-image-thumb.is-sketch img { object-fit: contain; background: #fff; }
+
+.ft-badge.lib { left: 4px; right: auto; top: 4px; bottom: auto; background: rgba(255,255,255,0.92); color: #333; }

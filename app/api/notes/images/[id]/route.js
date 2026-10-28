@@ -3,12 +3,14 @@
 // GET    — a note's photo / drawing. These files are PRIVATE in the owner's Google Drive (no "anyone with the link"), so they are
 //          shown through here: only the signed-in owner can load them (the bot Worker fetches them with the owner's own Google
 //          token). Content never changes for a given id (an edited drawing is saved as a new file), so browsers may cache it.
-// DELETE — remove a hand-drawn picture's file from Drive (only files this app named "sketch_…" can be removed).
+// DELETE — move one of the person's note pictures to the Drive bin (recoverable there for 30 days) and take it off the image library.
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../../../lib/premium';
-import { callBotInternal, callBotInternalRaw } from '../../../../../lib/botWorker';
+import { callBotInternalRaw } from '../../../../../lib/botWorker';
+import { supabaseAdmin } from '../../../../../lib/supabaseAdmin';
+import { binImages } from '../../../../../lib/noteImageIndex';
 
 const ID_RE = /^[A-Za-z0-9_-]{10,100}$/;
 
@@ -41,6 +43,6 @@ export async function DELETE(request, { params }) {
   const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (!ID_RE.test(id)) return NextResponse.json({ error: 'bad_id' }, { status: 400 });
-  const r = await callBotInternal('/internal/note-image-delete', { userId: session.lineUserId, driveFileIds: [id] });
-  return NextResponse.json({ ok: !!r?.ok, deleted: r?.deleted || 0 });
+  const r = await binImages(supabaseAdmin(), session.lineUserId, [id]);
+  return NextResponse.json({ ok: !!r.ok, deleted: r.deleted || 0 });
 }

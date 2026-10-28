@@ -44,6 +44,11 @@ People without LINE can sign in with Google, and one person can use both with th
 3. In Cloudflare add the variables `GOOGLE_LOGIN_CLIENT_ID` and `GOOGLE_LOGIN_CLIENT_SECRET` (and `GOOGLE_LOGIN_REDIRECT_URI` only if the site is served from a different host than the one in step 2).
 A Google-only person has the key `google:<id>`; when they link LINE, everything moves to their LINE key (the bot keeps working untouched). Accounts are never joined automatically from a matching e-mail — the person has to link them, and confirm.
 
+## 2c) Image library (run once)
+Run `note_images.sql` in Supabase → SQL editor (adds `source` / `note_id` to `user_files`). Every picture a person takes or draws in a note then gets a row there, so the Files page
+(“📝 รูปในโน้ต”, “🗂️ คลัง”) and the LINE bot (`หาไฟล์ …`) can find it, and it stays after it leaves a note until the person deletes it (Drive's bin, recoverable 30 days).
+Paste the new `jarvis-line-bot.js` (bin instead of erase; file search). Until the SQL is run the app keeps working; the library just stays empty.
+
 ## 3) File storage
 
 The web app no longer uses R2. Photos/files live in each user's own Google

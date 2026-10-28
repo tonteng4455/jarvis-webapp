@@ -78,6 +78,7 @@ class Query {
   upsert(p, opts) { this.op = 'upsert'; this.payload = p; this.upsertKey = opts?.onConflict || 'id'; return this; }
   delete() { this.op = 'delete'; return this; }
   eq(col, val) { this.filters.push(r => r[col] === val); return this; }
+  in(col, vals) { const set = new Set(vals || []); this.filters.push(r => set.has(r[col])); return this; }
   neq(col, val) { this.filters.push(r => r[col] !== val); return this; }
   not(col, op, val) { if (op === 'is' && val === null) this.filters.push(r => r[col] != null); else if (op === 'eq') this.filters.push(r => r[col] !== val); return this; }
   lt(col, val) { this.filters.push(r => r[col] < val); return this; }
