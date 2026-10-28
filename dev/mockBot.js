@@ -41,6 +41,12 @@ export async function mockBotInternal(path, payload) {
       store().set(id, { mimeType: payload.mimeType, base64: payload.base64, name: payload.fileName });
       return { ok: true, driveFileId: id, name: payload.fileName };
     }
+    case '/internal/file-upload': {
+      if (payload.userId === 'mock-nodrive') return { ok: false, error: 'google_not_connected', connectUrl: 'https://example.invalid/google/connect?mock=1' };
+      const id = 'mockf' + Array.from(globalThis.crypto.getRandomValues(new Uint8Array(12)), b => b.toString(36).padStart(2, '0')).join('').slice(0, 20);
+      store().set(id, { mimeType: payload.mimeType || 'application/octet-stream', base64: payload.base64, name: payload.fileName });
+      return { ok: true, driveFileId: id, name: payload.fileName, publicUrl: /^image\//.test(payload.mimeType || '') ? `/api/dev/drive-image/${id}` : `https://drive.google.com/file/d/${id}/view` };
+    }
     case '/internal/note-image-delete': {
       let deleted = 0, skipped = 0;
       for (const id of (payload.driveFileIds || []).slice(0, 10)) {
@@ -51,7 +57,12 @@ export async function mockBotInternal(path, payload) {
       return { ok: true, deleted, skipped };
     }
     case '/internal/note-images-privatize': { globalThis.__mockPrivatized = [...(globalThis.__mockPrivatized || []), ...(payload.driveFileIds || [])]; return { ok: true, done: (payload.driveFileIds || []).length, failed: 0 }; }
-    case '/internal/file-delete': return { ok: true };
+    case '/internal/file-delete': {            // the real Worker deletes the Drive file and the row
+      const { data } = await mockSupabase().from('user_files').select('id').eq('id', payload.fileId).eq('user_id', payload.userId).maybeSingle();
+      if (!data) return { ok: false, error: 'not_found' };
+      await mockSupabase().from('user_files').delete().eq('id', payload.fileId).eq('user_id', payload.userId);
+      return { ok: true };
+    }
     case '/internal/expense-sheet-export':
       if (payload.userId === 'mock-nodrive') return { ok: false, error: 'not_connected', connectUrl: 'https://example.invalid/google/connect?mock=1' };
       return { url: 'https://example.invalid/sheet', count: 2 };

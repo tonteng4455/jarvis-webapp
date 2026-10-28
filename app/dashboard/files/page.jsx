@@ -1,10 +1,7 @@
 'use client';
 // app/dashboard/files/page.jsx — file manager. Files themselves are
-// uploaded from LINE chat (the bot stores them in the user's own
-// Google Drive, in a "Bot_file" folder — see the bot's uploadToDrive);
-// this page is for browsing, opening, and deleting what's already
-// there — no upload button here, matching how notes/calendar/etc. are
-// also created via the bot and only edited/managed here.
+// sent to the LINE chat or uploaded here (⬆️ button, or drag files onto the page): the bot stores them in the user's own
+// Google Drive, in a "Bot_file" folder (see the bot's uploadToDrive). This page is for uploading, browsing, opening and deleting them.
 
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -153,16 +150,36 @@ function triggerDownload(url, name) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+const MAX_UPLOAD = 8 * 1024 * 1024;                       // per file (the server checks again)
+const UPLOAD_ERRORS = { too_large: 'ไฟล์ใหญ่เกิน 8 MB', google_not_connected: 'ต้องเชื่อมต่อ Google Drive ก่อน', empty_file: 'ไฟล์ว่างเปล่า', upload_failed: 'อัปโหลดไม่สำเร็จ ลองอีกครั้ง', db_error: 'บันทึกไม่สำเร็จ ลองอีกครั้ง', network: 'อินเทอร์เน็ตหลุด ลองอีกครั้ง' };
+// one file → POST /api/files, with progress (fetch cannot report upload progress, XMLHttpRequest can)
+function sendFile(file, onProgress) {
+  return new Promise(resolve => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/files');
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onerror = () => resolve({ ok: false, error: 'network' });
+    xhr.onload = () => { let body = {}; try { body = JSON.parse(xhr.responseText || '{}'); } catch { /* ignore */ } resolve(xhr.status >= 200 && xhr.status < 300 && body.file ? { ok: true, file: body.file } : { ok: false, error: body.error || 'upload_failed', connectUrl: body.connectUrl }); };
+    const fd = new FormData(); fd.append('file', file, file.name);
+    xhr.send(fd);
+  });
+}
+
 export default function FilesPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
   const toast = useToast();
   const [filterKind, setFilterKind] = useState('all');
-  const [filterSrc, setFilterSrc] = useState('all');        // all | note (pictures made in notes) | lib (…that are in no note now) | chat
+  const [filterSrc, setFilterSrc] = useState('all');        // all | note (pictures made in notes) | lib (…that are in no note now) | web (uploaded here) | chat
   const [cols, setCols] = useState(3);
   const [open, setOpen] = useState(null);
   const [sel, setSel] = useState(null);          // null = normal; Set of ids = select mode
   const [busy, setBusy] = useState(false);
+  const [uploads, setUploads] = useState([]);       // the upload tray: { key, name, size, file, status: 'wait' | 'up' | 'done' | 'err', pct, error, connectUrl }
+  const [dragging, setDragging] = useState(false);
+  const picker = useRef(null);
+  const running = useRef(0);
+  const queue = useRef([]);
 
   useEffect(() => { try { const c = parseInt(localStorage.getItem('jarvis-file-cols'), 10); if (c === 3 || c === 4) setCols(c); } catch { /* ignore */ } }, []);
   function chooseCols(c) { setCols(c); try { localStorage.setItem('jarvis-file-cols', String(c)); } catch { /* ignore */ } }
@@ -203,6 +220,41 @@ export default function FilesPage() {
   const selectButtonMode = useRef(false);
   const exitSelect = () => { selectButtonMode.current = false; setSel(null); };
 
+  // ----- uploading (two at a time) -----
+  const patchUp = (key, p) => setUploads(list => list.map(u => (u.key === key ? { ...u, ...p } : u)));
+  async function runUpload(u) {
+    running.current++; patchUp(u.key, { status: 'up', pct: 0, error: '' });
+    const r = await sendFile(u.file, pct => patchUp(u.key, { pct }));
+    running.current--;
+    if (r.ok) {
+      patchUp(u.key, { status: 'done', pct: 100 });
+      setData(prev => ({ ...(prev || {}), files: [r.file, ...((prev?.files) || [])] }));
+      setTimeout(() => setUploads(list => list.filter(x => x.key !== u.key)), 4000);
+    } else patchUp(u.key, { status: 'err', error: r.error, connectUrl: r.connectUrl || '' });
+    pump();
+  }
+  function pump() { while (running.current < 2 && queue.current.length) runUpload(queue.current.shift()); }
+  function addUploads(fileList) {
+    const list = Array.from(fileList || []).filter(f => f && f.name !== undefined);
+    if (!list.length) return;
+    const made = list.map(f => ({ key: Math.random().toString(36).slice(2), name: f.name, size: f.size, file: f, status: f.size > MAX_UPLOAD || f.size === 0 ? 'err' : 'wait', pct: 0, error: f.size > MAX_UPLOAD ? 'too_large' : f.size === 0 ? 'empty_file' : '' }));
+    setUploads(prev => [...prev, ...made]);
+    queue.current.push(...made.filter(u => u.status === 'wait'));
+    pump();
+  }
+  function retryUpload(u) { patchUp(u.key, { status: 'wait', error: '' }); queue.current.push({ ...u, status: 'wait' }); pump(); }
+  const dropUpload = key => setUploads(list => list.filter(x => x.key !== key));
+  useEffect(() => {                                           // drag files onto the page
+    let depth = 0;
+    const hasFiles = e => Array.from(e.dataTransfer?.types || []).includes('Files');
+    const enter = e => { if (hasFiles(e)) { depth++; setDragging(true); e.preventDefault(); } };
+    const over = e => { if (hasFiles(e)) e.preventDefault(); };
+    const leave = e => { if (hasFiles(e)) { depth = Math.max(0, depth - 1); if (!depth) setDragging(false); } };
+    const drop = e => { if (!hasFiles(e)) return; e.preventDefault(); depth = 0; setDragging(false); addUploads(e.dataTransfer.files); };
+    window.addEventListener('dragenter', enter); window.addEventListener('dragover', over); window.addEventListener('dragleave', leave); window.addEventListener('drop', drop);
+    return () => { window.removeEventListener('dragenter', enter); window.removeEventListener('dragover', over); window.removeEventListener('dragleave', leave); window.removeEventListener('drop', drop); };
+  }, []);                                                     // eslint-disable-line react-hooks/exhaustive-deps
+
   async function deleteSelected() {
     const ids = shown.filter(x => sel?.has(x.id)).map(x => x.id); if (!ids.length || busy) return;
     const hasNote = shown.some(x => sel?.has(x.id) && isNote(x)), hasChat = shown.some(x => sel?.has(x.id) && !isNote(x));
@@ -234,9 +286,9 @@ export default function FilesPage() {
   }
 
   const files = data?.files || [];
-  const srcOk = f => (filterSrc === 'all' ? true : filterSrc === 'note' ? isNote(f) && !!f.note_id : filterSrc === 'lib' ? isNote(f) && !f.note_id : !isNote(f));
+  const srcOk = f => (filterSrc === 'all' ? true : filterSrc === 'note' ? isNote(f) && !!f.note_id : filterSrc === 'lib' ? isNote(f) && !f.note_id : filterSrc === 'web' ? f.source === 'web' : !isNote(f) && f.source !== 'web');
   const shown = files.filter(f => (filterKind === 'all' || f.kind === filterKind) && srcOk(f));
-  const srcCounts = { note: files.filter(f => isNote(f) && f.note_id).length, lib: files.filter(f => isNote(f) && !f.note_id).length, chat: files.filter(f => !isNote(f)).length };
+  const srcCounts = { note: files.filter(f => isNote(f) && f.note_id).length, lib: files.filter(f => isNote(f) && !f.note_id).length, web: files.filter(f => f.source === 'web').length, chat: files.filter(f => !isNote(f) && f.source !== 'web').length };
   const visibleSelCount = sel ? shown.filter(x => sel.has(x.id)).length : 0;
   const kindCounts = files.reduce((acc, f) => { acc[f.kind] = (acc[f.kind] || 0) + 1; return acc; }, {});
 
@@ -246,6 +298,8 @@ export default function FilesPage() {
       <div className="page-head">
         <h1 className="page-title" style={{ marginBottom: 0 }}>📁 ไฟล์ของฉัน</h1>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <button type="button" className="glass-btn" data-act="upload" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => picker.current?.click()}>⬆️ อัปโหลด</button>
+        <input ref={picker} type="file" multiple hidden data-testid="upload-input" aria-label="เลือกไฟล์ที่จะอัปโหลด" onChange={e => { addUploads(e.target.files); e.target.value = ''; }} />
         {files.length > 0 && <button type="button" className="glass-btn-outline" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', ...(sel !== null ? { visibility: 'hidden' } : null) }} tabIndex={sel !== null ? -1 : 0} aria-hidden={sel !== null} onClick={() => { selectButtonMode.current = true; startSelect(null); }}>☑️ เลือก</button>}
         <div className="seg" role="group" aria-label="จำนวนต่อแถว">
           <button type="button" className={cols === 3 ? 'active' : ''} onClick={() => chooseCols(3)} aria-label="3 ต่อแถว">▦ 3</button>
@@ -270,9 +324,9 @@ export default function FilesPage() {
 
       {data && (
         <>
-          {(srcCounts.note + srcCounts.lib > 0) && (
+          {(srcCounts.note + srcCounts.lib + srcCounts.web > 0) && (
             <div className="dash-nav" style={{ margin: '0 0 0.6rem' }} role="group" aria-label="แหล่งที่มา">
-              {[['all', 'ทุกที่', files.length], ['note', '📝 รูปในโน้ต', srcCounts.note], ['lib', '🗂️ คลัง (ไม่อยู่ในโน้ตไหน)', srcCounts.lib], ['chat', '💬 จากแชท', srcCounts.chat]].map(([k, l, n]) => (
+              {[['all', 'ทุกที่', files.length], ['note', '📝 รูปในโน้ต', srcCounts.note], ['lib', '🗂️ คลัง (ไม่อยู่ในโน้ตไหน)', srcCounts.lib], ['web', '⬆️ อัปโหลดจากเว็บ', srcCounts.web], ['chat', '💬 จากแชท', srcCounts.chat]].map(([k, l, n]) => (
                 <span key={k} className={`dash-nav-item${filterSrc === k ? ' active' : ''}`} data-src={k} style={{ cursor: 'pointer' }} onClick={() => setFilterSrc(k)}>{l} {n}</span>
               ))}
             </div>
@@ -288,12 +342,33 @@ export default function FilesPage() {
             ))}
           </div>
 
-          {shown.length === 0 && <div className="glass-card"><p className="muted">ยังไม่มีไฟล์ครับ ส่งรูปหรือไฟล์เข้าแชทกับ Jarvis ได้เลย</p></div>}
+          {shown.length === 0 && <div className="glass-card"><p className="muted">ยังไม่มีไฟล์ครับ กด “⬆️ อัปโหลด” (หรือลากไฟล์มาวางในหน้านี้) หรือส่งรูป/ไฟล์เข้าแชทกับ Jarvis ได้เลย</p></div>}
 
           <div className="file-grid" style={{ '--cols': cols, '--cols-wide': cols + 2 }}>
             {shown.map(f => <Tile key={f.id} f={f} selecting={sel !== null} selected={!!sel?.has(f.id)} onOpen={setOpen} onToggle={toggle} onStartSelect={startSelect} />)}
           </div>
         </>
+      )}
+      {dragging && <div className="upload-drop" aria-hidden="true">⬆️ วางไฟล์ที่นี่เพื่ออัปโหลด<small>ไฟล์ละไม่เกิน 8 MB</small></div>}
+      {uploads.length > 0 && (
+        <div className="upload-tray" role="status" aria-label="กำลังอัปโหลด">
+          {uploads.map(u => (
+            <div key={u.key} className={`upload-row ${u.status}`} data-status={u.status}>
+              <div className="up-name" title={u.name}>{u.status === 'done' ? '✅' : u.status === 'err' ? '⚠️' : '⬆️'} {u.name} <small>{formatBytes(u.size)}</small></div>
+              {(u.status === 'up' || u.status === 'wait') && <div className="up-bar"><span style={{ width: `${u.pct}%` }} /></div>}
+              {u.status === 'wait' && <div className="up-msg">รอคิว…</div>}
+              {u.status === 'up' && <div className="up-msg">{u.pct}%</div>}
+              {u.status === 'err' && (
+                <div className="up-msg err">
+                  {UPLOAD_ERRORS[u.error] || UPLOAD_ERRORS.upload_failed}
+                  {u.error === 'google_not_connected' && u.connectUrl && <> · <a href={u.connectUrl} target="_blank" rel="noopener noreferrer">🔗 เชื่อมต่อ Google Drive</a></>}
+                  {u.error !== 'too_large' && u.error !== 'empty_file' && <button type="button" className="up-btn" data-act="retry" onClick={() => retryUpload(u)}>ลองอีกครั้ง</button>}
+                  <button type="button" className="up-btn" data-act="drop" onClick={() => dropUpload(u.key)}>ปิด</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
       {open && <PreviewSheet f={open} onClose={() => setOpen(null)} onDelete={deleteFile} />}
     </main>

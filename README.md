@@ -46,7 +46,7 @@ A Google-only person has the key `google:<id>`; when they link LINE, everything 
 
 ## 2c) Image library (run once)
 Run `note_images.sql` in Supabase → SQL editor (adds `source` / `note_id` to `user_files`). Every picture a person takes or draws in a note then gets a row there, so the Files page
-(“📝 รูปในโน้ต”, “🗂️ คลัง”) and the LINE bot (`หาไฟล์ …`) can find it, and it stays after it leaves a note until the person deletes it (Drive's bin, recoverable 30 days).
+(“📝 รูปในโน้ต”, “🗂️ คลัง”, “⬆️ อัปโหลดจากเว็บ”) and the LINE bot (`หาไฟล์ …`) can find it, and it stays after it leaves a note until the person deletes it (Drive's bin, recoverable 30 days).
 Paste the new `jarvis-line-bot.js` (bin instead of erase; file search). Until the SQL is run the app keeps working; the library just stays empty.
 
 ## 3) File storage
