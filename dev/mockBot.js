@@ -41,6 +41,7 @@ export async function mockBotInternal(path, payload) {
       store().set(id, { mimeType: payload.mimeType, base64: payload.base64, name: payload.fileName });
       return { ok: true, driveFileId: id, name: payload.fileName };
     }
+    case '/internal/file-rename': return { ok: !!(payload.driveFileId && payload.name) };
     case '/internal/file-upload': {
       if (payload.userId === 'mock-nodrive') return { ok: false, error: 'google_not_connected', connectUrl: 'https://example.invalid/google/connect?mock=1' };
       const id = 'mockf' + Array.from(globalThis.crypto.getRandomValues(new Uint8Array(12)), b => b.toString(36).padStart(2, '0')).join('').slice(0, 20);

@@ -49,6 +49,9 @@ Run `note_images.sql` in Supabase → SQL editor (adds `source` / `note_id` to `
 (“📝 รูปในโน้ต”, “🗂️ คลัง”, “⬆️ อัปโหลดจากเว็บ”) and the LINE bot (`หาไฟล์ …`) can find it, and it stays after it leaves a note until the person deletes it (Drive's bin, recoverable 30 days).
 Paste the new `jarvis-line-bot.js` (bin instead of erase; file search). Until the SQL is run the app keeps working; the library just stays empty.
 
+## 2d) Rename files + descriptions (run once)
+Run `file_rename.sql` in Supabase → SQL editor (adds `original_name` and `description` to `user_files`). Until then renaming works (the name only, no first-name memory) and descriptions say they need the SQL.
+
 ## 3) File storage
 
 The web app no longer uses R2. Photos/files live in each user's own Google

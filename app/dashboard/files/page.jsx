@@ -92,8 +92,23 @@ function FallbackImg({ f, onAllFailed }) {
   return <img src={list[i]} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setI(n => n + 1)} />;
 }
 
-function PreviewSheet({ f, onClose, onDelete }) {
+function PreviewSheet({ f, onClose, onDelete, onSaved }) {
   const [broken, setBroken] = useState(false);
+  const stem = n => String(n || '').replace(/\.[A-Za-z0-9]{1,5}$/, '');      // the extension is kept by the server: only the name is edited
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(stem(f.file_name));
+  const [desc, setDesc] = useState(f.description || '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  async function save() {
+    setSaving(true); setErr('');
+    try {
+      const res = await fetch(`/api/files/${f.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc }) });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { setErr(d.error === 'empty_name' ? 'ชื่อว่างเปล่า' : d.error === 'needs_sql' ? 'ยังบันทึกคำอธิบายไม่ได้ (ผู้ดูแลระบบต้องรัน file_rename.sql ก่อน)' : 'บันทึกไม่สำเร็จ ลองอีกครั้ง'); return; }
+      onSaved(d.file, d.driveOk === false); setEditing(false);
+    } catch { setErr('บันทึกไม่สำเร็จ ลองอีกครั้ง'); } finally { setSaving(false); }
+  }
   const list = previewSources(f, 1000);
   return createPortal(
     <div className="convert-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -103,8 +118,24 @@ function PreviewSheet({ f, onClose, onDelete }) {
           : f.kind === 'image' && list.length > 0 && !broken
           ? <PreviewChain list={list} onAllFailed={() => setBroken(true)} alt={f.file_name} />
           : <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', background: 'var(--surface-muted)', borderRadius: 12 }}>{KIND_ICON[f.kind] || '📄'}</div>}
-        <div style={{ marginTop: '0.7rem', fontWeight: 600, wordBreak: 'break-all' }}>{f.file_name}</div>
+        {!editing && <div style={{ marginTop: '0.7rem', fontWeight: 600, wordBreak: 'break-all' }}>{f.file_name}</div>}
+        {!editing && f.description && <div className="muted" style={{ wordBreak: 'break-word' }}>📝 {f.description}</div>}
+        {!editing && f.original_name && f.original_name !== f.file_name && <div className="muted" style={{ fontSize: '0.75rem', wordBreak: 'break-all' }}>ชื่อเดิม: {f.original_name}</div>}
+        {editing && (
+          <div className="file-edit" style={{ display: 'grid', gap: '0.4rem', marginTop: '0.7rem' }}>
+            <label style={{ fontSize: '0.8rem' }}>ชื่อไฟล์ <small className="muted">(นามสกุลเติมให้เอง)</small>
+              <input className="glass-input" data-field="name" value={name} maxLength={100} onChange={e => setName(e.target.value)} style={{ width: '100%', marginTop: 2 }} /></label>
+            <label style={{ fontSize: '0.8rem' }}>คำอธิบาย <small className="muted">(ค้นเจอด้วยคำเหล่านี้)</small>
+              <textarea className="glass-input" data-field="desc" rows={2} value={desc} maxLength={200} onChange={e => setDesc(e.target.value)} style={{ width: '100%', marginTop: 2, resize: 'vertical' }} /></label>
+            {err && <div role="alert" className="note-image-error">{err}</div>}
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button type="button" className="glass-btn" data-act="save-name" disabled={saving} style={{ flex: 1 }} onClick={save}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+              <button type="button" className="glass-btn-outline" data-act="cancel-edit" disabled={saving} style={{ flex: 1 }} onClick={() => { setEditing(false); setErr(''); setName(stem(f.file_name)); setDesc(f.description || ''); }}>ยกเลิก</button>
+            </div>
+          </div>
+        )}
         <div className="muted">{isNote(f) ? (f.note_title ? `📝 อยู่ในโน้ต “${f.note_title}”` : '🗂️ อยู่ในคลัง ไม่ได้อยู่ในโน้ตไหน') : formatBytes(f.size_bytes)} · {formatDate(f.created_at)}</div>
+        {!editing && <button type="button" className="glass-btn-outline" data-act="edit-name" style={{ width: '100%', marginTop: '0.5rem' }} onClick={() => setEditing(true)}>✏️ แก้ชื่อ / คำอธิบาย</button>}
         <div className="convert-actions" style={{ justifyContent: 'stretch' }}>
           {isNote(f) && <a href={noteSrc(f)} target="_blank" rel="noopener noreferrer" className="glass-btn-outline" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>🔗 เปิดภาพเต็ม</a>}
           {isNote(f) && f.note_id && <a href={`/dashboard?id=${encodeURIComponent(f.note_id)}`} className="glass-btn-outline" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>📝 เปิดโน้ต</a>}
@@ -177,6 +208,7 @@ export default function FilesPage() {
   const [busy, setBusy] = useState(false);
   const [uploads, setUploads] = useState([]);       // the upload tray: { key, name, size, file, status: 'wait' | 'up' | 'done' | 'err', pct, error, connectUrl }
   const [dragging, setDragging] = useState(false);
+  const [query, setQuery] = useState('');           // search box: words in the name, the first name, the description or the note's title
   const picker = useRef(null);
   const running = useRef(0);
   const queue = useRef([]);
@@ -202,6 +234,11 @@ export default function FilesPage() {
   }, [data]);
   useRefreshOnReturn(load);
 
+  function saved(file, driveFailed) {
+    setData(prev => ({ ...prev, files: prev.files.map(x => (x.id === file.id ? { ...x, ...file, note_title: x.note_title } : x)) }));
+    setOpen(o => (o && o.id === file.id ? { ...o, ...file, note_title: o.note_title } : o));
+    toast.show(driveFailed ? 'เปลี่ยนชื่อในระบบแล้ว แต่ในไฟล์บน Google Drive ไม่สำเร็จ' : '✅ บันทึกแล้ว');
+  }
   async function deleteFile(f) {
     if (!confirm(isNote(f) ? 'ลบรูปนี้ไหมครับ? จะย้ายไปถังขยะของ Google Drive (กู้คืนได้ภายใน 30 วัน)' : 'ลบไฟล์นี้ถาวรใช่ไหมครับ? กู้คืนไม่ได้แล้ว')) return;
     const res = await fetch(`/api/files/${f.id}`, { method: 'DELETE' });
@@ -287,7 +324,9 @@ export default function FilesPage() {
 
   const files = data?.files || [];
   const srcOk = f => (filterSrc === 'all' ? true : filterSrc === 'note' ? isNote(f) && !!f.note_id : filterSrc === 'lib' ? isNote(f) && !f.note_id : filterSrc === 'web' ? f.source === 'web' : !isNote(f) && f.source !== 'web');
-  const shown = files.filter(f => (filterKind === 'all' || f.kind === filterKind) && srcOk(f));
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = f => !words.length || words.every(w => `${f.file_name || ''} ${f.original_name || ''} ${f.description || ''} ${f.note_title || ''}`.toLowerCase().includes(w));
+  const shown = files.filter(f => (filterKind === 'all' || f.kind === filterKind) && srcOk(f) && hit(f));
   const srcCounts = { note: files.filter(f => isNote(f) && f.note_id).length, lib: files.filter(f => isNote(f) && !f.note_id).length, web: files.filter(f => f.source === 'web').length, chat: files.filter(f => !isNote(f) && f.source !== 'web').length };
   const visibleSelCount = sel ? shown.filter(x => sel.has(x.id)).length : 0;
   const kindCounts = files.reduce((acc, f) => { acc[f.kind] = (acc[f.kind] || 0) + 1; return acc; }, {});
@@ -324,6 +363,9 @@ export default function FilesPage() {
 
       {data && (
         <>
+          {files.length > 0 && (
+            <input type="search" className="glass-input" data-testid="file-search" placeholder="🔎 ค้นหาจากชื่อ / ชื่อเดิม / คำอธิบาย" aria-label="ค้นหาไฟล์" value={query} onChange={e => setQuery(e.target.value)} style={{ width: '100%', marginBottom: '0.6rem' }} />
+          )}
           {(srcCounts.note + srcCounts.lib + srcCounts.web > 0) && (
             <div className="dash-nav" style={{ margin: '0 0 0.6rem' }} role="group" aria-label="แหล่งที่มา">
               {[['all', 'ทุกที่', files.length], ['note', '📝 รูปในโน้ต', srcCounts.note], ['lib', '🗂️ คลัง (ไม่อยู่ในโน้ตไหน)', srcCounts.lib], ['web', '⬆️ อัปโหลดจากเว็บ', srcCounts.web], ['chat', '💬 จากแชท', srcCounts.chat]].map(([k, l, n]) => (
@@ -342,7 +384,7 @@ export default function FilesPage() {
             ))}
           </div>
 
-          {shown.length === 0 && <div className="glass-card"><p className="muted">ยังไม่มีไฟล์ครับ กด “⬆️ อัปโหลด” (หรือลากไฟล์มาวางในหน้านี้) หรือส่งรูป/ไฟล์เข้าแชทกับ Jarvis ได้เลย</p></div>}
+          {shown.length === 0 && <div className="glass-card"><p className="muted">{words.length || filterKind !== 'all' || filterSrc !== 'all' ? 'ไม่พบไฟล์ที่ตรงกับที่ค้น/กรองไว้ครับ' : 'ยังไม่มีไฟล์ครับ กด “⬆️ อัปโหลด” (หรือลากไฟล์มาวางในหน้านี้) หรือส่งรูป/ไฟล์เข้าแชทกับ Jarvis ได้เลย'}</p></div>}
 
           <div className="file-grid" style={{ '--cols': cols, '--cols-wide': cols + 2 }}>
             {shown.map(f => <Tile key={f.id} f={f} selecting={sel !== null} selected={!!sel?.has(f.id)} onOpen={setOpen} onToggle={toggle} onStartSelect={startSelect} />)}
@@ -370,7 +412,7 @@ export default function FilesPage() {
           ))}
         </div>
       )}
-      {open && <PreviewSheet f={open} onClose={() => setOpen(null)} onDelete={deleteFile} />}
+      {open && <PreviewSheet key={open.id + ':' + (open.file_name || '') + ':' + (open.description || '')} f={open} onClose={() => setOpen(null)} onDelete={deleteFile} onSaved={saved} />}
     </main>
   );
 }
