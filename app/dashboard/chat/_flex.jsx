@@ -35,7 +35,7 @@ function Text({ n, parentLayout, onAction }) {
   const style = {
     fontSize: px(n.size || 'md', TEXT_PX), color: n.color, fontWeight: n.weight === 'bold' ? 700 : undefined, textAlign: { start: 'left', center: 'center', end: 'right' }[n.align],
     textDecoration: n.decoration === 'underline' ? 'underline' : n.decoration === 'line-through' ? 'line-through' : undefined, margin: undefined, minWidth: 0,
-    whiteSpace: n.wrap ? 'pre-wrap' : 'nowrap', overflow: n.wrap ? undefined : 'hidden', textOverflow: n.wrap ? undefined : 'ellipsis', overflowWrap: 'anywhere',
+    whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
     lineHeight: 1.35, alignSelf: n.gravity === 'center' ? 'center' : n.gravity === 'bottom' ? 'flex-end' : undefined,
   };
   if (n.maxLines) { style.display = '-webkit-box'; style.WebkitLineClamp = n.maxLines; style.WebkitBoxOrient = 'vertical'; style.overflow = 'hidden'; style.whiteSpace = 'pre-wrap'; }
@@ -111,7 +111,8 @@ function Box({ n, onAction }) {
 
 function Block({ n, onAction, pad = true }) {
   if (!n) return null;
-  const hasPad = ['paddingAll', 'paddingTop', 'paddingBottom', 'paddingStart', 'paddingEnd'].some(k => n[k] !== undefined);
+  // a coloured band (a header with its own background) runs edge to edge; plain blocks get LINE's default inner space
+  const hasPad = n.backgroundColor !== undefined || ['paddingAll', 'paddingTop', 'paddingBottom', 'paddingStart', 'paddingEnd'].some(k => n[k] !== undefined);
   return <div style={!hasPad && pad ? { padding: 13 } : undefined}><Box n={n} onAction={onAction} /></div>;
 }
 
@@ -119,7 +120,7 @@ function Bubble({ b, onAction }) {
   const w = BUBBLE_W[b.size || 'mega'] || 300;
   const fn = actionOf(b.action, onAction);
   return (
-    <div data-flex="bubble" style={{ width: `min(${w}px, 100%)`, maxWidth: '100%', flex: '0 0 auto', background: b.styles?.body?.backgroundColor || '#fff', color: '#111', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.18)', cursor: fn ? 'pointer' : undefined, direction: b.direction === 'rtl' ? 'rtl' : undefined }} onClick={fn || undefined}>
+    <div data-flex="bubble" style={{ width: w, maxWidth: 'calc(100vw - 64px)', flex: '0 0 auto', background: b.styles?.body?.backgroundColor || '#fff', color: '#111', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.18)', cursor: fn ? 'pointer' : undefined, direction: b.direction === 'rtl' ? 'rtl' : undefined }} onClick={fn || undefined}>
       {b.hero && (b.hero.type === 'image' ? <Img n={b.hero} onAction={onAction} /> : <Box n={b.hero} onAction={onAction} />)}
       <Block n={b.header} onAction={onAction} />
       <Block n={b.body} onAction={onAction} />
@@ -151,7 +152,7 @@ export function QuickReplies({ items, onAction, disabled }) {
     <div className="chat-quick" data-chat="quick">
       {items.map((it, i) => {
         const a = it.action || {};
-        if (a.type === 'datetimepicker') return <DateTimeButton key={i} n={{ action: a }} base={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0.35rem 0.8rem', whiteSpace: 'nowrap', flex: '0 0 auto', borderRadius: 999, border: '1px solid var(--border-strong, #ccc)', background: 'var(--glass-bg, #fff)', color: 'inherit', fontSize: '0.85rem' }} onAction={onAction} />;
+        if (a.type === 'datetimepicker') return <DateTimeButton key={i} n={{ action: a }} base={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0.38rem 0.85rem', whiteSpace: 'nowrap', flex: '0 0 auto', borderRadius: 999, border: '1px solid var(--accent)', background: 'var(--surface-muted)', color: 'var(--accent)', fontSize: '0.85rem', fontWeight: 600 }} onAction={onAction} />;
         const fn = actionOf(a, onAction);
         if (!fn) return null;
         return <button key={i} type="button" className="chat-chip" disabled={disabled} onClick={fn}>{a.label}</button>;
