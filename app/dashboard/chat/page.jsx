@@ -111,8 +111,8 @@ export default function ChatPage() {
         )}
         {items.map(it => it.role === 'user'
           ? <div key={it.id} className="chat-row user"><div className="chat-bubble user" data-chat="user">{it.text}</div></div>
-          : <div key={it.id} className="chat-row bot"><span className="chat-avatar" aria-hidden="true">🤖</span><div className="chat-bot-col"><BotMessage message={it.message} onAction={onAction} /></div></div>)}
-        {busy && <div className="chat-row bot"><span className="chat-avatar" aria-hidden="true">🤖</span><div className="chat-bubble bot chat-typing" data-testid="chat-typing" aria-label="กำลังตอบ"><i /><i /><i /></div></div>}
+          : <div key={it.id} className="chat-row bot"><img className="chat-avatar" src="/logo-head.png" alt="" width="32" height="32" /><div className="chat-bot-col"><BotMessage message={it.message} onAction={onAction} /></div></div>)}
+        {busy && <div className="chat-row bot"><img className="chat-avatar" src="/logo-head.png" alt="" width="32" height="32" /><div className="chat-bubble bot chat-typing" data-testid="chat-typing" aria-label="กำลังตอบ"><i /><i /><i /></div></div>}
         <div ref={endRef} />
       </div>
 

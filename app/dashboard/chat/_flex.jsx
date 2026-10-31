@@ -95,7 +95,20 @@ function Node({ n, parent, onAction }) {
   return <div style={wrapStyle}>{el}</div>;
 }
 
-function Box({ n, onAction }) {
+// A header / body / footer block of a bubble: LINE leaves text flush with the edge unless the card asks for space. On the web that looks
+// cramped, so these blocks always keep a comfortable inner margin (never less than 14px at the sides, 10px above and below).
+const SIDE_MIN = 14, VERT_MIN = 10;
+function roomy(n) {
+  const all = px(n.paddingAll, SPACE_PX) || 0;
+  const side = k => px(n[k], SPACE_PX) ?? all;
+  return {
+    padding: undefined,
+    paddingLeft: Math.max(side('paddingStart'), SIDE_MIN), paddingRight: Math.max(side('paddingEnd'), SIDE_MIN),
+    paddingTop: Math.max(side('paddingTop'), VERT_MIN), paddingBottom: Math.max(side('paddingBottom'), VERT_MIN),
+  };
+}
+
+function Box({ n, onAction, edge }) {
   const layout = n.layout || 'vertical';
   const pad = px(n.paddingAll, SPACE_PX);
   const style = {
@@ -103,17 +116,16 @@ function Box({ n, onAction }) {
     justifyContent: { start: 'flex-start', center: 'center', end: 'flex-end', 'space-between': 'space-between', 'space-around': 'space-around', 'space-evenly': 'space-evenly' }[n.justifyContent],
     gap: px(n.spacing, SPACE_PX), background: n.backgroundColor, borderRadius: px(n.cornerRadius, RADIUS_PX), border: n.borderWidth ? `${px(n.borderWidth, { none: 0, light: 0.5, normal: 1, medium: 2, 'semi-bold': 3, bold: 4 }) || 1}px solid ${n.borderColor || '#ccc'}` : undefined,
     padding: pad, paddingTop: px(n.paddingTop, SPACE_PX), paddingBottom: px(n.paddingBottom, SPACE_PX), paddingLeft: px(n.paddingStart, SPACE_PX), paddingRight: px(n.paddingEnd, SPACE_PX),
+    ...(edge ? roomy(n) : {}),
     width: px(n.width), height: px(n.height), minWidth: 0, boxSizing: 'border-box', cursor: n.action ? 'pointer' : undefined,
   };
   const fn = actionOf(n.action, onAction);
   return <div style={style} onClick={fn || undefined} role={fn ? 'button' : undefined}>{(n.contents || []).map((c, i) => <Node key={i} n={c} parent={layout} onAction={onAction} />)}</div>;
 }
 
-function Block({ n, onAction, pad = true }) {
+function Block({ n, onAction }) {
   if (!n) return null;
-  // a coloured band (a header with its own background) runs edge to edge; plain blocks get LINE's default inner space
-  const hasPad = n.backgroundColor !== undefined || ['paddingAll', 'paddingTop', 'paddingBottom', 'paddingStart', 'paddingEnd'].some(k => n[k] !== undefined);
-  return <div style={!hasPad && pad ? { padding: 13 } : undefined}><Box n={n} onAction={onAction} /></div>;
+  return <Box n={n} onAction={onAction} edge />;
 }
 
 function Bubble({ b, onAction }) {

@@ -954,7 +954,7 @@ html[data-fs="lg"] { font-size: 18px; }
 @media (min-width: 760px) { .chat-log { padding-bottom: 9rem; } }
 .chat-row { display: flex; gap: 0.45rem; align-items: flex-start; }
 .chat-row.user { justify-content: flex-end; }
-.chat-avatar { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; background: var(--surface-muted); display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+.chat-avatar { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%; background: var(--surface-muted); object-fit: cover; box-shadow: 0 0 0 1px var(--border); }
 .chat-bot-col { min-width: 0; flex: 0 1 auto; max-width: calc(100% - 38px); display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; }
 .chat-bubble { padding: 0.55rem 0.8rem; border-radius: 16px; width: fit-content; max-width: min(88%, 560px); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; font-size: 0.95rem; }
 .chat-bubble.user { background: var(--accent); color: var(--text-on-accent); border-bottom-right-radius: 4px; }
