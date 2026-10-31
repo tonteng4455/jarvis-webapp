@@ -10,7 +10,7 @@ import { useDialogGuard, dialogGuard } from './_ui';
 import { describeRule, DAY_TH } from '../../lib/recur';
 import { ruleFromForm } from '../../lib/calendarSeries';
 
-export const EMPTY_REPEAT = { freq: '', interval: 1, days: [], monthMode: 'day', end: 'never', until: '', count: 10 };
+export const EMPTY_REPEAT = { freq: '', interval: 1, days: [], monthMode: 'day', end: 'until', until: '', count: 10 };   // until '' = the default end for how often it repeats
 const DAY_ORDER = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 const DAY_SHORT = { MO: 'จ', TU: 'อ', WE: 'พ', TH: 'พฤ', FR: 'ศ', SA: 'ส', SU: 'อา' };
 const UNIT = { daily: 'วัน', weekly: 'สัปดาห์', monthly: 'เดือน' };
@@ -18,7 +18,7 @@ const UNIT = { daily: 'วัน', weekly: 'สัปดาห์', monthly: '�
 // the object the API takes (null = does not repeat)
 export function repeatPayload(rep) {
   if (!rep?.freq) return null;
-  return { freq: rep.freq, interval: rep.interval, days: rep.days, monthMode: rep.monthMode, until: rep.end === 'until' ? rep.until : null, count: rep.end === 'count' ? rep.count : null };
+  return { freq: rep.freq, interval: rep.interval, days: rep.days, monthMode: rep.monthMode, until: rep.end === 'until' && rep.until ? rep.until : null, count: rep.end === 'count' ? rep.count : null };
 }
 
 // → { text } | { error } — a one-line summary of what the form means, from the date chosen
@@ -26,7 +26,7 @@ export function repeatSummary(rep, date) {
   if (!rep?.freq || !date) return null;
   const r = ruleFromForm(repeatPayload(rep), date);
   if (r.error) return { error: r.error === 'until_before_start' ? 'วันสิ้นสุดมาก่อนวันเริ่ม' : r.error === 'bad_count' ? 'จำนวนครั้งต้องอยู่ระหว่าง 1–999' : 'ตั้งการซ้ำไม่ได้' };
-  return { text: r.text, first: r.first };
+  return { text: r.text, first: r.first, defaulted: r.defaulted, until: r.until };
 }
 
 export function RepeatPicker({ value, onChange, date }) {
@@ -73,14 +73,14 @@ export function RepeatPicker({ value, onChange, date }) {
             <div className="muted" style={{ marginBottom: '0.25rem' }}>สิ้นสุด</div>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <select className="glass-input" aria-label="สิ้นสุด" style={{ width: 'auto' }} value={value.end} onChange={e => set({ end: e.target.value })}>
-                <option value="never">ไม่สิ้นสุด</option>
                 <option value="until">ถึงวันที่</option>
                 <option value="count">ซ้ำกี่ครั้ง</option>
               </select>
-              {value.end === 'until' && <input type="date" className="glass-input" aria-label="ถึงวันที่" style={{ width: 'auto' }} value={value.until} min={date || undefined} onChange={e => set({ until: e.target.value })} />}
+              {value.end === 'until' && <input type="date" className="glass-input" aria-label="ถึงวันที่" style={{ width: 'auto' }} value={value.until || (sum?.until ?? '')} min={date || undefined} onChange={e => set({ until: e.target.value })} />}
               {value.end === 'count' && <><input type="number" min="1" max="999" className="glass-input" aria-label="กี่ครั้ง" style={{ width: '5rem' }} value={value.count} onChange={e => set({ count: parseInt(e.target.value, 10) || '' })} /><span>ครั้ง</span></>}
             </div>
           </div>
+          <div className="muted" style={{ fontSize: '0.8rem' }}>ต้องมีวันสิ้นสุดเสมอ — ถ้าไม่ระบุ จะซ้ำ{value.freq === 'daily' ? ' 3 เดือน' : value.freq === 'weekly' ? ' 6 เดือน' : ' 1 ปี'} แล้วต่ออายุได้ทีหลัง</div>
           {sum && <div data-testid="repeat-summary" style={{ fontSize: "0.9rem" }} className={sum.error ? 'muted' : ''}>{sum.error ? `⚠️ ${sum.error}` : `🔁 ${sum.text}`}</div>}
         </div>
       )}

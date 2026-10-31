@@ -70,3 +70,13 @@ test('Thai descriptions', () => {
   assert.equal(describeRule('FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231'), 'ทุกวันจันทร์ · ถึง 31 ธ.ค. 2569');
   assert.equal(describeRule('FREQ=DAILY;COUNT=10'), 'ทุกวัน · 10 ครั้ง');
 });
+
+test('default end: every day 3 months, every week 6 months, every month 1 year; month-end days are clamped', async () => {
+  const { defaultUntil, extendUntil, addMonths } = await import('../lib/recur.js');
+  assert.equal(defaultUntil('daily', '2026-11-02'), '2027-02-02');
+  assert.equal(defaultUntil('weekly', '2026-11-02'), '2027-05-02');
+  assert.equal(defaultUntil('monthly', '2026-11-02'), '2027-11-02');
+  assert.equal(addMonths('2026-11-30', 3), '2027-02-28');
+  assert.equal(addMonths('2026-12-31', 2), '2027-02-28');
+  assert.equal(extendUntil('daily', '2027-02-02'), '2027-05-02');
+});

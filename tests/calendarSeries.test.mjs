@@ -32,25 +32,27 @@ test('localDate is the Bangkok date', () => {
 test('ruleFromForm: the form becomes a rule and the first date on/after the day chosen', () => {
   assert.deepEqual(ruleFromForm(null, '2026-11-02'), { rule: null });
   let r = ruleFromForm({ freq: 'weekly', interval: 1, days: ['MO', 'WE'] }, '2026-11-03');
-  assert.equal(r.rule, 'FREQ=WEEKLY;BYDAY=MO,WE');
+  assert.equal(r.rule.startsWith('FREQ=WEEKLY;BYDAY=MO,WE;UNTIL='), true);
   assert.equal(r.first, '2026-11-04');
   r = ruleFromForm({ freq: 'weekly', interval: 2 }, '2026-11-02');
-  assert.equal(r.rule, 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO');                                    // no day chosen → the weekday of the start
+  assert.equal(r.rule, 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;UNTIL=20270502');                      // no day chosen → the weekday of the start; no end → the default (6 months)
+  assert.equal(r.defaulted, true);
   r = ruleFromForm({ freq: 'daily', interval: 3, count: 5 }, '2026-11-02');
   assert.equal(r.rule, 'FREQ=DAILY;INTERVAL=3;COUNT=5');
   r = ruleFromForm({ freq: 'monthly', interval: 1, monthMode: 'day' }, '2026-11-05');
-  assert.equal(r.rule, 'FREQ=MONTHLY;BYMONTHDAY=5');
+  assert.equal(r.rule, 'FREQ=MONTHLY;BYMONTHDAY=5;UNTIL=20271105');
   r = ruleFromForm({ freq: 'monthly', interval: 1, monthMode: 'last' }, '2026-11-05');
-  assert.equal(r.rule, 'FREQ=MONTHLY;BYMONTHDAY=-1');
+  assert.equal(r.rule, 'FREQ=MONTHLY;BYMONTHDAY=-1;UNTIL=20271130');
   r = ruleFromForm({ freq: 'monthly', interval: 1, monthMode: 'nth' }, '2026-11-11');           // the 2nd Wednesday
-  assert.equal(r.rule, 'FREQ=MONTHLY;BYDAY=2WE');
+  assert.equal(r.rule, 'FREQ=MONTHLY;BYDAY=2WE;UNTIL=20271111');
   r = ruleFromForm({ freq: 'monthly', interval: 1, monthMode: 'nth' }, '2026-11-25');           // the 4th Wednesday
-  assert.equal(r.rule, 'FREQ=MONTHLY;BYDAY=4WE');
+  assert.equal(r.rule, 'FREQ=MONTHLY;BYDAY=4WE;UNTIL=20271125');
   r = ruleFromForm({ freq: 'monthly', interval: 1, monthMode: 'nth' }, '2026-12-30');           // a 5th weekday of a month → "the last"
-  assert.equal(r.rule, 'FREQ=MONTHLY;BYDAY=-1WE');
+  assert.equal(r.rule, 'FREQ=MONTHLY;BYDAY=-1WE;UNTIL=20271230');
   r = ruleFromForm({ freq: 'daily', interval: 1, until: '2026-12-31' }, '2026-11-02');
   assert.equal(r.rule, 'FREQ=DAILY;UNTIL=20261231');
   assert.equal(r.text, 'ทุกวัน · ถึง 31 ธ.ค. 2569');
+  assert.equal(r.defaulted, false);
 });
 
 test('ruleFromForm: bad input is refused', () => {
@@ -58,7 +60,7 @@ test('ruleFromForm: bad input is refused', () => {
   assert.equal(ruleFromForm({ freq: 'daily', until: '2026-10-01' }, '2026-11-02').error, 'until_before_start');
   assert.equal(ruleFromForm({ freq: 'daily', count: 0 }, '2026-11-02').error, undefined);        // 0 / empty count means "no count"
   assert.equal(ruleFromForm({ freq: 'daily', count: 5000 }, '2026-11-02').error, 'bad_count');
-  assert.equal(ruleFromForm({ freq: 'daily', interval: 500 }, '2026-11-02').rule, 'FREQ=DAILY;INTERVAL=99');
+  assert.equal(ruleFromForm({ freq: 'daily', interval: 500 }, '2026-11-02').rule, 'FREQ=DAILY;INTERVAL=99;UNTIL=20270202');
 });
 
 test('externalFromToday: the upcoming list drops Google events that began before today (overlapping the window); a month window keeps them', () => {

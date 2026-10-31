@@ -30,6 +30,13 @@ export async function PATCH(request, { params }) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const body = await request.json();
+  if (body.extend) {                                       // ➕ ต่ออายุ — a repeating appointment's end moves on (the bot does it, same as in LINE)
+    const row = await seriesRow(supabaseAdmin(), session.lineUserId, id);
+    if (!row) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    const r = await callBotInternal('/internal/calendar-series-op', { userId: session.lineUserId, id, op: 'extend' });
+    if (!r?.ok) return NextResponse.json({ error: r?.error || 'extend_failed' }, { status: r?.error === 'has_count' || r?.error === 'no_end' ? 400 : 502 });
+    return NextResponse.json({ event: r.event || row, until: r.until });
+  }
   const moveTo = typeof body.calendar_id === 'string' && body.calendar_id ? body.calendar_id : null;
   const updates = {};
   for (const key of EDITABLE_FIELDS) {

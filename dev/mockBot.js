@@ -3,7 +3,7 @@
 // /api/dev/drive-image/[id] so thumbnails actually render offline.
 
 import { mockSupabase } from './mockSupabase';
-import { parseRRule, buildRRule, addDays } from '../lib/recur';
+import { parseRRule, buildRRule, addDays, extendUntil } from '../lib/recur';
 
 function store() {
   if (!globalThis.__mockDrive) globalThis.__mockDrive = new Map();
@@ -122,6 +122,14 @@ export async function mockBotInternal(path, payload) {
       // following → the old series ends the day before (+ a new series when changed), all → the whole row
       const sb = mockSupabase();
       const { data: row } = await sb.from('calendar_events').select('*').eq('id', payload.id).eq('user_id', payload.userId).maybeSingle();
+      if (payload.op === 'extend') {
+        const rl = row?.recurrence_rule && parseRRule(row.recurrence_rule);
+        if (!rl) return { ok: false, error: 'not_found' };
+        if (!rl.until) return { ok: false, error: rl.count ? 'has_count' : 'no_end' };
+        const until = extendUntil(rl.freq, rl.until);
+        const { data: u } = await sb.from('calendar_events').update({ recurrence_rule: buildRRule({ ...rl, until }) }).eq('id', row.id).select().maybeSingle();
+        return { ok: true, until, event: u };
+      }
       if (!row?.recurrence_rule || !/^\d{4}-\d{2}-\d{2}$/.test(payload.occ || '')) return { ok: false, error: 'not_found' };
       const first = new Date(Date.parse(row.start_time) + 7 * 3600e3).toISOString().slice(0, 10);
       let scope = payload.scope; if (scope === 'following' && payload.occ <= first) scope = 'all';

@@ -13,6 +13,7 @@ import { ConvertToTaskSheet } from '../_taskEditor';
 import { ConvertChooser, convertItem, eventToNotePayload } from '../_convert';
 import { dueInputs } from '../../../lib/taskDue';
 import { RepeatPicker, ScopeSheet, EMPTY_REPEAT, repeatPayload, repeatSummary } from '../_repeat';
+import { parseRRule, spanTh, dateTh } from '../../../lib/recur';
 import { apiGet, DraftNote, ResumeDraft, ErrorState, Fab, ListSkeleton, useDraft, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
 
 const kOf = e => e.key || e.id;   // a repeating appointment has one entry per date: same id, a key per date
@@ -115,7 +116,7 @@ function WorkCalendarTip({ onRecheck, onHide, checking }) {
   );
 }
 
-function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
+function EventEditor({ event, cals, onSave, onCancel, onConvert, onExtend }) {
   const initial = splitDateTime(event.start_time);
   const [title, setTitle] = useState(event.title || '');
   const [date, setDate] = useState(initial.date);
@@ -167,7 +168,14 @@ function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
         </div>
       </div>
       {isNew && <RepeatPicker value={repeat} onChange={setRepeat} date={date} />}
-      {event.is_series && <div className="muted" style={{ marginBottom: '0.6rem' }} role="note">🔁 นัดนี้ซ้ำ: {event.series_text} — ตอนบันทึกจะถามว่าแก้เฉพาะครั้งนี้ / ครั้งนี้เป็นต้นไป / ทั้งชุด</div>}
+      {event.is_series && (
+        <div className="muted" style={{ marginBottom: '0.6rem' }} role="note">
+          🔁 นัดนี้ซ้ำ: {event.series_text} — ตอนบันทึกจะถามว่าแก้เฉพาะครั้งนี้ / ครั้งนี้เป็นต้นไป / ทั้งชุด
+          {onExtend && parseRRule(event.recurrence_rule)?.until && (
+            <div style={{ marginTop: '0.4rem' }}><button type="button" className="glass-btn-outline" data-act="extend" onClick={() => onExtend(event)}>➕ ต่ออายุอีก {spanTh(parseRRule(event.recurrence_rule).freq)} (ตอนนี้ถึง {dateTh(parseRRule(event.recurrence_rule).until)})</button></div>
+          )}
+        </div>
+      )}
       {multi(cals) && writable.length > 1 && !event.is_series && (
         <div style={{ marginBottom: '0.6rem' }}>
           <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>ปฏิทิน{!isNew && ' (เปลี่ยนเพื่อย้ายนัดนี้)'}</label>
@@ -371,6 +379,16 @@ function CalendarPageInner() {
     return true;
   }
 
+  async function extendSeries(ev) {
+    try {
+      const res = await fetch(`/api/calendar/${ev.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ extend: true }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.show(data.error === 'has_count' ? '🙏 นัดนี้กำหนดเป็นจำนวนครั้ง ต่ออายุไม่ได้' : '❌ ต่ออายุไม่สำเร็จ', { tone: 'error' }); return; }
+      toast.show(`✅ ต่ออายุแล้ว — ซ้ำถึง ${dateTh(data.until)}`);
+      setEditingId(null); load();
+    } catch { toast.show('📶 ต่ออายุไม่สำเร็จ (อินเทอร์เน็ตหลุด)', { tone: 'warn' }); }
+  }
+
   async function cancelEvent(ev) {
     let scope = null;
     if (ev.is_series) { scope = await askScope(ev.title, 'ยกเลิก'); if (!scope) return; }
@@ -503,7 +521,7 @@ function CalendarPageInner() {
           {events && dayEvents.length === 0 && !creating && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>ไม่มีนัดหมายในวันนี้ครับ</p></div>}
           <div className="list-stack">
             {dayEvents.map(e => editingId === kOf(e)
-              ? <EventEditor key={kOf(e)} cals={cals} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} />
+              ? <EventEditor key={kOf(e)} cals={cals} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} onExtend={extendSeries} />
               : <EventCard key={kOf(e)} cals={cals} e={e} onEdit={setEditingId} onCancel={cancelEvent} onConvert={ev => setConvert({ ev, to: null })} />)}
           </div>
         </>
@@ -525,7 +543,7 @@ function CalendarPageInner() {
           {events?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showPast ? 'ยังไม่มีนัดหมายที่ผ่านมาแล้วครับ' : 'ไม่มีนัดหมายที่กำลังจะถึงครับ'}</p></div>}
           <div className="list-stack">
             {events?.map(e => editingId === kOf(e)
-              ? <EventEditor key={kOf(e)} cals={cals} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} />
+              ? <EventEditor key={kOf(e)} cals={cals} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} onExtend={extendSeries} />
               : <EventCard key={kOf(e)} cals={cals} e={e} showDate onEdit={setEditingId} onCancel={cancelEvent} onConvert={ev => setConvert({ ev, to: null })} />)}
           </div>
         </>
