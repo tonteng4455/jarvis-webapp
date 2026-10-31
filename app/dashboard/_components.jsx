@@ -26,6 +26,7 @@ export function applyFontSize(size) {
 // Pages (top-level tabs). The same list drives the desktop top bar and
 // the mobile bottom bar (see BottomNav in _shell.jsx).
 export const NAV_TABS = [
+  { key: 'chat', icon: '💬', label: 'แชท', href: '/dashboard/chat' },
   { key: 'today', icon: '🏠', label: 'วันนี้', href: '/dashboard/today' },
   { key: 'notes', icon: '📝', label: 'โน้ต', href: '/dashboard' },
   { key: 'tasks', icon: '✅', label: 'งาน', href: '/dashboard/tasks' },
@@ -58,7 +59,6 @@ export function DashNav() {
         ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
-        <Link href="/dashboard/chat" className={`dash-chat-btn${pathname === '/dashboard/chat' ? ' active' : ''}`} aria-label="แชทกับ Jarvis" title="แชทกับ Jarvis" data-testid="chat-link">💬</Link>
         <AccountMenu />
       </div>
     </nav>

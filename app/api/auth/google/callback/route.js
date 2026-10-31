@@ -26,7 +26,7 @@ export async function GET(request) {
     if (flow.mode !== 'link') {
       const { key } = await keyForGoogle(supabase, who);
       const prof = await profileOf(supabase, key);
-      const res = await redirectSignedIn(request, '/dashboard/today', { key, displayName: prof.display_name || who.name || who.email, pictureUrl: prof.picture_url || who.picture });
+      const res = await redirectSignedIn(request, '/dashboard/chat', { key, displayName: prof.display_name || who.name || who.email, pictureUrl: prof.picture_url || who.picture });
       res.cookies.delete('google_oauth');
       return res;
     }

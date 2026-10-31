@@ -977,5 +977,3 @@ html[data-fs="lg"] { font-size: 18px; }
 .chat-form { display: flex; gap: 0.5rem; align-items: flex-end; }
 .chat-input { flex: 1; resize: none; max-height: 7.5rem; border-radius: 22px; }
 .chat-send { width: 46px; height: 46px; border-radius: 50%; padding: 0; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
-.dash-chat-btn { flex: 0 0 auto; text-decoration: none; font-size: 1.15rem; line-height: 1; padding: 0.4rem 0.55rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-muted); }
-.dash-chat-btn.active { border-color: var(--accent); }

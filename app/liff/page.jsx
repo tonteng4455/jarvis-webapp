@@ -11,7 +11,7 @@
 // go (?to=/dashboard&id=123, etc).
 //
 // Query params:
-//   to    — destination path (defaults to /dashboard/today)
+//   to    — destination path (defaults to /dashboard/chat)
 //   id    — an item id to auto-open on that page (note/task/event) —
 //           only meaningful for Premium's full dashboard pages, which
 //           need a real logged-in session
@@ -43,7 +43,7 @@ function LiffEntryPageInner() {
 
     async function run() {
       try {
-        const to = params.get('to') || '/dashboard/today';
+        const to = params.get('to') || '/dashboard/chat';
         const scopedToken = params.get('token');
 
         // Scoped single-item edit link (Free users) — the token is

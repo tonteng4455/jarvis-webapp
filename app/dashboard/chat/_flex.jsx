@@ -17,7 +17,7 @@ const px = (v, table) => (v === undefined || v === null ? undefined : typeof v =
 export function uriTarget(uri) {
   try {
     const u = new URL(uri);
-    if (/liff\.line\.me$/.test(u.hostname)) { const to = u.searchParams.get('to'); return to && to.startsWith('/') ? { path: to } : { path: '/dashboard/today' }; }
+    if (/liff\.line\.me$/.test(u.hostname)) { const to = u.searchParams.get('to'); return to && to.startsWith('/') ? { path: to } : { path: '/dashboard/chat' }; }
     if (typeof window !== 'undefined' && u.origin === window.location.origin) return { path: u.pathname + u.search };
   } catch { /* not a URL */ }
   return { url: uri };
