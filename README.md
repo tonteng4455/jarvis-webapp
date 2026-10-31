@@ -60,6 +60,7 @@ Run `event_recurrence.sql` in the Supabase SQL editor (project `ujyvvykxakgtbpwd
 - "Only this time" = an exception date on the series (+ a separate row, `series_id`, when it was moved/changed); "this and the following" = the series is cut (`UNTIL`) and a new one starts when something is changed; "whole series" = the row itself.
 - `lib/recur.js` is the single source of truth for the rule maths. The bot carries a generated copy (`tools/sync_recur.py` in the bot repo rewrites the `rc*` block of `jarvis-line-bot.js`) — change `lib/recur.js`, run the script, paste the bot file.
 - The web never changes a series directly: `/api/calendar/[id]` (PATCH/DELETE with `scope` + `occ`) goes through the bot's `/internal/calendar-series-op`. Without a scope the API answers 409 `scope_required`.
+- A repeating appointment always ends: with no end given it gets a default (every day → 3 months, every week → 6 months, every month → 1 year; `defaultUntil()` in `lib/recur.js`); the bot's card says so and offers "➕ ต่ออีก …" (op `extend`, also on the web: ➕ in the editor → PATCH `{ extend: true }`). Series made before this change keep no end and are not touched. The web form has no "never" option.
 - Not supported (said so in chat): yearly repeats; changing the weekday of a multi-weekday series as a whole.
 
 ## 3) File storage
@@ -199,3 +200,7 @@ they cannot be reached on the deployed site.
 and what it learned from their category corrections; they can add or forget entries there. Table: `user_lexicon`
 (`jarvis-line-bot/user_lexicon.sql`, run once in Supabase). Rules are per person, plain data, and used by the bot
 before the AI. The pages work without the table (they show a setup hint).
+
+## 2f) Chat in the web app (`/dashboard/chat`)
+
+The 💬 button in the top bar opens a chat like the LINE one. The web app has no brain of its own and uses no AI: `POST /api/chat` ({ text } or { postback: { data, params } }) calls the bot Worker's `/internal/chat`, which runs the very same handlers as a LINE message/button tap (same data, same conversation state, same daily AI quota) and returns the replies as LINE message objects instead of sending them to LINE. `app/dashboard/chat/_flex.jsx` draws them (flex bubble/carousel, box, text, button, image, separator; postback / message / uri / datetimepicker actions; quick-reply chips under the last answer). A LIFF link (`liff.line.me/…?to=/dashboard/…`) opens that page inside the app. History is kept in `localStorage` only (last 60 items). No image/file sending from the chat (use the Files page). Needs the new bot file (the `/internal/chat` route); without it the chat says it could not reach the bot.

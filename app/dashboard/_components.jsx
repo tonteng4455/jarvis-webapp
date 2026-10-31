@@ -58,6 +58,7 @@ export function DashNav() {
         ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
+        <Link href="/dashboard/chat" className={`dash-chat-btn${pathname === '/dashboard/chat' ? ' active' : ''}`} aria-label="แชทกับ Jarvis" title="แชทกับ Jarvis" data-testid="chat-link">💬</Link>
         <AccountMenu />
       </div>
     </nav>

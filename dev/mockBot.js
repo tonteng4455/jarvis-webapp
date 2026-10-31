@@ -155,6 +155,27 @@ export async function mockBotInternal(path, payload) {
       const u = await patch({ ...fields, ...(ch?.start_time ? { start_time: new Date(Date.parse(row.start_time) + (Date.parse(newStart) - Date.parse(occStart))).toISOString(), end_time: new Date(Date.parse(row.start_time) + (Date.parse(newStart) - Date.parse(occStart)) + dur).toISOString() } : {}) });
       return { ok: true, scope, event: u };
     }
+    case '/internal/chat': {
+      // a tiny stand-in for the bot's brain: enough to test the chat page (text, flex card, quick replies, postbacks, a date picker)
+      if (payload.postback) {
+        const d = payload.postback.data || '';
+        if (d === 'action=demo_pick') return { ok: true, messages: [{ type: 'text', text: `เลือกแล้ว: ${JSON.stringify(payload.postback.params || {})}` }] };
+        return { ok: true, messages: [{ type: 'text', text: `รับปุ่ม: ${d}`, quickReply: { items: [{ type: 'action', action: { type: 'message', label: '📅 ดูนัดหมาย', text: 'ดูนัดหมาย' } }] } }] };
+      }
+      const t = payload.text;
+      if (t === 'เมนู') return { ok: true, messages: [{ type: 'text', text: '🏠 เมนูหลัก', quickReply: { items: [
+        { type: 'action', action: { type: 'message', label: '📅 ดูนัดหมาย', text: 'ดูนัดหมาย' } },
+        { type: 'action', action: { type: 'postback', label: '➕ เพิ่มนัด', data: 'action=demo_add', displayText: '➕ เพิ่มนัด' } },
+        { type: 'action', action: { type: 'uri', label: '🌐 เปิดโน้ต', uri: 'https://liff.line.me/1-abc?to=%2Fdashboard%2Fnotes' } },
+        { type: 'action', action: { type: 'datetimepicker', label: '🗓️ เลือกวัน', data: 'action=demo_pick', mode: 'date' } }] } }] };
+      if (t === 'ดูนัดหมาย') return { ok: true, messages: [{ type: 'flex', altText: 'นัด', contents: { type: 'carousel', contents: [1, 2].map(n => ({ type: 'bubble', size: 'micro',
+        header: { type: 'box', layout: 'vertical', backgroundColor: '#4A90E2', paddingAll: 'md', contents: [{ type: 'text', text: `ใบที่ ${n}`, color: '#FFFFFF', weight: 'bold' }] },
+        body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: 'md', contents: [
+          { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: '🕐 09:00', size: 'sm', flex: 0 }, { type: 'text', text: `ประชุมทีม ${n}`, size: 'sm', wrap: true, margin: 'md' }] },
+          { type: 'separator', margin: 'md' }] },
+        footer: { type: 'box', layout: 'vertical', contents: [{ type: 'button', style: 'primary', height: 'sm', color: '#E24A4A', action: { type: 'postback', label: '❌ ยกเลิก', data: `action=demo_cancel&n=${n}`, displayText: `ยกเลิกใบที่ ${n}` } }] } })) } }] };
+      return { ok: true, messages: [{ type: 'text', text: `ได้รับ: ${t}` }] };
+    }
     case '/internal/calendar-sync':
     case '/internal/task-recurrence': return { ok: true, synced: true };
     default: return { ok: false, error: 'mock_unhandled ' + path };
