@@ -3,6 +3,7 @@
 // /api/dev/drive-image/[id] so thumbnails actually render offline.
 
 import { mockSupabase } from './mockSupabase';
+import { parseRRule, buildRRule, addDays } from '../lib/recur';
 
 function store() {
   if (!globalThis.__mockDrive) globalThis.__mockDrive = new Map();
@@ -115,6 +116,36 @@ export async function mockBotInternal(path, payload) {
       const { data } = await mockSupabase().from('calendar_events').update({ status: 'cancelled' })
         .eq('id', payload.eventId).eq('user_id', payload.userId).select().maybeSingle();
       return { ok: true, event: data };
+    }
+    case '/internal/calendar-series-op': {
+      // the real Worker (seriesCancel / seriesChange) in miniature: one → exception date (+ a separate row when changed),
+      // following → the old series ends the day before (+ a new series when changed), all → the whole row
+      const sb = mockSupabase();
+      const { data: row } = await sb.from('calendar_events').select('*').eq('id', payload.id).eq('user_id', payload.userId).maybeSingle();
+      if (!row?.recurrence_rule || !/^\d{4}-\d{2}-\d{2}$/.test(payload.occ || '')) return { ok: false, error: 'not_found' };
+      const first = new Date(Date.parse(row.start_time) + 7 * 3600e3).toISOString().slice(0, 10);
+      let scope = payload.scope; if (scope === 'following' && payload.occ <= first) scope = 'all';
+      const rule = parseRRule(row.recurrence_rule);
+      const patch = async p => (await sb.from('calendar_events').update(p).eq('id', row.id).select().maybeSingle()).data;
+      const ch = payload.op === 'change' ? payload.changes || {} : null;
+      const fields = ch ? Object.fromEntries(['title', 'location', 'description', 'reminder_minutes'].filter(k => k in ch).map(k => [k, ch[k]])) : {};
+      const occStart = `${payload.occ}T${new Date(Date.parse(row.start_time) + 7 * 3600e3).toISOString().slice(11, 16)}:00+07:00`;
+      const dur = Date.parse(row.end_time || row.start_time) - Date.parse(row.start_time);
+      const newStart = ch?.start_time || occStart, newEnd = new Date(Date.parse(newStart) + dur).toISOString();
+      if (payload.op === 'cancel' && scope === 'all') { await patch({ status: 'cancelled' }); return { ok: true, scope }; }
+      if (scope === 'one') {
+        const ex = [...new Set([...(row.recur_exdates || []), payload.occ])].sort();
+        const u = await patch({ recur_exdates: ex });
+        if (ch) await sb.from('calendar_events').insert({ user_id: row.user_id, title: row.title, location: row.location, description: row.description, reminder_minutes: row.reminder_minutes, status: 'scheduled', ...fields, start_time: newStart, end_time: newEnd, series_id: row.id });
+        return { ok: true, scope, event: u };
+      }
+      if (scope === 'following') {
+        await patch({ recurrence_rule: buildRRule({ ...rule, count: null, until: addDays(payload.occ, -1) }) });
+        if (ch) await sb.from('calendar_events').insert({ user_id: row.user_id, title: row.title, location: row.location, description: row.description, reminder_minutes: row.reminder_minutes, status: 'scheduled', recur_exdates: [], recurrence_rule: buildRRule({ ...rule, until: rule.until, count: null }), ...fields, start_time: newStart, end_time: newEnd });
+        return { ok: true, scope };
+      }
+      const u = await patch({ ...fields, ...(ch?.start_time ? { start_time: new Date(Date.parse(row.start_time) + (Date.parse(newStart) - Date.parse(occStart))).toISOString(), end_time: new Date(Date.parse(row.start_time) + (Date.parse(newStart) - Date.parse(occStart)) + dur).toISOString() } : {}) });
+      return { ok: true, scope, event: u };
     }
     case '/internal/calendar-sync':
     case '/internal/task-recurrence': return { ok: true, synced: true };

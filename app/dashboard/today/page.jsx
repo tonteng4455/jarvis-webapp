@@ -150,7 +150,7 @@ export default function TodayPage() {
             <div className="list-stack">
               {results.notes.length > 0 && <Card title="📝 โน้ต">{results.notes.map(n => <Link key={n.id} href={`/dashboard?id=${n.id}`} className="result-row"><b>{n.title || '(ไม่มีหัวข้อ)'}</b><span className="muted">{(n.content || '').slice(0, 60)}</span></Link>)}</Card>}
               {results.tasks.length > 0 && <Card title="✅ งาน">{results.tasks.map(t => <Link key={t.id} href={`/dashboard/tasks?id=${t.id}`} className="result-row"><b>{t.task_name}</b></Link>)}</Card>}
-              {results.events.length > 0 && <Card title="📅 นัดหมาย">{results.events.map(e => <Link key={e.id} href={`/dashboard/calendar?id=${e.id}`} className="result-row"><b>{e.title}</b><span className="muted">{whenLabel(e.start_time)}</span></Link>)}</Card>}
+              {results.events.length > 0 && <Card title="📅 นัดหมาย">{results.events.map(e => <Link key={e.key || e.id} href={`/dashboard/calendar?id=${e.id}`} className="result-row"><b>{e.is_series ? '🔁 ' : ''}{e.title}</b><span className="muted">{whenLabel(e.start_time)}</span></Link>)}</Card>}
               {results.expenses.length > 0 && <Card title="💰 รายรับ-รายจ่าย">{results.expenses.map(e => <Link key={e.id} href={`/dashboard/expenses?id=${e.id}`} className="result-row"><b>{e.memo || e.category}</b><span className="muted">{e.type === 'income' ? '+' : '-'}{money(e.amount)} บาท</span></Link>)}</Card>}
               {results.files.length > 0 && <Card title="📁 ไฟล์">{results.files.map(f => <Link key={f.id} href="/dashboard/files" className="result-row"><b>{f.file_name}</b></Link>)}</Card>}
             </div>
@@ -162,8 +162,8 @@ export default function TodayPage() {
           <Card title="📅 นัดหมายถัดไป" href="/dashboard/calendar">
             {data.events.length === 0 && <p className="muted" style={{ margin: 0 }}>ไม่มีนัดหมายที่กำลังจะถึง</p>}
             {data.events.slice(0, 3).map(e => (
-              <Link key={e.id} href={`/dashboard/calendar?id=${e.id}`} className="result-row">
-                <b>{e.title}</b><span className="muted">{whenLabel(e.start_time)}{e.location ? ` · 📍 ${e.location}` : ''}</span>
+              <Link key={e.key || e.id} href={`/dashboard/calendar?id=${e.id}`} className="result-row">
+                <b>{e.is_series ? '🔁 ' : ''}{e.title}</b><span className="muted">{whenLabel(e.start_time)}{e.location ? ` · 📍 ${e.location}` : ''}</span>
               </Link>
             ))}
           </Card>

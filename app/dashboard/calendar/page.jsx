@@ -12,7 +12,10 @@ import { DashNav, formatDate } from '../_components';
 import { ConvertToTaskSheet } from '../_taskEditor';
 import { ConvertChooser, convertItem, eventToNotePayload } from '../_convert';
 import { dueInputs } from '../../../lib/taskDue';
+import { RepeatPicker, ScopeSheet, EMPTY_REPEAT, repeatPayload, repeatSummary } from '../_repeat';
 import { apiGet, DraftNote, ResumeDraft, ErrorState, Fab, ListSkeleton, useDraft, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
+
+const kOf = e => e.key || e.id;   // a repeating appointment has one entry per date: same id, a key per date
 
 const REMINDER_OPTIONS = [
   { value: '', label: '⚙️ ค่าเริ่มต้นของปฏิทิน' },
@@ -121,17 +124,19 @@ function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
   const [location, setLocation] = useState(event.location || '');
   const [description, setDescription] = useState(event.description || '');
   const [saving, setSaving] = useState(false);
+  const [repeat, setRepeat] = useState(EMPTY_REPEAT);
   const isNew = !event.id;
   const writable = (cals?.calendars || []).filter(c => c.writable);
   const originalCal = event.calendar_id || cals?.targetCalendarId || '';
   const [calendar, setCalendar] = useState(originalCal);
 
   // what is typed here survives a pause, an app switch, or the phone discarding the tab (see useDraft)
-  const draft = useDraft(isNew ? 'event:new' : `event:${event.id}`, { title, date, time, reminder, location, description, calendar },
-    d => { setTitle(d.title ?? ''); setDate(d.date ?? ''); setTime(d.time ?? ''); setReminder(d.reminder ?? ''); setLocation(d.location ?? ''); setDescription(d.description ?? ''); if (d.calendar) setCalendar(d.calendar); });
+  const draft = useDraft(isNew ? 'event:new' : `event:${event.id}`, { title, date, time, reminder, location, description, calendar, repeat },
+    d => { if (d.repeat) setRepeat({ ...EMPTY_REPEAT, ...d.repeat }); setTitle(d.title ?? ''); setDate(d.date ?? ''); setTime(d.time ?? ''); setReminder(d.reminder ?? ''); setLocation(d.location ?? ''); setDescription(d.description ?? ''); if (d.calendar) setCalendar(d.calendar); });
 
+  const repeatBad = isNew && !!repeat.freq && !!repeatSummary(repeat, date)?.error;
   async function save() {
-    if (!title.trim() || saving) return;
+    if (!title.trim() || saving || repeatBad) return;
     setSaving(true);
     const start_time = date && time ? new Date(`${date}T${time}:00`).toISOString() : event.start_time;
     let ok = false;
@@ -139,7 +144,8 @@ function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
       title: title.trim(), start_time, location: location || null, description: description || null,
       reminder_minutes: reminder === '' ? null : parseInt(reminder, 10),
       ...(multi(cals) && calendar && (isNew || calendar !== originalCal) ? { calendar_id: calendar } : {}),   // new: where it goes · existing: only when moved
-    }); } finally { setSaving(false); }
+      ...(isNew && repeat.freq ? { repeat: repeatPayload(repeat) } : {}),
+    }, event); } finally { setSaving(false); }
     if (ok) draft.clear();
   }
 
@@ -160,7 +166,9 @@ function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
           <input type="time" className="glass-input" value={time} onChange={e => setTime(e.target.value)} />
         </div>
       </div>
-      {multi(cals) && writable.length > 1 && (
+      {isNew && <RepeatPicker value={repeat} onChange={setRepeat} date={date} />}
+      {event.is_series && <div className="muted" style={{ marginBottom: '0.6rem' }} role="note">🔁 นัดนี้ซ้ำ: {event.series_text} — ตอนบันทึกจะถามว่าแก้เฉพาะครั้งนี้ / ครั้งนี้เป็นต้นไป / ทั้งชุด</div>}
+      {multi(cals) && writable.length > 1 && !event.is_series && (
         <div style={{ marginBottom: '0.6rem' }}>
           <label className="muted" style={{ display: 'block', marginBottom: '0.25rem' }}>ปฏิทิน{!isNew && ' (เปลี่ยนเพื่อย้ายนัดนี้)'}</label>
           <select className="glass-input" value={calendar} onChange={e => setCalendar(e.target.value)}>
@@ -184,9 +192,9 @@ function EventEditor({ event, cals, onSave, onCancel, onConvert }) {
         <textarea className="glass-input" rows={3} maxLength={8000} value={description} onChange={e => setDescription(e.target.value)} placeholder="ไม่บังคับ" style={{ resize: 'vertical' }} />
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-        {!isNew && onConvert && <button className="glass-btn-outline" style={{ marginRight: 'auto' }} onClick={() => onConvert(event)}>🔄 เปลี่ยนเป็น…</button>}
+        {!isNew && onConvert && !event.is_series && <button className="glass-btn-outline" style={{ marginRight: 'auto' }} onClick={() => onConvert(event)}>🔄 เปลี่ยนเป็น…</button>}
         <button className="glass-btn-outline" onClick={() => { draft.clear(); onCancel(); }}>ยกเลิก</button>
-        <button className="glass-btn" onClick={save} disabled={saving || !title.trim()}>{saving ? 'กำลังบันทึก...' : isNew ? '➕ เพิ่มนัดหมาย' : '✅ บันทึก'}</button>
+        <button className="glass-btn" onClick={save} disabled={saving || !title.trim() || repeatBad}>{saving ? 'กำลังบันทึก...' : isNew ? '➕ เพิ่มนัดหมาย' : '✅ บันทึก'}</button>
       </div>
     </div>
   );
@@ -208,11 +216,12 @@ function EventCard({ e, cals, onEdit, onCancel, onConvert, showDate }) {
     );
   }
   return (
-    <div className="glass-card" style={{ opacity: e.status === 'pending' ? 0.7 : 1, cursor: 'pointer' }} onClick={() => onEdit(e.id)}>
-      <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{e.title}</div>
+    <div className="glass-card" style={{ opacity: e.status === 'pending' ? 0.7 : 1, cursor: 'pointer' }} onClick={() => onEdit(kOf(e))}>
+      <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{e.is_series ? '🔁 ' : ''}{e.title}</div>
       <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', marginTop: '0.2rem' }}>
         {showDate ? formatDate(e.start_time) : `🕐 ${timeLabel(e.start_time)}`}
       </div>
+      {e.is_series && <div className="muted">🔁 {e.series_text}</div>}
       {e.location && <div className="muted">📍 {e.location}</div>}
       {e.description && <div className="muted" style={{ whiteSpace: 'pre-wrap' }}>{e.description}</div>}
       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -220,9 +229,9 @@ function EventCard({ e, cals, onEdit, onCancel, onConvert, showDate }) {
         {reminderLabel(e.reminder_minutes) && <span className="muted">{reminderLabel(e.reminder_minutes)}</span>}
         {multi(cals) && <CalTag cal={evCal(cals, e)} />}
         {e.google_event_id && <span className="muted">🔗 ซิงก์ Google Calendar แล้ว</span>}
-        <button className="note-icon-btn" style={{ marginLeft: 'auto' }}
-          onClick={(ev) => { ev.stopPropagation(); onConvert(e); }}>🔄 เปลี่ยนเป็น…</button>
-        <button className="note-icon-btn"
+        {!e.is_series && <button className="note-icon-btn" style={{ marginLeft: 'auto' }}
+          onClick={(ev) => { ev.stopPropagation(); onConvert(e); }}>🔄 เปลี่ยนเป็น…</button>}
+        <button className="note-icon-btn" style={e.is_series ? { marginLeft: 'auto' } : undefined}
           onClick={(ev) => { ev.stopPropagation(); onCancel(e); }}>🗑️ ยกเลิก</button>
       </div>
     </div>
@@ -259,6 +268,8 @@ function CalendarPageInner() {
   const [rechecking, setRechecking] = useState(false);
   useEffect(() => { try { setTipHidden(localStorage.getItem(TIP_KEY) === '1'); } catch { setTipHidden(false); } }, []);
   const [convert, setConvert] = useState(null);   // { ev, to: null | 'task' } — the "เปลี่ยนเป็น…" flow
+  const [scopeAsk, setScopeAsk] = useState(null);   // { title, verb, resolve } — "which dates?" for a repeating appointment
+  const askScope = (title, verb) => new Promise(resolve => setScopeAsk({ title, verb, resolve }));
   const touch = useRef(null);
 
   // Remember the user's preferred view across visits.
@@ -313,8 +324,13 @@ function CalendarPageInner() {
   }
 
   // → true when saved (the editor closes and its draft is dropped), false when not (the editor stays open with everything typed)
-  async function saveEvent(id, patch) {
+  async function saveEvent(id, patch, src) {
     const isNew = !id;
+    if (src?.is_series) {                                 // a repeating appointment: which dates does the change apply to?
+      const scope = await askScope(src.title, 'แก้ไข');
+      if (!scope) return false;
+      patch = { ...patch, scope, occ: src.occ_date };
+    }
     let res;
     try {
       res = await fetch(isNew ? '/api/calendar' : `/api/calendar/${id}`, {
@@ -327,7 +343,9 @@ function CalendarPageInner() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       console.error('saveEvent failed:', data);
-      toast.show(res.status === 401 ? '🔐 เซสชันหมดอายุ ข้อมูลที่พิมพ์ยังอยู่ — เข้าสู่ระบบใหม่แล้วเปิดฟอร์มเดิมจะกู้คืนให้' : isNew ? '❌ เพิ่มนัดหมายไม่สำเร็จ' : '❌ บันทึกไม่สำเร็จ', { tone: 'error', duration: 6000 });
+      toast.show(res.status === 401 ? '🔐 เซสชันหมดอายุ ข้อมูลที่พิมพ์ยังอยู่ — เข้าสู่ระบบใหม่แล้วเปิดฟอร์มเดิมจะกู้คืนให้'
+        : data.error === 'recurrence_not_ready' ? '❌ ยังตั้งนัดซ้ำไม่ได้ — ต้องรันไฟล์ event_recurrence.sql ใน Supabase ก่อน (ดูคู่มือ)'
+        : data.error === 'multi_day' ? '🙏 นัดนี้ซ้ำหลายวัน เปลี่ยน “วัน” ของทั้งชุด/ครั้งนี้เป็นต้นไปไม่ได้ (เปลี่ยนเวลาได้) เลือก “เฉพาะครั้งนี้”' : isNew ? '❌ เพิ่มนัดหมายไม่สำเร็จ' : '❌ บันทึกไม่สำเร็จ', { tone: 'error', duration: 6000 });
       return false;
     }
     if (data.moveError) {
@@ -353,14 +371,19 @@ function CalendarPageInner() {
     return true;
   }
 
-  function cancelEvent(ev) {
+  async function cancelEvent(ev) {
+    let scope = null;
+    if (ev.is_series) { scope = await askScope(ev.title, 'ยกเลิก'); if (!scope) return; }
+    // which entries on screen go with it: this date · this date on · every date of the series
+    const goes = x => !ev.is_series ? x.id === ev.id : x.id === ev.id && (scope === 'all' || (scope === 'one' ? x.occ_date === ev.occ_date : x.occ_date >= ev.occ_date));
+    const gone = (events || []).filter(goes);   // what leaves the screen (taken now, outside the state updater, so a double call cannot collect it twice)
     toast.undoableDelete({
-      id: ev.id,
-      label: `ยกเลิกนัด “${ev.title}” แล้ว`,
-      remove: () => { setEvents(prev => prev?.filter(x => x.id !== ev.id)); setEditingId(null); },
+      id: kOf(ev),
+      label: ev.is_series ? `ยกเลิกนัดซ้ำ “${ev.title}” ${scope === 'one' ? 'ครั้งนี้' : scope === 'all' ? 'ทั้งชุด' : 'ครั้งนี้เป็นต้นไป'} แล้ว` : `ยกเลิกนัด “${ev.title}” แล้ว`,
+      remove: () => { setEvents(prev => prev?.filter(x => !goes(x))); setEditingId(null); },
       commit: async () => {
         try {
-          const res = await fetch(`/api/calendar/${ev.id}`, { method: 'DELETE', keepalive: true });
+          const res = await fetch(ev.is_series ? `/api/calendar/${ev.id}?scope=${scope}&occ=${ev.occ_date}` : `/api/calendar/${ev.id}`, { method: 'DELETE', keepalive: true });
           if (!res.ok) throw new Error(String(res.status));
         } catch (e) {
           console.error('cancelEvent failed:', e);
@@ -368,7 +391,7 @@ function CalendarPageInner() {
           load();
         }
       },
-      restore: () => setEvents(prev => prev ? [...prev, ev].sort((a, b) => a.start_time.localeCompare(b.start_time)) : prev),
+      restore: () => setEvents(prev => prev ? [...prev, ...(gone.length ? gone : [ev])].sort((a, b) => a.start_time.localeCompare(b.start_time)) : prev),
     });
   }
 
@@ -462,8 +485,8 @@ function CalendarPageInner() {
                   <button type="button" key={key} className={cls} onClick={() => { setSelected(key); setEditingId(null); setCreating(false); }}
                     aria-label={`${d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long' })}${list.length ? ` มี ${list.length} นัด` : ''}`}>
                     <span className="cal-num">{d.getDate()}</span>
-                    <span className="cal-dots">{list.slice(0, 3).map(e => <i key={e.id} className={e.status === 'pending' ? 'pending' : ''} style={multi(cals) && evCal(cals, e)?.color ? { background: evCal(cals, e).color } : undefined} />)}</span>
-                    {list.slice(0, 2).map(e => <span key={e.id} className="cal-chip" style={multi(cals) && evCal(cals, e)?.color ? { boxShadow: `inset 3px 0 0 ${evCal(cals, e).color}` } : undefined}>{e.title}</span>)}
+                    <span className="cal-dots">{list.slice(0, 3).map(e => <i key={kOf(e)} className={e.status === 'pending' ? 'pending' : ''} style={multi(cals) && evCal(cals, e)?.color ? { background: evCal(cals, e).color } : undefined} />)}</span>
+                    {list.slice(0, 2).map(e => <span key={kOf(e)} className="cal-chip" style={multi(cals) && evCal(cals, e)?.color ? { boxShadow: `inset 3px 0 0 ${evCal(cals, e).color}` } : undefined}>{e.is_series ? '🔁 ' : ''}{e.title}</span>)}
                     {list.length > 2 && <span className="cal-more">+{list.length - 2}</span>}
                   </button>
                 );
@@ -479,9 +502,9 @@ function CalendarPageInner() {
           {events === null && !creating && <ListSkeleton rows={2} height={72} />}
           {events && dayEvents.length === 0 && !creating && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>ไม่มีนัดหมายในวันนี้ครับ</p></div>}
           <div className="list-stack">
-            {dayEvents.map(e => editingId === e.id
-              ? <EventEditor key={e.id} cals={cals} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} />
-              : <EventCard key={e.id} cals={cals} e={e} onEdit={setEditingId} onCancel={cancelEvent} onConvert={ev => setConvert({ ev, to: null })} />)}
+            {dayEvents.map(e => editingId === kOf(e)
+              ? <EventEditor key={kOf(e)} cals={cals} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} />
+              : <EventCard key={kOf(e)} cals={cals} e={e} onEdit={setEditingId} onCancel={cancelEvent} onConvert={ev => setConvert({ ev, to: null })} />)}
           </div>
         </>
       )}
@@ -501,9 +524,9 @@ function CalendarPageInner() {
           {events === null && <ListSkeleton />}
           {events?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showPast ? 'ยังไม่มีนัดหมายที่ผ่านมาแล้วครับ' : 'ไม่มีนัดหมายที่กำลังจะถึงครับ'}</p></div>}
           <div className="list-stack">
-            {events?.map(e => editingId === e.id
-              ? <EventEditor key={e.id} cals={cals} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} />
-              : <EventCard key={e.id} cals={cals} e={e} showDate onEdit={setEditingId} onCancel={cancelEvent} onConvert={ev => setConvert({ ev, to: null })} />)}
+            {events?.map(e => editingId === kOf(e)
+              ? <EventEditor key={kOf(e)} cals={cals} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} />
+              : <EventCard key={kOf(e)} cals={cals} e={e} showDate onEdit={setEditingId} onCancel={cancelEvent} onConvert={ev => setConvert({ ev, to: null })} />)}
           </div>
         </>
       )}
@@ -522,6 +545,7 @@ function CalendarPageInner() {
           onCancel={() => setConvert(null)}
           onConfirm={async payload => { const ok = await convertEvent(convert.ev, 'task', payload, payload.task_name); if (ok) setConvert(null); return ok; }} />
       )}
+      {scopeAsk && <ScopeSheet title={scopeAsk.title} verb={scopeAsk.verb} onChoose={c => { scopeAsk.resolve(c); setScopeAsk(null); }} onClose={() => { scopeAsk.resolve(null); setScopeAsk(null); }} />}
       {!creating && !editingId && <Fab onClick={startCreate} label="เพิ่มนัดหมาย" />}
     </main>
   );

@@ -15,6 +15,15 @@ import { callBotInternal } from '../../../../lib/botWorker';
 
 const EDITABLE_FIELDS = ['title', 'start_time', 'end_time', 'location', 'description', 'reminder_minutes'];
 
+// Repeating appointments (one row + a rule): the person says which dates — only this one / this and the following / all —
+// and the bot Worker does the change, so Google (one recurring event) and the LINE bot stay in step.
+const SCOPES = ['one', 'following', 'all'];
+async function seriesRow(supabase, userId, id) {
+  const r = await supabase.from('calendar_events').select('*').eq('id', id).eq('user_id', userId).maybeSingle();
+  return r.data && r.data.recurrence_rule ? r.data : null;
+}
+const seriesError = r => NextResponse.json({ error: r?.error === 'multi_day' ? 'multi_day' : r?.error || 'series_failed' }, { status: r?.error === 'multi_day' ? 400 : 502 });
+
 export async function PATCH(request, { params }) {
   const { id } = await params;
   const { session } = await getPremiumSession(await cookies());
@@ -32,6 +41,14 @@ export async function PATCH(request, { params }) {
   }
 
   const supabase = supabaseAdmin();
+  const series = await seriesRow(supabase, session.lineUserId, id);
+  if (series) {
+    if (!SCOPES.includes(body.scope) || !/^\d{4}-\d{2}-\d{2}$/.test(body.occ || '')) return NextResponse.json({ error: 'scope_required', is_series: true }, { status: 409 });
+    if (moveTo) return NextResponse.json({ error: 'series_cannot_change_calendar' }, { status: 400 });
+    const r = await callBotInternal('/internal/calendar-series-op', { userId: session.lineUserId, id, op: 'change', scope: body.scope, occ: body.occ, changes: updates });
+    if (!r?.ok) return seriesError(r);
+    return NextResponse.json({ event: r.event || series, syncResult: { synced: true }, series: true });
+  }
   let data;
   if (Object.keys(updates).length) {
     const r = await supabase.from('calendar_events').update(updates).eq('id', id).eq('user_id', session.lineUserId).select().single();
@@ -67,6 +84,15 @@ export async function DELETE(request, { params }) {
   // Worker (see performCalendarCancel there) — keeps "cancel" behaving
   // identically whether it's done from the bot or from here, instead
   // of half-duplicating that logic in two places.
+  const url = new URL(request.url);
+  const scope = url.searchParams.get('scope'), occ = url.searchParams.get('occ');
+  const series = await seriesRow(supabaseAdmin(), session.lineUserId, id);
+  if (series) {
+    if (!SCOPES.includes(scope) || !/^\d{4}-\d{2}-\d{2}$/.test(occ || '')) return NextResponse.json({ error: 'scope_required', is_series: true }, { status: 409 });
+    const r = await callBotInternal('/internal/calendar-series-op', { userId: session.lineUserId, id, op: 'cancel', scope, occ });
+    if (!r?.ok) return seriesError(r);
+    return NextResponse.json({ cancelled: true, series: true, scope: r.scope || scope, undo: r.undo || null });
+  }
   const result = await callBotInternal('/internal/calendar-cancel', { userId: session.lineUserId, eventId: id });
   if (!result.ok) return NextResponse.json({ error: result.error || 'cancel_failed' }, { status: 404 });
   return NextResponse.json({ cancelled: true, event: result.event });

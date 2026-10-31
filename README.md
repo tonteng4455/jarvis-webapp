@@ -52,6 +52,16 @@ Paste the new `jarvis-line-bot.js` (bin instead of erase; file search). Until th
 ## 2d) Rename files + descriptions (run once)
 Run `file_rename.sql` in Supabase → SQL editor (adds `original_name` and `description` to `user_files`). Until then renaming works (the name only, no first-name memory) and descriptions say they need the SQL.
 
+## 2e) Repeating appointments (run once)
+
+Run `event_recurrence.sql` in the Supabase SQL editor (project `ujyvvykxakgtbpwdnsnd`). It adds `recurrence_rule`, `recur_exdates` and `series_id` to `calendar_events`; safe to run twice. Until it is run, everything else works as before; typing "ทุก…" or choosing "ทำซ้ำ" on the web says the SQL is missing.
+
+- A repeating appointment is ONE `calendar_events` row with a rule (a small RRULE subset: DAILY/WEEKLY/MONTHLY, INTERVAL, BYDAY incl. `2WE` / `-1FR`, BYMONTHDAY incl. `-1`, UNTIL, COUNT). Dates are expanded when read (bot lists, day view, daily summary; web `/api/calendar`), so there are no pre-made rows. In Google it is one recurring event (RRULE + EXDATE), so Google's own reminders fire on every date.
+- "Only this time" = an exception date on the series (+ a separate row, `series_id`, when it was moved/changed); "this and the following" = the series is cut (`UNTIL`) and a new one starts when something is changed; "whole series" = the row itself.
+- `lib/recur.js` is the single source of truth for the rule maths. The bot carries a generated copy (`tools/sync_recur.py` in the bot repo rewrites the `rc*` block of `jarvis-line-bot.js`) — change `lib/recur.js`, run the script, paste the bot file.
+- The web never changes a series directly: `/api/calendar/[id]` (PATCH/DELETE with `scope` + `occ`) goes through the bot's `/internal/calendar-series-op`. Without a scope the API answers 409 `scope_required`.
+- Not supported (said so in chat): yearly repeats; changing the weekday of a multi-weekday series as a whole.
+
 ## 3) File storage
 
 The web app no longer uses R2. Photos/files live in each user's own Google
