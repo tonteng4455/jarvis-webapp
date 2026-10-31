@@ -98,6 +98,7 @@ export default function ChatPage() {
         {items.length > 0 && <button type="button" className="glass-btn-outline" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} data-act="clear-chat" onClick={clearChat}>🧹 ล้างแชท</button>}
       </div>
 
+      <p className="muted chat-note" data-testid="chat-note">ℹ️ บทสนทนาในหน้านี้แยกจากแชทใน LINE (ประวัติไม่เชื่อมกัน) แต่ข้อมูลที่บันทึก เช่น โน้ต นัดหมาย เงิน ไฟล์ เป็นชุดเดียวกัน</p>
       <div className="chat-log" data-testid="chat-log" aria-live="polite">
         {ready && items.length === 0 && (
           <div className="chat-hello glass-card" data-testid="chat-hello">
