@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { getPremiumSession } from '../../../lib/premium';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 import { callBotInternal } from '../../../lib/botWorker';
-import { SERIES_SELECT, BASE_SELECT, expandSeries, ruleFromForm, localDate } from '../../../lib/calendarSeries';
+import { SERIES_SELECT, BASE_SELECT, expandSeries, ruleFromForm, localDate, externalFromToday } from '../../../lib/calendarSeries';
 
 // Mirrors reconcileWithGoogle() in the bot Worker exactly — a row is
 // only ever hidden (never deleted, always reversible) if the calendar
@@ -106,7 +106,7 @@ export async function GET(request) {
     ]);
     if (g?.ok && Array.isArray(g.events)) {
       const have = new Set([...events, ...seriesRows].map(e => e.google_event_id).filter(Boolean));
-      const extra = g.events.filter(e => !have.has(e.google_event_id) && !(e.recurring_event_id && have.has(e.recurring_event_id))).map(e => ({
+      const extra = externalFromToday(g.events, nowIso, ranged).filter(e => !have.has(e.google_event_id) && !(e.recurring_event_id && have.has(e.recurring_event_id))).map(e => ({
         id: `g:${e.calendar_id}:${e.google_event_id}`, title: e.title, start_time: e.start_time, end_time: e.end_time, location: e.location,
         description: null, status: 'scheduled', reminder_minutes: null, google_event_id: e.google_event_id, calendar_id: e.calendar_id,
         external: true, all_day: !!e.all_day, htmlLink: e.htmlLink || null,

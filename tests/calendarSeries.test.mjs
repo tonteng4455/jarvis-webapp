@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { expandSeries, ruleFromForm, localDate } from '../lib/calendarSeries.js';
+import { expandSeries, ruleFromForm, localDate, externalFromToday } from '../lib/calendarSeries.js';
 
 const row = (extra = {}) => ({ id: 'r1', title: 'ประชุมทีม', start_time: '2026-11-02T09:00:00+07:00', end_time: '2026-11-02T10:00:00+07:00', recurrence_rule: 'FREQ=WEEKLY;BYDAY=MO', recur_exdates: [], ...extra });
 
@@ -59,4 +59,11 @@ test('ruleFromForm: bad input is refused', () => {
   assert.equal(ruleFromForm({ freq: 'daily', count: 0 }, '2026-11-02').error, undefined);        // 0 / empty count means "no count"
   assert.equal(ruleFromForm({ freq: 'daily', count: 5000 }, '2026-11-02').error, 'bad_count');
   assert.equal(ruleFromForm({ freq: 'daily', interval: 500 }, '2026-11-02').rule, 'FREQ=DAILY;INTERVAL=99');
+});
+
+test('externalFromToday: the upcoming list drops Google events that began before today (overlapping the window); a month window keeps them', () => {
+  const ev = [{ id: 'old', start_time: '2026-10-15T00:00:00+07:00' }, { id: 'today', start_time: '2026-10-31T09:00:00+07:00' }, { id: 'later', start_time: '2026-11-03T09:00:00+07:00' }];
+  const now = '2026-10-31T03:04:00Z';                                                        // 10:04 on 31 Oct in Bangkok
+  assert.deepEqual(externalFromToday(ev, now, false).map(e => e.id), ['today', 'later']);
+  assert.equal(externalFromToday(ev, now, true).length, 3);
 });
