@@ -5,6 +5,7 @@ import { setDraftOwner, clearAllDrafts } from '../../lib/draft';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CARD_THEMES, normalizeCardTheme, themeColors } from '../../lib/cardThemes';
+import { readStart, saveStart } from '../../lib/startPage';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -77,6 +78,7 @@ function AccountMenu() {
   const [fs, setFsState] = useState('md');
   const [cardTheme, setCardTheme] = useState(null);
   const [themeNote, setThemeNote] = useState('');
+  const [start, setStartState] = useState('chat');
   const boxRef = useRef(null);
   const sheetRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, right: 8 });
@@ -98,6 +100,7 @@ function AccountMenu() {
       setThemeState(localStorage.getItem('jarvis-theme') || 'auto');
       setFsState(localStorage.getItem('jarvis-fs') || 'md');
     } catch (e) { /* ignore */ }
+    setStartState(readStart());
   }, []);
 
   // the Today page's setup checklist asks for this menu to open (card colour step)
@@ -113,7 +116,9 @@ function AccountMenu() {
       if (boxRef.current?.contains(e.target) || sheetRef.current?.contains(e.target)) return;
       setOpen(false);
     }
-    const close = () => setOpen(false);
+    // the page scrolling closes the sheet; the top bar scrolling sideways by itself (it does when the tabs do not all fit and the browser
+    // brings the account button into view) must not
+    const close = e => { if (e?.type === 'scroll' && e.target?.closest?.('.dash-nav')) return; setOpen(false); };
     document.addEventListener('mousedown', onClickOutside);
     document.addEventListener('touchstart', onClickOutside);
     window.addEventListener('resize', close);
@@ -137,6 +142,7 @@ function AccountMenu() {
   }
   function pickTheme(t) { applyTheme(t); setThemeState(t); }
   function pickFs(f) { applyFontSize(f); setFsState(f); }
+  function pickStart(v) { setStartState(saveStart(v)); }
 
   const chip = (active) => ({
     flex: 1, padding: '0.45rem 0.3rem', minHeight: 40, borderRadius: 10, cursor: 'pointer', font: 'inherit', fontSize: '0.78rem',
@@ -161,6 +167,10 @@ function AccountMenu() {
           <div className="account-sheet-label">ขนาดตัวอักษร</div>
           <div style={{ display: 'flex', gap: '0.35rem' }}>
             {FONT_SIZES.map(([k, l]) => <button key={k} type="button" style={chip(fs === k)} onClick={() => pickFs(k)}>{l}</button>)}
+          </div>
+          <div className="account-sheet-label">หน้าแรกเมื่อเปิดแอป</div>
+          <div style={{ display: 'flex', gap: '0.35rem' }} data-testid="start-choice">
+            {[['chat', '💬 แชท'], ['today', '🏠 วันนี้']].map(([k, l]) => <button key={k} type="button" data-start={k} aria-pressed={start === k} style={chip(start === k)} onClick={() => pickStart(k)}>{l}</button>)}
           </div>
           <div className="account-sheet-label">สีการ์ดที่ Jarvis ตอบใน LINE</div>
           <div className="card-swatches">

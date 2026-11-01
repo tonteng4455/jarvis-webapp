@@ -44,7 +44,7 @@ export default function ChatPage() {
 
   useEffect(() => { setItems(load()); setReady(true); }, []);
   useEffect(() => { if (ready) save(items); }, [items, ready]);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [items, busy]);
+  useEffect(() => { if (ready && (items.length || busy)) endRef.current?.scrollIntoView({ block: 'end' }); }, [items, busy, ready]);   // an empty chat stays at the top (hello card)
 
   const send = useCallback(async ({ shown, text: t, postback }) => {
     if (busy) return;

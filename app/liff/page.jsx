@@ -23,6 +23,7 @@
 //           points, and correct: a Free user's LIFF login has nothing
 //           to do with whether their scoped token is valid).
 
+import { startPath, startFromCookieString } from '../../lib/startPage';
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
@@ -43,7 +44,7 @@ function LiffEntryPageInner() {
 
     async function run() {
       try {
-        const to = params.get('to') || '/dashboard/chat';
+        const to = params.get('to') || startPath(startFromCookieString(document.cookie));
         const scopedToken = params.get('token');
 
         // Scoped single-item edit link (Free users) — the token is

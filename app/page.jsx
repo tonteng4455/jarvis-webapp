@@ -4,7 +4,10 @@
 // /dashboard/files is an actual page.
 
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
+import { START_COOKIE, startPath } from '../lib/startPage';
 
-export default function HomePage() {
-  redirect('/dashboard/chat');
+// Opens on the page the person chose in the settings menu (💬 แชท unless they picked 🏠 วันนี้).
+export default async function HomePage() {
+  redirect(startPath((await cookies()).get(START_COOKIE)?.value));
 }

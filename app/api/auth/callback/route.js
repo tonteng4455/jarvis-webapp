@@ -7,6 +7,7 @@
 // ourselves — one extra network call, but far less code to get wrong),
 // (4) upsert a row in `users`, (5) mint our own session cookie.
 
+import { START_COOKIE, startPath } from '../../../../lib/startPage';
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { createSessionToken, sessionCookieOptions, getSession, signShort, verifyShort } from '../../../../lib/session';
@@ -88,7 +89,7 @@ export async function GET(request) {
 
   // --- Mint our session, redirect into the app ---
   const sessionToken = await createSessionToken({ lineUserId, displayName: verified.name, pictureUrl: verified.picture });
-  const res = NextResponse.redirect(new URL('/dashboard/chat', request.url));
+  const res = NextResponse.redirect(new URL(startPath(request.cookies.get(START_COOKIE)?.value), request.url));
   res.cookies.set(sessionCookieOptions().name, sessionToken, sessionCookieOptions());
   res.cookies.delete('line_oauth_state');
   return res;

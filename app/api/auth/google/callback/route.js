@@ -1,6 +1,7 @@
 // app/api/auth/google/callback/route.js — step 2: Google sends the browser back here with ?code&state.
 //   login: find (or create) the account this Google sign-in belongs to and sign in.
 //   link : add this Google sign-in to the account that is signed in now — or, when it already belongs to ANOTHER account, ask to join the two.
+import { START_COOKIE, startPath } from '../../../../../lib/startPage';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { supabaseAdmin } from '../../../../../lib/supabaseAdmin';
@@ -26,7 +27,7 @@ export async function GET(request) {
     if (flow.mode !== 'link') {
       const { key } = await keyForGoogle(supabase, who);
       const prof = await profileOf(supabase, key);
-      const res = await redirectSignedIn(request, '/dashboard/chat', { key, displayName: prof.display_name || who.name || who.email, pictureUrl: prof.picture_url || who.picture });
+      const res = await redirectSignedIn(request, startPath(request.cookies.get(START_COOKIE)?.value), { key, displayName: prof.display_name || who.name || who.email, pictureUrl: prof.picture_url || who.picture });
       res.cookies.delete('google_oauth');
       return res;
     }
