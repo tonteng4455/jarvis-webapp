@@ -161,7 +161,7 @@ export function BotMessage({ message, onAction }) {
 export function QuickReplies({ items, onAction, disabled }) {
   if (!items?.length) return null;
   return (
-    <div className="chat-quick" data-chat="quick">
+    <div className={`chat-quick${items.length > 5 ? ' wrap' : ''}`} data-chat="quick">
       {items.map((it, i) => {
         const a = it.action || {};
         if (a.type === 'datetimepicker') return <DateTimeButton key={i} n={{ action: a }} base={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0.38rem 0.85rem', whiteSpace: 'nowrap', flex: '0 0 auto', borderRadius: 999, border: '1px solid var(--accent)', background: 'var(--surface-muted)', color: 'var(--accent)', fontSize: '0.85rem', fontWeight: 600 }} onAction={onAction} />;

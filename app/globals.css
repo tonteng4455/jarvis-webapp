@@ -950,7 +950,7 @@ html[data-fs="lg"] { font-size: 18px; }
 
 /* ---------- Chat with Jarvis (app/dashboard/chat) ---------- */
 .chat-page { display: flex; flex-direction: column; }
-.chat-log { display: flex; flex-direction: column; gap: 0.55rem; padding-bottom: 14rem; min-height: 40vh; }
+.chat-log { display: flex; flex-direction: column; gap: 0.55rem; padding-bottom: 17rem; min-height: 40vh; }
 @media (min-width: 760px) { .chat-log { padding-bottom: 9rem; } }
 .chat-row { display: flex; gap: 0.45rem; align-items: flex-start; }
 .chat-row.user { justify-content: flex-end; }
@@ -978,3 +978,8 @@ html[data-fs="lg"] { font-size: 18px; }
 .chat-input { flex: 1; resize: none; max-height: 7.5rem; border-radius: 22px; }
 .chat-send { width: 46px; height: 46px; border-radius: 50%; padding: 0; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
 .chat-note { font-size: 0.8rem; margin: 0 0 0.8rem; line-height: 1.45; }
+/* many buttons (a numbered pick list, the main menu): wrap into rows instead of one long sideways strip, so every one is in sight */
+.chat-quick.wrap { flex-wrap: wrap; overflow-x: hidden; overflow-y: auto; max-height: 9.2rem; padding-bottom: 0.4rem; }
+.chat-quick.wrap .chat-chip { flex: 0 1 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.chat-end { scroll-margin-bottom: 15rem; }   /* the newest answer stops above the fixed input bar, not behind it */
+@media (min-width: 760px) { .chat-end { scroll-margin-bottom: 8rem; } }
