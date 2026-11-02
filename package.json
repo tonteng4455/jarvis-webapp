@@ -9,7 +9,11 @@
     "cf:build": "opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && wrangler deploy",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "check:jarvis": "node tools/check-instance.mjs wrangler.jsonc",
+    "check:friday": "node tools/check-instance.mjs wrangler.friday.jsonc",
+    "deploy:jarvis": "node tools/check-instance.mjs wrangler.jsonc && opennextjs-cloudflare build && wrangler deploy",
+    "deploy:friday": "node tools/check-instance.mjs wrangler.friday.jsonc && NEXT_PUBLIC_BRAND_NAME=Friday opennextjs-cloudflare build && wrangler deploy --config wrangler.friday.jsonc"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

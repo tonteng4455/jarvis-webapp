@@ -1,0 +1,29 @@
+{
+  // INSTANCE "friday" of the web app — the same code as Jarvis's web app (wrangler.jsonc), in ANOTHER Cloudflare account, talking to Friday's own
+  // bot Worker, Supabase project and LINE channels. Deploy: npm run deploy:friday  (see INSTANCES.md; the bot repo has the long checklist).
+  // Replace every REPLACE… — `npm run check:friday` (and deploy:friday) refuse to run while one is left.
+  // Secrets are NOT in this file: `npx wrangler secret put NAME --config wrangler.friday.jsonc` (list in INSTANCES.md).
+  // The name and the LINE OA link are BUILD-time values: deploy:friday sets NEXT_PUBLIC_BRAND_NAME=Friday for the build;
+  // NEXT_PUBLIC_LINE_OA_URL (the OA's "Add friend" link, optional) must be in the environment of the build too.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "friday-webapp",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": true,
+  "assets": { "binding": "ASSETS", "directory": ".open-next/assets" },
+  "observability": { "enabled": true },
+  "services": [
+    { "binding": "BOT_WORKER", "service": "friday-line-bot" }
+  ],
+  "vars": {
+    "SUPABASE_URL": "https://REPLACE-friday-project.supabase.co",
+    "LINE_LOGIN_CHANNEL_ID": "REPLACE-line-login-channel-id",
+    "LINE_LOGIN_REDIRECT_URI": "https://REPLACE-friday-webapp.REPLACE-subdomain.workers.dev/api/auth/callback",
+    "WORKER_URL": "https://REPLACE-friday-line-bot.REPLACE-subdomain.workers.dev",
+    "NEXT_PUBLIC_LIFF_ID": "REPLACE-liff-id",
+    "LIFF_ID": "REPLACE-liff-id",
+    "USER_CAP": "200",
+    "PREMIUM_CAP_BONUS_SLOTS": "5"
+  }
+}

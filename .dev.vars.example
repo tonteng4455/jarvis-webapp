@@ -1,0 +1,23 @@
+# Local values for `wrangler dev` / `opennextjs-cloudflare preview`. Copy to .dev.vars (git-ignored). NEVER commit real values.
+# The deployed Worker gets its secrets from `wrangler secret put` (see INSTANCES.md).
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=    # the service_role key of THIS instance's Supabase project
+SESSION_SECRET=               # a long random string, new for every instance
+INTERNAL_API_SECRET=          # the same value as on the bot Worker of the SAME instance
+ADMIN_SECRET=
+LINE_LOGIN_CHANNEL_ID=
+LINE_LOGIN_CHANNEL_SECRET=
+LINE_LOGIN_REDIRECT_URI=
+LINE_ACCESS_TOKEN=            # the instance's Messaging API token (the admin screen pushes a LINE message)
+LIFF_ID=
+NEXT_PUBLIC_LIFF_ID=
+WORKER_URL=
+GOOGLE_LOGIN_CLIENT_ID=
+GOOGLE_LOGIN_CLIENT_SECRET=
+GOOGLE_LOGIN_REDIRECT_URI=
+VAPID_PUBLIC_KEY=
+USER_CAP=200
+PREMIUM_CAP_BONUS_SLOTS=5
+# build-time (set in the environment of `next build`):
+NEXT_PUBLIC_BRAND_NAME=Jarvis
+NEXT_PUBLIC_LINE_OA_URL=

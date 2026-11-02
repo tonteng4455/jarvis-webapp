@@ -1,0 +1,47 @@
+# Test, then build + deploy every instance that has its Cloudflare secrets (see the bot repo's INSTANCES.md, section D).
+# An instance without CF_API_TOKEN_<KEY> / CF_ACCOUNT_ID_<KEY> is skipped — so Jarvis's web app, which Cloudflare builds from this repo itself,
+# is untouched until you decide to move it here (then disconnect its Git integration first: never both).
+# Each instance is built on its own: the name (NEXT_PUBLIC_BRAND_NAME) is applied while building.
+name: test-and-deploy
+on:
+  push: { branches: [main] }
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm test
+      - run: npx next build
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { instance: jarvis, key: JARVIS }
+          - { instance: friday, key: FRIDAY }
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets[format('CF_API_TOKEN_{0}', matrix.key)] }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets[format('CF_ACCOUNT_ID_{0}', matrix.key)] }}
+      NEXT_PUBLIC_LINE_OA_URL: ${{ secrets[format('LINE_OA_URL_{0}', matrix.key)] }}
+    steps:
+      - name: Is this instance set up for CI?
+        id: gate
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then echo "go=true" >> "$GITHUB_OUTPUT"; else echo "No CF secrets for ${{ matrix.instance }} — skipped"; fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.go == 'true'
+        with: { node-version: 22, cache: npm }
+      - if: steps.gate.outputs.go == 'true'
+        run: npm ci
+      - if: steps.gate.outputs.go == 'true'
+        run: npm run deploy:${{ matrix.instance }}
