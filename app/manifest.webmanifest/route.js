@@ -1,8 +1,12 @@
-{
+// app/manifest.webmanifest/route.js — the PWA manifest (served at /manifest.webmanifest). A route instead of a static file so the app's
+// name follows the brand switch (see tools/brandLoader.cjs: "Jarvis" below becomes NEXT_PUBLIC_BRAND_NAME at build time), and so
+// start_url "/" follows the person's choice of start page (💬 แชท / 🏠 วันนี้).
+
+const MANIFEST = {
   "name": "Jarvis — ผู้ช่วยจดบันทึก",
   "short_name": "Jarvis",
   "description": "โน้ต งาน นัดหมาย และรายรับ-รายจ่าย ในที่เดียว",
-  "start_url": "/dashboard/today",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -53,4 +57,8 @@
       "url": "url"
     }
   }
+};
+
+export function GET() {
+  return new Response(JSON.stringify(MANIFEST), { headers: { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'public, max-age=300' } });
 }
