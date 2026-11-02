@@ -16,8 +16,9 @@ test('both instances run the same build output next to their own bot Worker', ()
   assert.equal(jarvis.keep_vars && friday.keep_vars, true);
 });
 
-test('Friday’s config is not deployable until its placeholders are filled; Jarvis’s is complete', () => {
-  assert.ok(leftovers(friday).length >= 5);
+test('the placeholder guard: a REPLACE… left in a config is found; Jarvis’s config is complete', () => {
+  const half = JSON.parse(JSON.stringify(friday)); half.vars.SUPABASE_URL = 'https://REPLACE-me.supabase.co';
+  assert.ok(leftovers(half).length >= 1);
   assert.equal(leftovers(jarvis).length, 0);
 });
 
