@@ -19,14 +19,14 @@
   "vars": {
     "SUPABASE_URL": "https://REPLACE-friday-project.supabase.co",
     "LINE_LOGIN_CHANNEL_ID": "REPLACE-line-login-channel-id",
-    "LINE_LOGIN_REDIRECT_URI": "https://REPLACE-friday-webapp.REPLACE-subdomain.workers.dev/api/auth/callback",
-    "WORKER_URL": "https://REPLACE-friday-line-bot.REPLACE-subdomain.workers.dev",
+    "LINE_LOGIN_REDIRECT_URI": "https://friday-webapp.fridayapp2026.workers.dev/api/auth/callback",
+    "WORKER_URL": "https://friday-line-bot.fridayapp2026.workers.dev",
     "NEXT_PUBLIC_LIFF_ID": "REPLACE-liff-id",
     "LIFF_ID": "REPLACE-liff-id",
     "VAPID_PUBLIC_KEY": "REPLACE-same-public-key-as-the-bot",
     // Google sign-in on the web (optional: delete these two lines if you do not want it)
     "GOOGLE_LOGIN_CLIENT_ID": "REPLACE-google-oauth-client-id.apps.googleusercontent.com",
-    "GOOGLE_LOGIN_REDIRECT_URI": "https://REPLACE-friday-webapp.REPLACE-subdomain.workers.dev/api/auth/google/callback",
+    "GOOGLE_LOGIN_REDIRECT_URI": "https://friday-webapp.fridayapp2026.workers.dev/api/auth/google/callback",
     "USER_CAP": "200",
     "PREMIUM_CAP_BONUS_SLOTS": "5"
   }
