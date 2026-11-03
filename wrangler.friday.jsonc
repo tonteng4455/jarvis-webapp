@@ -26,7 +26,7 @@
     "VAPID_PUBLIC_KEY": "REPLACE-same-public-key-as-the-bot",
     // Google sign-in on the web (optional: delete these two lines to leave it off). The client must list this site's address below as a
     // redirect URI; the matching secret GOOGLE_LOGIN_CLIENT_SECRET is set with `wrangler secret put`.
-    "GOOGLE_LOGIN_CLIENT_ID": "REPLACE-google-login-client-id.apps.googleusercontent.com",
+    "GOOGLE_LOGIN_CLIENT_ID": "549785315687-h903doq1am3f73fgr7njuughnjegq2va.apps.googleusercontent.com",
     "GOOGLE_LOGIN_REDIRECT_URI": "https://friday-webapp.fridayapp2026.workers.dev/api/auth/google/callback",
     "USER_CAP": "200",
     "PREMIUM_CAP_BONUS_SLOTS": "5"
