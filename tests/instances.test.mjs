@@ -38,3 +38,28 @@ function readdirRecursive(dir) {
   }
   return out;
 }
+
+import { plan, applyAssets } from '../tools/deploy-instance.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync as wf, readFileSync as rf2, existsSync as ex } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as j } from 'node:path';
+
+test('deploy plan: Jarvis builds as it always did; Friday gets its name, voice and picture', () => {
+  const pj = plan('jarvis'), pf = plan('friday');
+  assert.equal(pj.config, 'wrangler.jsonc'); assert.deepEqual(pj.env, {}); assert.equal(pj.assets.length, 0);
+  assert.equal(pf.config, 'wrangler.friday.jsonc');
+  assert.deepEqual(pf.env, { NEXT_PUBLIC_BRAND_NAME: 'Friday', NEXT_PUBLIC_BRAND_GENDER: 'female' });
+  for (const f of ['logo-head.png', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon-48.png', 'favicon.ico']) assert.ok(pf.assets.includes(f), f);
+  assert.throws(() => plan('../x'));
+  assert.throws(() => plan('nope'));
+});
+
+test('brand files are laid over public/ for the build and put back afterwards', () => {
+  const root = mkdtempSync(j(tmpdir(), 'inst-')); mkdirSync(j(root, 'public')); mkdirSync(j(root, 'brands/x/public'), { recursive: true });
+  wf(j(root, 'public/logo.png'), 'JARVIS'); wf(j(root, 'brands/x/public/logo.png'), 'X'); wf(j(root, 'brands/x/public/new.png'), 'NEW');
+  const p = { assets: ['logo.png', 'new.png'], assetsDir: j(root, 'brands/x/public') };
+  const restore = applyAssets(p, root);
+  assert.equal(rf2(j(root, 'public/logo.png'), 'utf8'), 'X'); assert.equal(rf2(j(root, 'public/new.png'), 'utf8'), 'NEW');
+  restore(); restore();                                                    // twice is fine
+  assert.equal(rf2(j(root, 'public/logo.png'), 'utf8'), 'JARVIS'); assert.equal(ex(j(root, 'public/new.png')), false);
+});

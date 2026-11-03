@@ -25,3 +25,13 @@ test('the name is made safe to paste into source code', () => {
   assert.equal(safeName('a'.repeat(80)).length, 30);
   assert.equal(safeName("'\"`"), 'Jarvis');
 });
+
+test('a female bot says "ค่ะ" / "คะ" / "นะคะ"; the default voice is untouched', async () => {
+  const { applyPersona, safeGender } = (await import('node:module')).createRequire(import.meta.url)('../tools/persona.cjs');
+  const t = 'พร้อมให้บริการครับ ต้องการให้ดำเนินการอย่างไรครับ ได้ไหมครับ? ต้องกดก่อนนะครับ เรียบร้อยครับผม';
+  assert.equal(applyPersona(t, 'female'), 'พร้อมให้บริการค่ะ ต้องการให้ดำเนินการอย่างไรคะ ได้ไหมคะ? ต้องกดก่อนนะคะ เรียบร้อยค่ะ');
+  assert.equal(applyPersona(t, undefined), t);
+  assert.equal(applyPersona(t, 'male'), t);
+  assert.equal(safeGender('Female'), 'female');
+  assert.equal(safeGender('x'), 'male');
+});

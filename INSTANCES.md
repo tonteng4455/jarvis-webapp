@@ -31,7 +31,9 @@ Plain variables besides the config file: `VAPID_PUBLIC_KEY` (the public half of 
 `NEXT_PUBLIC_BRAND_NAME` (the name — `deploy:friday` sets it) and `NEXT_PUBLIC_LINE_OA_URL` (the OA's "Add friend" link; set it in the environment of
 the build, or as a *Build variable* when Cloudflare Workers Builds does the building) are inlined while building — changing them needs a new deploy.
 
-## Name, logo, icons
+## Name, voice, logo, icons — the brand folder
 
-The name follows `NEXT_PUBLIC_BRAND_NAME` (see README §2g). The logo and PWA icons are files in `public/` (`logo-head.png`, `icon-192.png`, `icon-512.png`,
-`icon-maskable-512.png`, `apple-touch-icon.png`, favicons) — a different look for Friday means different files for its build.
+`brands/friday/brand.json` ({ "name": "Friday", "gender": "female" }) and `brands/friday/public/*` (the logo and app icons). `npm run deploy:friday`
+(`tools/deploy-instance.mjs`) reads them: the name and the voice go into the build as `NEXT_PUBLIC_BRAND_NAME` / `NEXT_PUBLIC_BRAND_GENDER`, the pictures are laid
+over `public/` for the build and put back afterwards (so Jarvis's own deploy is never affected). `npm run deploy:friday -- --dry` shows the plan without building.
+A new instance = a `brands/<name>/` folder + a `wrangler.<name>.jsonc`. See README §2g for what "voice" changes.
