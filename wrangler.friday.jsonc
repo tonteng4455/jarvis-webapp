@@ -17,7 +17,7 @@
     { "binding": "BOT_WORKER", "service": "friday-line-bot" }
   ],
   "vars": {
-    "SUPABASE_URL": "https://REPLACE-friday-project.supabase.co",
+    "SUPABASE_URL": "https://keznqyrpwqjehkcrxdky.supabase.co",
     "LINE_LOGIN_CHANNEL_ID": "2012344086",
     "LINE_LOGIN_REDIRECT_URI": "https://friday-webapp.fridayapp2026.workers.dev/api/auth/callback",
     "WORKER_URL": "https://friday-line-bot.fridayapp2026.workers.dev",
