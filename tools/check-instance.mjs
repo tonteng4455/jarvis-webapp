@@ -32,5 +32,8 @@ if (process.argv[1] && process.argv[1].endsWith('check-instance.mjs')) {
   let cfg; try { cfg = parseConfig(readFileSync(file, 'utf8')); } catch (e) { console.error(`✗ ${file}: cannot read (${e.message})`); process.exit(2); }
   const left = leftovers(cfg);
   if (left.length) { console.error(`✗ ${file} still has ${left.length} placeholder(s) to fill in:\n  - ${left.join('\n  - ')}`); process.exit(1); }
-  console.log(`✓ ${file}: worker "${cfg.name}" · bucket "${cfg.r2_buckets?.[0]?.bucket_name}" · name "${cfg.vars?.BOT_NAME || 'Jarvis (default)'}"`);
+  const bits = [`worker "${cfg.name}"`];
+  if (cfg.r2_buckets?.[0]) bits.push(`R2 bucket "${cfg.r2_buckets[0].bucket_name}"`);
+  if (cfg.vars?.BOT_NAME) bits.push(`bot name "${cfg.vars.BOT_NAME}"`);
+  console.log(`✓ ${file}: ${bits.join(' · ')} — nothing left to fill in`);
 }

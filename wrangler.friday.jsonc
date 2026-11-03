@@ -23,7 +23,7 @@
     "WORKER_URL": "https://friday-line-bot.fridayapp2026.workers.dev",
     "NEXT_PUBLIC_LIFF_ID": "2012344086-o2oKe865",
     "LIFF_ID": "2012344086-o2oKe865",
-    "VAPID_PUBLIC_KEY": "REPLACE-same-public-key-as-the-bot",
+    "VAPID_PUBLIC_KEY": "BPGinb83XcKSNRwDMIHXaxjuEPbwcAp8nBMbSTJGYEkouLGVHt9WhNOv9QB8XfMCsaCZF1ohArk6RDBRLdCTgiY",
     // Google sign-in on the web (optional: delete these two lines to leave it off). The client must list this site's address below as a
     // redirect URI; the matching secret GOOGLE_LOGIN_CLIENT_SECRET is set with `wrangler secret put`.
     "GOOGLE_LOGIN_CLIENT_ID": "549785315687-h903doq1am3f73fgr7njuughnjegq2va.apps.googleusercontent.com",
