@@ -215,3 +215,12 @@ One codebase, several bots. The name is a setting, not code:
 - Keep `BOT_NAME` (bot) and `NEXT_PUBLIC_BRAND_NAME` (web) the same.
 - **Voice (man / woman):** Jarvis speaks as a man ("ครับ", "ผม"). `BOT_GENDER=female` (bot) and `NEXT_PUBLIC_BRAND_GENDER=female` (web, a build variable) make the same text read as a woman: "ครับ" → "ค่ะ" (at the end of a question "คะ", "นะครับ" → "นะคะ") and the bot's "ผม" → "ฉัน" (`BOT_PRONOUN` picks another word, e.g. ดิฉัน / หนู). The bot applies it to everything it sends (LINE replies and pushes, the web chat's answers, web-push notifications — also what the AI wrote); the web app applies it while building (`tools/persona.cjs`, via the same loader as the name). Limit: a person's own words that the bot shows back inside its cards (a note called "ขอบคุณครับ") are shown in the bot's voice too — what is stored is never changed. Default = male = no change.
 - **Logo and icons per instance:** `brands/<instance>/brand.json` ({ "name", "gender" }) and `brands/<instance>/public/*` (`logo-head.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png`, `favicon-48.png`, `favicon.ico`). `npm run deploy:<instance>` (`tools/deploy-instance.mjs`) lays these over `public/` for the build and puts the originals back afterwards, and sets the two build variables from `brand.json`. The LINE OA's own picture is set in the LINE console.
+
+## Group space (web app for LINE groups)
+
+Every LINE-verified member of a group can open that group's notes, tasks and appointments in the web app.
+
+- The bot (`@bot เว็บ` in the group) sends a signed link; `/api/space/enter` stores cookie `jarvis_space=g:<groupId>` (httpOnly).
+- `lib/space.js` `getSpaceSession` swaps the session owner to the group id (`lineUserId` = group, `actorId` = the real person) after the bot's `/internal/group-member` confirms membership with LINE (cached 5 min yes / 30 s no). Forged cookies show nothing.
+- Hidden in a group space: expenses, contacts, personal settings. Rows show "เพิ่มโดย" from the `created_by` column (`group_created_by.sql`, optional — the code retries without it).
+- Google-only web accounts (no LINE id) cannot enter group spaces.

@@ -9,6 +9,7 @@ import { DashNav } from '../_components';
 import { apiGet, ErrorState, ListSkeleton, useRefreshOnReturn, useToast } from '../_ui';
 import { DueChip } from '../_due';
 import SetupChecklist from '../_setup';
+import { useSpace } from '../_space';
 import { readShare } from '../../../lib/sharePending';
 import { sortTasks } from '../../../lib/taskDue';
 
@@ -43,6 +44,7 @@ function Card({ title, href, hrefLabel = 'ดูทั้งหมด', children
 
 export default function TodayPage() {
   const toast = useToast();
+  const { space } = useSpace();
   const [data, setData] = useState(null);
   const [me, setMe] = useState(null);
   const [error, setError] = useState(false);
@@ -129,7 +131,7 @@ export default function TodayPage() {
           <span className="today-link">เปิด ›</span>
         </Link>
       )}
-      {!query && <SetupChecklist />}
+      {!query && space !== 'group' && <SetupChecklist />}
 
       {!query && (
         <div className="quick-row">

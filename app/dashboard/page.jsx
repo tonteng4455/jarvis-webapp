@@ -16,6 +16,7 @@ import { noteToMarkdown, notesToMarkdownFiles, notesToCombinedMarkdown, safeFile
 import { notesToPdf } from '../../lib/notePdf';
 import { createZip } from '../../lib/zip';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from './_ui';
+import { AddedBy } from './_space';
 
 
 const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -313,6 +314,7 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
       <div className="note-row-accent" style={{ background: colorBg(note.color) === 'var(--note-default)' ? 'var(--border-strong)' : colorBg(note.color) }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         {note.title && <div style={{ fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note.title}</div>}
+        <AddedBy item={note} />
         <div className="muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {previewText(note.content) || (note.images?.length ? 'รูปภาพ' : 'โน้ตว่างเปล่า')}
         </div>

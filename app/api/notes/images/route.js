@@ -11,7 +11,7 @@
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getPremiumSession } from '../../../../lib/premium';
+import { getSpaceSession as getPremiumSession, attachCreators } from '../../../../lib/space';
 import { callBotInternal } from '../../../../lib/botWorker';
 
 const MAX_BYTES = 6 * 1024 * 1024;

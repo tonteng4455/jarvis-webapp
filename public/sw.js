@@ -39,6 +39,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
 
+  if (url.pathname === '/api/space' && e.request.method === 'POST') { e.waitUntil(caches.delete(API)); }          // another space = another owner: never serve the old notes list from the cache
   if (url.pathname === '/api/auth/logout') {
     e.waitUntil(Promise.all([caches.delete(API), caches.delete(PAGES)]));
     return;

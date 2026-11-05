@@ -9,7 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getPremiumSession } from '../../../lib/premium';
+import { getSpaceSession as getPremiumSession, attachCreators } from '../../../lib/space';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 import { registerNoteImages, binImages } from '../../../lib/noteImageIndex';
 import { sanitizeNoteImages, replacedIds } from '../../../lib/noteImages';
@@ -63,7 +63,7 @@ export async function GET(request) {
       .order('updated_at', { ascending: false })
       .limit(recent);
     if (recentErr) return NextResponse.json({ error: 'db_error' }, { status: 500 });
-    return NextResponse.json({ notes: rows, partial: true });
+    return NextResponse.json({ notes: await attachCreators(supabase, 'notes', rows, session), partial: true });
   }
 
   const { data, error } = await supabase
@@ -77,7 +77,7 @@ export async function GET(request) {
     .limit(500);
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
-  return NextResponse.json({ notes: data, stamp: notesStamp(data) });
+  return NextResponse.json({ notes: await attachCreators(supabase, 'notes', data, session), stamp: notesStamp(data) });
 }
 
 export async function POST(request) {
@@ -118,20 +118,19 @@ export async function POST(request) {
     .maybeSingle();
   const sortOrder = typeof topRow?.sort_order === 'number' ? topRow.sort_order - 1 : 0;
 
-  const { data, error } = await supabase
-    .from('notes')
-    .insert({
-      user_id: session.lineUserId,
-      title: title?.trim() || '',
-      content: content?.trim() || '',
-      category: category || 'general',
-      color: color || 'default',
-      pinned: pinned === true,
-      images: cleanImages,
-      sort_order: sortOrder,
-    })
-    .select()
-    .single();
+  const noteRow = {
+    user_id: session.lineUserId,
+    title: title?.trim() || '',
+    content: content?.trim() || '',
+    category: category || 'general',
+    color: color || 'default',
+    pinned: pinned === true,
+    images: cleanImages,
+    sort_order: sortOrder,
+  };
+  // a group's note remembers who added it (group_created_by.sql; retried without the column until that has been run)
+  let { data, error } = await supabase.from('notes').insert(session.space === 'group' ? { ...noteRow, created_by: session.actorId } : noteRow).select().single();
+  if (error && session.space === 'group' && /created_by/.test(error.message || '')) ({ data, error } = await supabase.from('notes').insert(noteRow).select().single());
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
   try {                                                                    // the image library is best-effort: it never fails the save

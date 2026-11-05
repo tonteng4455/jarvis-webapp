@@ -12,6 +12,7 @@ import { TaskEditorModal, ConvertToEventSheet, PRIORITY_COLOR, PRIORITY_LABEL } 
 import { ConvertChooser, convertItem, taskToNotePayload } from '../_convert';
 import { previewText } from '../../../lib/noteBlocks';
 import { dueState, sortTasks } from '../../../lib/taskDue';
+import { AddedBy } from '../_space';
 
 const RECURRENCE_LABEL = { daily: '🔁 ทุกวัน', weekly: '🔁 ทุกสัปดาห์', monthly: '🔁 ทุกเดือน' };
 
@@ -84,7 +85,7 @@ function TaskRow({ task, onUpdate, onDelete, onOpen, onConvert, autoEditId }) {
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: PRIORITY_COLOR[task.priority] || 'var(--text-secondary)', flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onOpen(task)} role="button" tabIndex={0}
           onKeyDown={e => { if (e.key === 'Enter') onOpen(task); }} title="แตะเพื่อแก้ไข / ดูรายละเอียด">
-          <div style={{ fontSize: '0.9rem', textDecoration: task.is_done ? 'line-through' : 'none' }}>{task.task_name}</div>
+          <div style={{ fontSize: '0.9rem', textDecoration: task.is_done ? 'line-through' : 'none' }}>{task.task_name} <AddedBy item={task} /></div>
           {detailsPreview && <div className="muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detailsPreview}</div>}
           <div className="muted">
             {task.category || 'general'} · {PRIORITY_LABEL[task.priority] || task.priority}

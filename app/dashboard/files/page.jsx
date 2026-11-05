@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { DashNav } from '../_components';
+import { useSpace } from '../_space';
 import { apiGet, ErrorState, ListSkeleton, useRefreshOnReturn, useToast } from '../_ui';
 
 const KIND_ICON = { image: '🖼️', video: '🎬', audio: '🎵', file: '📄' };
@@ -197,6 +198,7 @@ function sendFile(file, onProgress) {
 }
 
 export default function FilesPage() {
+  const { space } = useSpace();
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
   const toast = useToast();
@@ -403,6 +405,7 @@ export default function FilesPage() {
               {u.status === 'err' && (
                 <div className="up-msg err">
                   {UPLOAD_ERRORS[u.error] || UPLOAD_ERRORS.upload_failed}
+                  {u.error === 'google_not_connected' && !u.connectUrl && space === 'group' && <> · พิมพ์ “@บอท เชื่อม google” ในกลุ่ม LINE</>}
                   {u.error === 'google_not_connected' && u.connectUrl && <> · <a href={u.connectUrl} target="_blank" rel="noopener noreferrer">🔗 เชื่อมต่อ Google Drive</a></>}
                   {u.error !== 'too_large' && u.error !== 'empty_file' && <button type="button" className="up-btn" data-act="retry" onClick={() => retryUpload(u)}>ลองอีกครั้ง</button>}
                   <button type="button" className="up-btn" data-act="drop" onClick={() => dropUpload(u.key)}>ปิด</button>

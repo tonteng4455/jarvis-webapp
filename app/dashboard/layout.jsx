@@ -3,12 +3,14 @@
 // service-worker registration (PWA / offline notes).
 import { ToastProvider } from './_ui';
 import { BottomNav, OfflineBanner, SwRegister } from './_shell';
+import { SpaceBanner } from './_space';
 import { DueBanner } from './_due';
 
 export default function DashboardLayout({ children }) {
   return (
     <ToastProvider>
       <OfflineBanner />
+      <SpaceBanner />
       <DueBanner />
       {children}
       <BottomNav />

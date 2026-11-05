@@ -9,7 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getPremiumSession } from '../../../../lib/premium';
+import { getSpaceSession as getPremiumSession, attachCreators } from '../../../../lib/space';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { sanitizeNoteImages, replacedIds } from '../../../../lib/noteImages';
 import { registerNoteImages, releaseOtherImages, releaseNote, binImages } from '../../../../lib/noteImageIndex';

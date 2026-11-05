@@ -1,7 +1,7 @@
 // app/api/calendar/route.js
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getPremiumSession } from '../../../lib/premium';
+import { getSpaceSession as getPremiumSession, attachCreators } from '../../../lib/space';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 import { callBotInternal } from '../../../lib/botWorker';
 import { SERIES_SELECT, BASE_SELECT, expandSeries, ruleFromForm, localDate, externalFromToday } from '../../../lib/calendarSeries';
@@ -115,7 +115,7 @@ export async function GET(request) {
     }
   }
 
-  return NextResponse.json({ events });
+  return NextResponse.json({ events: await attachCreators(supabase, 'calendar_events', events.filter(e => !e.external && !String(e.id).startsWith('g:')), session).then(rows => { const by = new Map(rows.map(r => [r.id, r])); return events.map(e => by.get(e.id) || e); }) });
 }
 
 // POST — create an event from the web: insert the row, then ask the
@@ -152,9 +152,7 @@ export async function POST(request) {
   }
 
   const supabase = supabaseAdmin();
-  const { data, error } = await supabase
-    .from('calendar_events')
-    .insert({
+  const evRow = {
       user_id: session.lineUserId,
       title: title.slice(0, 200),
       start_time: new Date(startMs).toISOString(),
@@ -165,9 +163,10 @@ export async function POST(request) {
       ...(calendarId ? { calendar_id: calendarId } : {}),
       ...(recur ? { recurrence_rule: recur, recur_exdates: [] } : {}),
       status: 'scheduled', // same value the LINE bot writes for a created event
-    })
-    .select()
-    .single();
+  };
+  // a group's appointment remembers who added it (group_created_by.sql; retried without the column until that has been run)
+  let { data, error } = await supabase.from('calendar_events').insert(session.space === 'group' ? { ...evRow, created_by: session.actorId } : evRow).select().single();
+  if (error && session.space === 'group' && /created_by/.test(error.message || '')) ({ data, error } = await supabase.from('calendar_events').insert(evRow).select().single());
 
   if (error) {
     console.error('calendar insert failed:', error);

@@ -7,7 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getPremiumSession } from '../../../../lib/premium';
+import { getSpaceSession as getPremiumSession, attachCreators } from '../../../../lib/space';
 import { callBotInternal } from '../../../../lib/botWorker';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { binImages } from '../../../../lib/noteImageIndex';

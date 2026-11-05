@@ -21,6 +21,12 @@ export async function mockBotInternalRaw(path, payload) {
   return new Response('{}', { status: 404 });
 }
 
+export const MOCK_GROUPS = {
+  Cmockteam0001: { name: 'ทีมก่อสร้าง', members: ['mock-user', 'mock-other'] },
+  Cmockfamily02: { name: 'ครอบครัว', members: ['mock-user'] },
+  Cmocknotme003: { name: 'กลุ่มของคนอื่น', members: ['mock-other'] },
+  Cmockdown0004: { name: 'LINE ล่ม', members: ['mock-user'], down: true },
+};
 const WORK_ID = 'work@group.calendar.google.com', HOLIDAY_ID = 'holidays@group.v.calendar.google.com';
 const MOCK_CALENDARS = [
   { id: 'primary', name: 'ส่วนตัว', color: '#0b8043', primary: true, writable: true },
@@ -175,6 +181,17 @@ export async function mockBotInternal(path, payload) {
           { type: 'separator', margin: 'md' }] },
         footer: { type: 'box', layout: 'vertical', contents: [{ type: 'button', style: 'primary', height: 'sm', color: '#E24A4A', action: { type: 'postback', label: '❌ ยกเลิก', data: `action=demo_cancel&n=${n}`, displayText: `ยกเลิกใบที่ ${n}` } }] } })) } }] };
       return { ok: true, messages: [{ type: 'text', text: `ได้รับ: ${t}` }] };
+    }
+    // groups (the bot asks LINE; here the mock user is "in" the first group only)
+    case '/internal/group-member': {
+      const g = MOCK_GROUPS[payload.groupId];
+      if (!g) return { ok: true, member: false };
+      if (g.down) return { ok: false, error: 'line_502' };
+      return { ok: true, member: g.members.includes(payload.userId), displayName: payload.userId === 'mock-user' ? 'Mock Tester' : 'สมาชิก' };
+    }
+    case '/internal/group-info': {
+      const g = MOCK_GROUPS[payload.groupId];
+      return g ? { ok: true, groupId: payload.groupId, name: g.name, memberCount: g.members.length, pictureUrl: null } : { ok: false, error: 'not_found' };
     }
     case '/internal/calendar-sync':
     case '/internal/task-recurrence': return { ok: true, synced: true };

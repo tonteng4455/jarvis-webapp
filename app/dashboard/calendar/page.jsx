@@ -15,6 +15,7 @@ import { dueInputs } from '../../../lib/taskDue';
 import { RepeatPicker, ScopeSheet, EMPTY_REPEAT, repeatPayload, repeatSummary } from '../_repeat';
 import { parseRRule, spanTh, dateTh } from '../../../lib/recur';
 import { apiGet, DraftNote, ResumeDraft, ErrorState, Fab, ListSkeleton, useDraft, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
+import { AddedBy } from '../_space';
 
 const kOf = e => e.key || e.id;   // a repeating appointment has one entry per date: same id, a key per date
 
@@ -225,7 +226,7 @@ function EventCard({ e, cals, onEdit, onCancel, onConvert, showDate }) {
   }
   return (
     <div className="glass-card" style={{ opacity: e.status === 'pending' ? 0.7 : 1, cursor: 'pointer' }} onClick={() => onEdit(kOf(e))}>
-      <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{e.is_series ? '🔁 ' : ''}{e.title}</div>
+      <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{e.is_series ? '🔁 ' : ''}{e.title} <AddedBy item={e} /></div>
       <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', marginTop: '0.2rem' }}>
         {showDate ? formatDate(e.start_time) : `🕐 ${timeLabel(e.start_time)}`}
       </div>

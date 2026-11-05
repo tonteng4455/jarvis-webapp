@@ -8,6 +8,7 @@ import { CARD_THEMES, normalizeCardTheme, themeColors } from '../../lib/cardThem
 import { readStart, saveStart } from '../../lib/startPage';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSpace, SpaceChip } from './_space';
 
 // Theme: 'auto' removes [data-theme] so the CSS prefers-color-scheme
 // rules apply and the app follows the phone's own light/dark schedule
@@ -36,6 +37,9 @@ export const NAV_TABS = [
   { key: 'files', icon: '📁', label: 'ไฟล์', href: '/dashboard/files' },
 ];
 
+// a group's space has no money tab (personal) and, for now, no chat tab
+export const tabsForSpace = (space) => space === 'group' ? NAV_TABS.filter(t => !['expenses', 'chat'].includes(t.key)) : NAV_TABS;
+
 export function tabKeyForPath(pathname) {
   if (pathname === '/dashboard') return 'notes';
   const hit = NAV_TABS.find(t => t.key !== 'notes' && pathname.startsWith(t.href));
@@ -49,11 +53,14 @@ export function tabKeyForPath(pathname) {
 export function DashNav() {
   const pathname = usePathname();
   const current = tabKeyForPath(pathname);
+  const { space } = useSpace();
+  const tabs = tabsForSpace(space);
   return (
     <nav className="dash-nav">
       <span className="dash-brand"><img src="/logo-head.png" alt="" width="24" height="24" className="dash-logo" /> Jarvis</span>
+      <SpaceChip />
       <div className="dash-tabs">
-        {NAV_TABS.map(t => (
+        {tabs.map(t => (
           <Link key={t.key} href={t.href} className={`dash-nav-item${current === t.key ? ' active' : ''}`}>
             {t.icon} {t.label}
           </Link>

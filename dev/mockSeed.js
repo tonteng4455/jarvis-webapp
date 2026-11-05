@@ -29,6 +29,7 @@ export function seed() {
     users: [
       { line_user_id: 'mock-user', display_name: 'Mock Tester', picture_url: null, phone_number: null, is_premium: true, used_storage_bytes: 0 },
       { line_user_id: 'mock-nodrive', display_name: 'Mock (no Drive)', picture_url: null, phone_number: null, is_premium: true, used_storage_bytes: 0 },
+      { line_user_id: 'mock-other', display_name: 'สมศรี', picture_url: null, phone_number: null, is_premium: true, used_storage_bytes: 0 },
     ],
     notes: [
       ...notes('mock-user', [
@@ -38,8 +39,14 @@ export function seed() {
         { title: 'รายการซื้อของ', content: 'ของที่ต้องซื้อ\n- นม\n  - นมจืด\n[ ] ไข่\n[x] ขนมปัง\n1. ผัก\n2. ผลไม้', category: 'shopping' },
       ]),
       ...notes('mock-nodrive', [{ title: 'Note (no Drive)', content: 'hello' }]),
+      ...notes('Cmockteam0001', [{ title: 'แผนตรวจงานงวด 3', content: 'ตรวจโครงสร้าง\nตรวจระบบน้ำ', category: 'work', created_by: 'mock-other' }, { title: 'รายชื่อผู้รับเหมา', content: 'ช่างไฟ\nช่างปูน', created_by: 'mock-user' }]),
+      ...notes('Cmockfamily02', [{ title: 'ของใช้ในบ้าน', content: 'น้ำยาล้างจาน' }]),
+      ...notes('Cmocknotme003', [{ title: 'ความลับของกลุ่มอื่น', content: 'ห้ามเห็น' }]),
     ],
     tasks: [
+      { id: globalThis.crypto.randomUUID(), user_id: 'Cmockteam0001', task_name: 'ส่งแบบแปลนให้วิศวกร', category: 'work', priority: 'high', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, created_by: 'mock-other' },
+      { id: globalThis.crypto.randomUUID(), user_id: 'Cmockteam0001', task_name: 'สั่งปูนซีเมนต์', category: 'work', priority: 'medium', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, created_by: 'mock-user' },
+      { id: globalThis.crypto.randomUUID(), user_id: 'Cmocknotme003', task_name: 'งานลับของกลุ่มอื่น', category: 'work', priority: 'low', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now },
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'ส่งรายงาน', details: '[ ] สรุปยอดขาย\n[x] แนบกราฟ\n[ ] ส่งให้หัวหน้า', category: 'work', priority: 'high', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(0, '17:00') },
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'จ่ายค่าไฟ', category: 'finance', priority: 'medium', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(-2, '') },
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', task_name: 'โทรนัดหมอฟัน', category: 'general', priority: 'low', is_done: false, archived: false, recurrence: null, recurrence_time: null, google_event_id: null, created_at: now, ...dueIn(1, '') },
@@ -50,6 +57,10 @@ export function seed() {
       { id: globalThis.crypto.randomUUID(), user_id: 'mock-user', type: 'income', amount: '5000', category: 'salary', memo: 'งานเสริม', created_at: now },
     ],
     calendar_events: [
+      ...[[1, 10, 'ประชุมทีมก่อสร้าง', 'ไซต์งาน', 'mock-other'], [2, 8, 'ตรวจรับงานงวด 3', 'ช.พัน.51', 'mock-user']].map(([dOff, hr, title, location, by]) => {
+        const d = new Date(); d.setDate(d.getDate() + dOff); d.setHours(hr, 0, 0, 0);
+        return { id: globalThis.crypto.randomUUID(), user_id: 'Cmockteam0001', title, start_time: d.toISOString(), end_time: d.toISOString(), location, description: '', status: 'scheduled', reminder_minutes: 15, google_event_id: null, created_by: by };
+      }),
       ...[[0, 14, 'ประชุมทีม', 'ห้องประชุม'], [0, 17, 'ส่งงานลูกค้า', ''], [1, 9, 'ทันตแพทย์', 'คลินิก'], [3, 10, 'โทรหาประกัน', ''],
         [3, 13, 'ซื้อของ', 'ตลาด'], [3, 18, 'ดินเนอร์ครอบครัว', 'บ้าน'], [3, 20, 'ดูหนัง', ''], [9, 8, 'ตรวจรถ', 'ศูนย์บริการ'], [-4, 11, 'คุยโปรเจกต์', '']]
         .map(([dOff, hr, title, location]) => {

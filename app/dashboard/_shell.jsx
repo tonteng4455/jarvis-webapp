@@ -4,15 +4,17 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { NAV_TABS, tabKeyForPath } from './_components';
+import { tabsForSpace, tabKeyForPath } from './_components';
+import { useSpace } from './_space';
 
 // Thumb-reachable tab bar on phones (CSS hides it on wide screens,
 // where the top bar carries the same tabs).
 export function BottomNav() {
   const current = tabKeyForPath(usePathname());
+  const { space } = useSpace();
   return (
     <nav className="bottom-nav" aria-label="เมนูหลัก">
-      {NAV_TABS.map(t => (
+      {tabsForSpace(space).map(t => (
         <Link key={t.key} href={t.href} className={`bottom-nav-item${current === t.key ? ' active' : ''}`}>
           <span className="bottom-nav-icon">{t.icon}</span>
           <span>{t.label}</span>

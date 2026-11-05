@@ -7,7 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getPremiumSession } from '../../../lib/premium';
+import { getSpaceSession as getPremiumSession, attachCreators } from '../../../lib/space';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 
 const TASKS_LIMIT_FREE = 50; // keep in sync with TASKS_LIMIT_FREE on the bot's Worker
@@ -60,7 +60,7 @@ export async function GET(request) {
   if (error) ({ data, error } = await query(BASE));
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
-  return NextResponse.json({ tasks: data });
+  return NextResponse.json({ tasks: await attachCreators(supabase, 'tasks', data, session) });
 }
 
 export async function POST(request) {
@@ -84,6 +84,7 @@ export async function POST(request) {
 
   const row = {
     user_id: session.lineUserId,
+    ...(session.space === 'group' ? { created_by: session.actorId } : {}),          // "added by" (group_created_by.sql)
     task_name: task_name.trim(),
     priority: priority || 'medium',
     category: category || 'general',
@@ -92,6 +93,7 @@ export async function POST(request) {
   const text = typeof details === 'string' && details.trim() ? details.slice(0, 20000) : null;
   let { data, error } = await supabase.from('tasks').insert({ ...row, ...(due || {}), ...(text ? { details: text } : {}) }).select().single();
   let dropped = null;
+  if (error && row.created_by && /created_by/.test(error.message || '')) { delete row.created_by; ({ data, error } = await supabase.from('tasks').insert({ ...row, ...(due || {}), ...(text ? { details: text } : {}) }).select().single()); }
   if (error && (due || text)) {                      // columns not created yet → saved without them, and we say so
     ({ data, error } = await supabase.from('tasks').insert(row).select().single());
     dropped = [...(due ? ['due_at'] : []), ...(text ? ['details'] : [])];
