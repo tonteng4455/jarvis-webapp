@@ -56,6 +56,22 @@ export async function PATCH(request, { params }) {
     if (!r?.ok) return seriesError(r);
     return NextResponse.json({ event: r.event || series, syncResult: { synced: true }, series: true });
   }
+  // the end must stay after the start: moving the start keeps the old length (at least an hour), and an end that is not after the start becomes start + 1 h
+  if (updates.start_time) {
+    const st = Date.parse(updates.start_time);
+    if (!Number.isNaN(st)) {
+      let en = updates.end_time ? Date.parse(updates.end_time) : NaN;
+      if (!('end_time' in updates)) {
+        const { data: old } = await supabase.from('calendar_events').select('start_time, end_time').eq('id', id).eq('user_id', session.lineUserId).maybeSingle();
+        const len = old ? Date.parse(old.end_time) - Date.parse(old.start_time) : NaN;
+        en = st + (len > 0 ? len : 3600e3);
+        updates.end_time = new Date(en).toISOString();
+      } else if (Number.isNaN(en) || en <= st) updates.end_time = new Date(st + 3600e3).toISOString();
+    }
+  } else if (updates.end_time) {
+    const { data: old } = await supabase.from('calendar_events').select('start_time').eq('id', id).eq('user_id', session.lineUserId).maybeSingle();
+    if (old && Date.parse(updates.end_time) <= Date.parse(old.start_time)) updates.end_time = new Date(Date.parse(old.start_time) + 3600e3).toISOString();
+  }
   let data;
   if (Object.keys(updates).length) {
     const r = await supabase.from('calendar_events').update(updates).eq('id', id).eq('user_id', session.lineUserId).select().single();

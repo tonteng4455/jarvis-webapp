@@ -130,7 +130,7 @@ export async function POST(request) {
   const start = Date.parse(body.start_time);
   if (!title || Number.isNaN(start)) return NextResponse.json({ error: 'title_and_start_time_required' }, { status: 400 });
   const endParsed = body.end_time ? Date.parse(body.end_time) : NaN;
-  const end = !Number.isNaN(endParsed) && endParsed >= start ? endParsed : start + 60 * 60 * 1000;
+  const end = !Number.isNaN(endParsed) && endParsed > start ? endParsed : start + 60 * 60 * 1000;      // an end that is not AFTER the start makes Google refuse the event ("time range is empty")
   const reminder = Number.isInteger(body.reminder_minutes) ? body.reminder_minutes : null;
   // a repeating appointment: the first row is its first date (on/after the date chosen); the rule does the rest
   let startMs = start, endMs = end, recur = null;
