@@ -31,6 +31,16 @@ Plain variables besides the config file: `VAPID_PUBLIC_KEY` (the public half of 
 `NEXT_PUBLIC_BRAND_NAME` (the name — `deploy:friday` sets it) and `NEXT_PUBLIC_LINE_OA_URL` (the OA's "Add friend" link; set it in the environment of
 the build, or as a *Build variable* when Cloudflare Workers Builds does the building) are inlined while building — changing them needs a new deploy.
 
+## Cloudflare "Connect to Git" (Workers Builds) — the settings that matter
+Settings → Builds of each Worker. Repository `tonteng4455/jarvis-webapp`, branch `main`, root directory empty, **Build command** `npm ci`, and the **Deploy command picks the instance** (it builds with the instance's name and brand, then deploys with its config):
+
+| Worker | Deploy command |
+|---|---|
+| `jarvis-webapp` (already connected) | its existing command |
+| `friday-webapp` | `npm run deploy:friday` |
+
+Optional Build variables: `NEXT_PUBLIC_LINE_OA_URL` (the "open chat in LINE" button), `NODE_VERSION=22` only if the build complains about Node. Leave non-production branch builds off.
+
 ## Name, voice, logo, icons — the brand folder
 
 `brands/friday/brand.json` ({ "name": "Friday", "gender": "female" }) and `brands/friday/public/*` (the logo and app icons). `npm run deploy:friday`
