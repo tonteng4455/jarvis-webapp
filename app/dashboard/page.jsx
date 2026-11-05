@@ -16,7 +16,7 @@ import { noteToMarkdown, notesToMarkdownFiles, notesToCombinedMarkdown, safeFile
 import { notesToPdf } from '../../lib/notePdf';
 import { createZip } from '../../lib/zip';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from './_ui';
-import { AddedBy } from './_space';
+import { AddedBy, useSpace } from './_space';
 
 
 const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -425,6 +425,10 @@ export default function NotesPage() {
 
 function NotesPageInner() {
   const [notes, setNotes] = useState(null);
+  const { space } = useSpace();
+  const notesRef = useRef(null);
+  const [conflict, setConflict] = useState(null);      // a group note somebody else saved while this person was editing: { id, patch, by, current }
+  notesRef.current = notes;
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [viewMode, setViewMode] = useState('all'); // 'all' | 'grouped'
@@ -552,9 +556,11 @@ function NotesPageInner() {
   // → true when the server has it. false when it could not be sent (connection dropped) — the caller keeps the change
   // marked "unsent" so the next save (✓, click-away, the connection coming back) sends it again instead of losing it.
   const offlineToastAt = useRef(0);
-  async function updateNote(id, patch) {
+  async function updateNote(id, patch, force = false) {
     setNotes(prev => prev?.map(n => n.id === id ? { ...n, ...patch } : n));
-    const body = JSON.stringify(patch);
+    // in a group the editor says which version it opened, so a save over somebody else's newer one is caught (409) instead of overwriting it
+    const base = space === 'group' && !force ? (notesRef.current || []).find(n => n.id === id)?.updated_at : null;
+    const body = JSON.stringify(base ? { ...patch, base_updated_at: base } : force ? { ...patch, force: true } : patch);
     let res;
     try {
       res = await fetch(`/api/notes/${id}`, {
@@ -565,9 +571,26 @@ function NotesPageInner() {
       if (Date.now() - offlineToastAt.current > 20000) { offlineToastAt.current = Date.now(); toast.show('📶 อินเทอร์เน็ตหลุด — ที่แก้ไว้ยังอยู่ในหน้านี้ จะบันทึกให้เมื่อกลับมาออนไลน์ (หรือกด ✓)', { tone: 'warn', duration: 6000 }); }
       return false;
     }
+    if (res.status === 409) {
+      const j = await res.json().catch(() => ({}));
+      if (j.error === 'conflict') { setConflict(c => c || { id, patch, by: j.by, current: j.current }); return true; }        // asked; the sheet decides what happens to this change
+    }
     if (!res.ok) { load(); return false; }
+    if (space === 'group' && ('content' in patch || 'title' in patch)) {
+      const j = await res.clone().json().catch(() => null);
+      if (j?.note?.updated_at) setNotes(prev => prev?.map(n => n.id === id ? { ...n, updated_at: j.note.updated_at } : n));
+    }
     if ('archived' in patch || 'pinned' in patch) load();
     return true;
+  }
+  async function resolveConflict(choice) {
+    const c = conflict; setConflict(null); if (!c) return;
+    if (choice === 'mine') { await updateNote(c.id, c.patch, true); toast.show('บันทึกทับแล้ว'); return; }
+    if (choice === 'copy') {
+      const mine = (notesRef.current || []).find(n => n.id === c.id);
+      await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: `${c.patch.title ?? mine?.title ?? ''} (ของฉัน)`.trim(), content: c.patch.content ?? mine?.content ?? '', category: mine?.category }) }).catch(() => {});
+    }
+    window.location.reload();                          // theirs: the page shows the saved version (and, for "copy", my version as a new note)
   }
 
   function deleteNote(id) {
@@ -778,6 +801,17 @@ function NotesPageInner() {
             </div>
           ))}
         </>
+      {conflict && (
+        <div className="space-overlay" style={{ zIndex: 5000 }} role="dialog" aria-label="มีคนแก้โน้ตนี้ไปแล้ว" data-act="conflict-sheet">
+          <div className="space-sheet" onClick={e => e.stopPropagation()}>
+            <div className="space-title">⚠️ {conflict.by} แก้โน้ตนี้ไปก่อนแล้ว</div>
+            <p className="muted" style={{ margin: '0 0 0.6rem' }}>ถ้าบันทึกทับ ที่เขาแก้จะหายไป เลือกวิธีที่ต้องการ</p>
+            <button type="button" className="space-opt" data-act="conflict-copy" onClick={() => resolveConflict('copy')}><span>📄</span><span><b>เก็บของฉันเป็นโน้ตใหม่</b><small>ไม่มีอะไรหาย — โน้ตเดิมเป็นฉบับของเขา</small></span></button>
+            <button type="button" className="space-opt" data-act="conflict-theirs" onClick={() => resolveConflict('theirs')}><span>↩️</span><span><b>ใช้ฉบับของเขา</b><small>ทิ้งที่ฉันแก้ในโน้ตนี้</small></span></button>
+            <button type="button" className="space-opt" data-act="conflict-mine" onClick={() => resolveConflict('mine')}><span>✍️</span><span><b>บันทึกทับด้วยของฉัน</b><small>ที่เขาแก้จะถูกแทนที่</small></span></button>
+          </div>
+        </div>
+      )}
       {!showArchived && <Fab onClick={() => setOpenSignal(n => n + 1)} label="จดโน้ตใหม่" />}
     </main>
   );

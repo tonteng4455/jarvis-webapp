@@ -193,6 +193,13 @@ export async function mockBotInternal(path, payload) {
       const g = MOCK_GROUPS[payload.groupId];
       return g ? { ok: true, groupId: payload.groupId, name: g.name, memberCount: g.members.length, pictureUrl: null } : { ok: false, error: 'not_found' };
     }
+    case '/internal/group-settings': {
+      const g = (globalThis.__mockGroupCfg ||= {})[payload.groupId] ||= { connected: false, email: null, files: true, quoteText: false };
+      if (payload.action === 'set') { if (typeof payload.files === 'boolean') g.files = payload.files; if (typeof payload.quoteText === 'boolean') g.quoteText = payload.quoteText; }
+      if (payload.action === 'disconnect') { g.connected = false; g.email = null; }
+      if (payload.action === 'connect') { if (g.connected && !payload.replace) return { ok: true, alreadyConnected: true }; return { ok: true, url: 'https://accounts.google.com/o/oauth2/v2/auth?state=g.' + payload.groupId + '.1.' + (g.connected ? 'r' : 'n') + '.sig' }; }
+      return { ok: true, connected: g.connected, email: g.email, driveFolderUrl: g.connected ? 'https://drive.google.com/drive/folders/MOCKFOLDER' : null, files: g.files, quoteText: g.quoteText };
+    }
     case '/internal/calendar-sync':
     case '/internal/task-recurrence': return { ok: true, synced: true };
     default: return { ok: false, error: 'mock_unhandled ' + path };

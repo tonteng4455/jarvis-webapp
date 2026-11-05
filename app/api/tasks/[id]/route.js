@@ -10,7 +10,7 @@
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getSpaceSession as getPremiumSession, attachCreators } from '../../../../lib/space';
+import { getSpaceSession as getPremiumSession, attachCreators, trashRow } from '../../../../lib/space';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { callBotInternal } from '../../../../lib/botWorker';
 
@@ -69,6 +69,7 @@ export async function DELETE(request, { params }) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
+  await trashRow(supabase, 'tasks', id, session);                              // a group's deleted task stays restorable for 30 days
   // a recurring task owns a repeating event in Google Calendar: switch the repeat off first (the Worker then deletes that event)
   const { data: row } = await supabase.from('tasks').select('id, recurrence, google_event_id').eq('id', id).eq('user_id', session.lineUserId).maybeSingle();
   if (row?.google_event_id) {

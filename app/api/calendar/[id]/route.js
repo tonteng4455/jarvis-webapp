@@ -100,7 +100,7 @@ export async function DELETE(request, { params }) {
     if (!r?.ok) return seriesError(r);
     return NextResponse.json({ cancelled: true, series: true, scope: r.scope || scope, undo: r.undo || null });
   }
-  const result = await callBotInternal('/internal/calendar-cancel', { userId: session.lineUserId, eventId: id });
+  const result = await callBotInternal('/internal/calendar-cancel', { userId: session.lineUserId, eventId: id, ...(session.space === 'group' ? { actorId: session.actorId } : {}) });
   if (!result.ok) return NextResponse.json({ error: result.error || 'cancel_failed' }, { status: 404 });
   return NextResponse.json({ cancelled: true, event: result.event });
 }

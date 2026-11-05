@@ -18,9 +18,11 @@ export async function GET(request) {
   if (!m.member) return m.error
     ? page('ตรวจสอบกับ LINE ไม่ได้ในตอนนี้', 'ลองใหม่อีกครั้งในอีกสักครู่', 502)
     : page('คุณไม่ได้อยู่ในกลุ่มนี้', /^U/.test(session.lineUserId) ? 'เปิดได้เฉพาะสมาชิกของกลุ่มเท่านั้น' : 'บัญชีนี้เข้าสู่ระบบด้วย Google ซึ่งยังไม่ได้ผูกกับ LINE จึงตรวจการเป็นสมาชิกกลุ่มไม่ได้ — ผูกบัญชี LINE ที่เมนูบัญชีก่อน');
+  const to = url.searchParams.get('to') || '';
+  const landing = /^\/dashboard(\/[a-z-]+)?$/.test(to) ? to : '/dashboard/calendar';          // where a notification / link lands (only inside the dashboard)
   const info = await groupInfo(gid);
   const list = [{ id: gid, name: info.name }, ...readGroupsCookie(store).filter(g => g.id !== gid)];
-  const res = NextResponse.redirect(new URL('/dashboard/calendar', request.url));
+  const res = NextResponse.redirect(new URL(landing, request.url));
   const secure = process.env.NODE_ENV === 'production';
   res.cookies.set(SPACE_COOKIE, `g:${gid}`, { httpOnly: true, secure, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30 });
   res.cookies.set(GROUPS_COOKIE, groupsCookieValue(list), { httpOnly: false, secure, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 365 });

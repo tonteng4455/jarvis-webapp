@@ -38,10 +38,12 @@ export const NAV_TABS = [
 ];
 
 // a group's space has no money tab (personal) and, for now, no chat tab
-export const tabsForSpace = (space) => space === 'group' ? NAV_TABS.filter(t => !['expenses', 'chat'].includes(t.key)) : NAV_TABS;
+export const GROUP_TAB = { key: 'group', icon: '⚙️', label: 'กลุ่ม', href: '/dashboard/group' };
+export const tabsForSpace = (space) => space === 'group' ? [...NAV_TABS.filter(t => !['expenses', 'chat'].includes(t.key)), GROUP_TAB] : NAV_TABS;
 
 export function tabKeyForPath(pathname) {
   if (pathname === '/dashboard') return 'notes';
+  if (pathname.startsWith(GROUP_TAB.href)) return 'group';
   const hit = NAV_TABS.find(t => t.key !== 'notes' && pathname.startsWith(t.href));
   return hit ? hit.key : null;
 }

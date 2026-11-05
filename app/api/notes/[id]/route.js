@@ -9,7 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getSpaceSession as getPremiumSession, attachCreators } from '../../../../lib/space';
+import { getSpaceSession as getPremiumSession, attachCreators, trashRow } from '../../../../lib/space';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { sanitizeNoteImages, replacedIds } from '../../../../lib/noteImages';
 import { registerNoteImages, releaseOtherImages, releaseNote, binImages } from '../../../../lib/noteImageIndex';
@@ -42,17 +42,35 @@ export async function PATCH(request, { params }) {
   }
 
   const supabase = supabaseAdmin();
+  // Group spaces: two people editing the same note. The editor sends the `updated_at` it opened; if somebody ELSE saved a content change
+  // since then, nothing is overwritten — the client gets 409 and asks (keep mine / take theirs / save mine as a new note).
+  // (needs notes.updated_by from group_trash.sql; without that column there is nothing to compare, so saves go through as before)
+  const baseStamp = body.base_updated_at ? Date.parse(body.base_updated_at) : NaN;
+  if (session.space === 'group' && updates.updated_at) {
+    if (!Number.isNaN(baseStamp) && body.force !== true) {
+      const { data: cur } = await supabase.from('notes').select('id, title, content, updated_at, updated_by').eq('id', id).eq('user_id', session.lineUserId).maybeSingle();
+      if (cur && cur.updated_by && cur.updated_by !== session.actorId && Date.parse(cur.updated_at) > baseStamp + 1000) {
+        const { data: who } = await supabase.from('users').select('display_name').eq('line_user_id', cur.updated_by).maybeSingle();
+        return NextResponse.json({ error: 'conflict', by: who?.display_name || 'สมาชิกคนอื่น', current: { title: cur.title, content: cur.content, updated_at: cur.updated_at } }, { status: 409 });
+      }
+    }
+    updates.updated_by = session.actorId;
+  }
   // Only a real category CHANGE counts as a lesson (editors resend the unchanged category on every save).
   const prevCategory = 'category' in updates
     ? (await supabase.from('notes').select('category').eq('id', id).eq('user_id', session.lineUserId).maybeSingle()).data?.category
     : undefined;
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('notes')
     .update(updates)
     .eq('id', id)
     .eq('user_id', session.lineUserId)
     .select()
     .single();
+  if (error && updates.updated_by && /updated_by/.test(error.message || '')) {          // group_trash.sql not run yet: save without the stamp
+    const { updated_by, ...rest } = updates;
+    ({ data, error } = await supabase.from('notes').update(rest).eq('id', id).eq('user_id', session.lineUserId).select().single());
+  }
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
   if ('images' in updates && data) {                                  // the image library follows the note (best-effort: never fails the save)
@@ -73,6 +91,7 @@ export async function DELETE(request, { params }) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
+  await trashRow(supabase, 'notes', id, session);                              // a group's deleted note stays restorable for 30 days
   await releaseNote(supabase, session.lineUserId, id).catch(() => {});        // its pictures stay in the library (delete them there)
   const { error } = await supabase
     .from('notes')

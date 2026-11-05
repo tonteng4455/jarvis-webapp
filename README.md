@@ -224,3 +224,7 @@ Every LINE-verified member of a group can open that group's notes, tasks and app
 - `lib/space.js` `getSpaceSession` swaps the session owner to the group id (`lineUserId` = group, `actorId` = the real person) after the bot's `/internal/group-member` confirms membership with LINE (cached 5 min yes / 30 s no). Forged cookies show nothing.
 - Hidden in a group space: expenses, contacts, personal settings. Rows show "เพิ่มโดย" from the `created_by` column (`group_created_by.sql`, optional — the code retries without it).
 - Google-only web accounts (no LINE id) cannot enter group spaces.
+
+- **⚙️ กลุ่ม tab** (`/dashboard/group`): Google of the group (connect / switch / disconnect through the bot's `/internal/group-settings`), the group's file-saving and quote switches, "my reminders for this group" (`group_push_optin`) and the 30-day trash (`/api/trash`; copies are made by `trashRow()` here and by the bot's `trashGroupRows()` for deletes from LINE). `group_trash.sql` creates `group_trash`, `group_push_optin`, `group_push_log` and `notes.updated_by`.
+- **Edit conflicts** (group notes only): the editor sends `base_updated_at`; if someone else saved since, `PATCH /api/notes/:id` answers 409 and the page offers keep-mine-as-new-note / take-theirs / overwrite (`force: true`).
+- Group reminders are sent by the bot's cron (Web Push to members who opted in); the notification opens `/api/space/enter?g=<id>&to=/dashboard/...`.
