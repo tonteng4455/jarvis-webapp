@@ -25,15 +25,28 @@ function AccountInner() {
   const [merge, setMerge] = useState(null);          // what each side holds, while waiting for the confirmation
   const [mergeError, setMergeError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [gcal, setGcal] = useState(null);           // the Google Calendar + Drive connection: { connected, email, driveFolderUrl, connectUrl }
   const mergeToken = params.get('merge'), err = params.get('error'), linked = params.get('linked');
 
   const load = useCallback(async () => { const r = await fetch('/api/account'); if (r.ok) setInfo(await r.json()); }, []);
-  useEffect(() => { load(); }, [load]);
+  const loadGoogle = useCallback(async () => { const r = await fetch('/api/account/google').catch(() => null); setGcal(r && r.ok ? await r.json() : { error: true }); }, []);
+  useEffect(() => { load(); loadGoogle(); }, [load, loadGoogle]);
+  useEffect(() => { const f = () => { if (document.visibilityState === 'visible') loadGoogle(); }; document.addEventListener('visibilitychange', f); return () => document.removeEventListener('visibilitychange', f); }, [loadGoogle]);      // back from the Google sign-in tab
   useEffect(() => {
     if (!mergeToken) { setMerge(null); return; }
     fetch(`/api/account/merge?t=${encodeURIComponent(mergeToken)}`).then(async r => { if (r.ok) setMerge(await r.json()); else setMergeError(r.status === 410 ? 'ลิงก์ยืนยันหมดอายุแล้ว ลองกดผูกบัญชีใหม่อีกครั้งครับ' : 'เปิดหน้ายืนยันไม่ได้'); }).catch(() => setMergeError('เปิดหน้ายืนยันไม่ได้'));
   }, [mergeToken]);
   useEffect(() => { if (linked === 'google') toast.show('ผูกบัญชี Google แล้ว'); if (linked === 'already') toast.show('บัญชี Google นี้ผูกอยู่แล้ว'); }, [linked]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function disconnectGoogle() {
+    if (!window.confirm('ยกเลิกการเชื่อม Google Calendar และ Drive?\n• นัดหมายใหม่จะไม่ลงปฏิทิน Google และไฟล์ใหม่จะไม่เก็บใน Drive\n• ของที่เคยลงไว้ใน Google ของคุณยังอยู่ (ลบเองใน Google ได้)\n• เชื่อมใหม่ได้ทุกเมื่อ')) return;
+    setBusy(true);
+    try {
+      const r = await fetch('/api/account/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'disconnect' }) });
+      if (!r.ok) throw new Error('disconnect');
+      toast.show('ยกเลิกการเชื่อม Google แล้ว'); await loadGoogle();
+    } catch { toast.show('ยกเลิกการเชื่อมไม่สำเร็จ ลองอีกครั้งครับ', { tone: 'error' }); } finally { setBusy(false); }
+  }
 
   async function confirmMerge() {
     setBusy(true);
@@ -100,6 +113,29 @@ function AccountInner() {
             {info.google.length > 0 && <a className="glass-btn-outline" data-act="link-google" href="/api/auth/google?mode=link" style={{ display: 'inline-block', textDecoration: 'none', marginBottom: '0.8rem' }}>＋ ผูก Google อีกบัญชี</a>}
             {!info.googleReady && <p className="muted" style={{ fontSize: '0.8rem' }}>การเข้าสู่ระบบด้วย Google ยังไม่ได้เปิดบนเซิร์ฟเวอร์นี้</p>}
             {!info.line && <p className="muted" style={{ fontSize: '0.85rem' }}>ถ้าผูก LINE ด้วย ข้อมูลทั้งหมดจะย้ายไปเป็นบัญชี LINE ของคุณ (ถ้ามีข้อมูลเก่าใน LINE อยู่แล้วจะรวมให้ หลังกดยืนยัน) และใช้บอท LINE ได้ด้วย</p>}
+          </>
+        )}
+      </div>
+
+      <div className="glass-card" data-act="gcal-card" style={{ marginTop: '1rem' }}>
+        <b>📆 Google Calendar และ Drive</b>
+        <p className="muted" style={{ margin: '0.3rem 0 0.7rem' }}>ที่ Jarvis ใช้ลงนัดหมายในปฏิทิน และเก็บรูป/ไฟล์ไว้ใน Drive ของคุณ (ไม่ใช่เรื่องการเข้าสู่ระบบด้วย Google)</p>
+        {!gcal && <p className="muted">กำลังโหลด…</p>}
+        {gcal?.error && <p className="muted">ตรวจสถานะไม่สำเร็จ ลองรีเฟรชหน้านี้</p>}
+        {gcal && !gcal.error && gcal.connected && (
+          <>
+            <p style={{ margin: '0 0 0.6rem' }} data-act="gcal-status">🟢 เชื่อมอยู่{gcal.email ? ` · ${gcal.email}` : ''}</p>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {gcal.driveFolderUrl && <a className="glass-btn-outline" style={{ color: 'var(--text-primary)', textDecoration: 'none' }} href={gcal.driveFolderUrl} target="_blank" rel="noopener noreferrer">📂 เปิดโฟลเดอร์ Drive</a>}
+              <button type="button" className="glass-btn-outline" style={{ color: 'var(--text-primary)' }} data-act="gcal-disconnect" disabled={busy} onClick={disconnectGoogle}>🔌 ยกเลิกการเชื่อม</button>
+            </div>
+            <p className="muted" style={{ margin: '0.6rem 0 0', fontSize: '0.85rem' }}>อยากเปลี่ยนไปใช้บัญชี Google อื่น: ยกเลิกการเชื่อมก่อน แล้วเชื่อมใหม่ด้วยบัญชีที่ต้องการ</p>
+          </>
+        )}
+        {gcal && !gcal.error && !gcal.connected && (
+          <>
+            <p style={{ margin: '0 0 0.6rem' }} data-act="gcal-status">⚪ ยังไม่ได้เชื่อม</p>
+            {gcal.connectUrl && <a className="glass-btn" data-act="gcal-connect" href={gcal.connectUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>🔗 เชื่อม Google Calendar และ Drive</a>}
           </>
         )}
       </div>

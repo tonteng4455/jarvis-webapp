@@ -755,6 +755,16 @@ html[data-fs="lg"] { font-size: 18px; }
   .kl-text, .kl-ph, .kl-hl { font-size: 16px; }
   .ne-btn { min-width: 44px; height: 44px; }
 }
+/* Portrait phone: all ten toolbar buttons (and ✓) must fit in the width — they share the row (and shrink a little) instead of running past the edge,
+   so nothing has to be scrolled sideways to reach ✓. */
+@media (max-width: 559px) {
+  .ne-toolbar { gap: 0; padding-left: 0.3rem; padding-right: 0.3rem; overflow: hidden; }
+  .ne-toolbar .ne-btn { flex: 1 1 0; min-width: 0; max-width: 46px; padding: 0; }
+  .ne-toolbar .ne-btn.ne-done { flex: 0 0 auto; width: 40px; min-width: 40px; height: 40px; margin-left: 0.15rem; }
+  .ne-toolbar .ne-spacer { flex: 0 0 0; }
+  .ne-bottom { gap: 0; }
+  .ne-bottom .ne-btn { flex: 1 1 0; min-width: 0; max-width: 46px; padding: 0; }
+}
 
 /* ----- task due date: chip, picker, banner ----- */
 .due-chip { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.74rem; font-weight: 600; line-height: 1.5; background: var(--surface-muted); color: var(--text-secondary); white-space: nowrap; }

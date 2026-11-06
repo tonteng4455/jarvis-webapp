@@ -78,7 +78,12 @@ export async function mockBotInternal(path, payload) {
       const { data } = await mockSupabase().from('push_subscriptions').select('id').eq('user_id', payload.userId);
       return (data || []).length ? { ok: true, sent: data.length } : { ok: false, error: 'no_subscription' };
     }
-    case '/internal/google-status': return payload.userId === 'mock-nodrive' ? { ok: true, connected: false, connectUrl: 'https://example.invalid/google/connect?mock=1' } : { ok: true, connected: true, connectUrl: null };
+    case '/internal/google-status': {
+      const off = payload.userId === 'mock-nodrive' || (globalThis.__mockGoogleOff ||= new Set()).has(payload.userId);
+      return off ? { ok: true, connected: false, connectUrl: 'https://example.invalid/google/connect?mock=1' }
+        : { ok: true, connected: true, connectUrl: null, ...(payload.detail ? { email: 'mock@example.com', driveFolderUrl: 'https://drive.google.com/drive/folders/MOCKME' } : {}) };
+    }
+    case '/internal/google-disconnect': { (globalThis.__mockGoogleOff ||= new Set()).add(payload.userId); return { ok: true, had: true }; }
     // ---- calendars (several Google calendars: personal + a work one shared in + a read-only holiday one)
     case '/internal/calendar-calendars': {
       if (payload.userId === 'mock-nodrive') return { ok: true, connected: false, calendars: [] };
