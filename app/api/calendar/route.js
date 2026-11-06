@@ -106,7 +106,11 @@ export async function GET(request) {
     ]);
     if (g?.ok && Array.isArray(g.events)) {
       const have = new Set([...events, ...seriesRows].map(e => e.google_event_id).filter(Boolean));
-      const extra = externalFromToday(g.events, nowIso, ranged).filter(e => !have.has(e.google_event_id) && !(e.recurring_event_id && have.has(e.recurring_event_id))).map(e => ({
+      // a Google event that is only the copy of an appointment saved here (same title, same start minute) is not listed a second time
+      const minute = e => { const t = Date.parse(e.start_time); return Number.isNaN(t) ? String(e.start_time) : String(Math.floor(t / 60000)); };
+      const title = e => String(e.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const mine = new Set(events.map(e => `${title(e)}|${minute(e)}`));
+      const extra = externalFromToday(g.events, nowIso, ranged).filter(e => !have.has(e.google_event_id) && !(e.recurring_event_id && have.has(e.recurring_event_id)) && !mine.has(`${title(e)}|${minute(e)}`)).map(e => ({
         id: `g:${e.calendar_id}:${e.google_event_id}`, title: e.title, start_time: e.start_time, end_time: e.end_time, location: e.location,
         description: null, status: 'scheduled', reminder_minutes: null, google_event_id: e.google_event_id, calendar_id: e.calendar_id,
         external: true, all_day: !!e.all_day, htmlLink: e.htmlLink || null,

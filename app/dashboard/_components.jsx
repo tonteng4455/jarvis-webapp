@@ -127,7 +127,14 @@ function AccountMenu() {
     }
     // the page scrolling closes the sheet; the top bar scrolling sideways by itself (it does when the tabs do not all fit and the browser
     // brings the account button into view) must not
-    const close = e => { if (e?.type === 'scroll' && e.target?.closest?.('.dash-nav')) return; setOpen(false); };
+    // (scrolling INSIDE the sheet — it scrolls when the phone's text size makes it taller than the screen — and the browser's address bar
+    // showing/hiding, which fires "resize" with the same width, must not close it either)
+    const startW = window.innerWidth;
+    const close = e => {
+      if (e?.type === 'scroll' && (e.target?.closest?.('.dash-nav') || (e.target instanceof Node && sheetRef.current?.contains(e.target)))) return;
+      if (e?.type === 'resize' && window.innerWidth === startW) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onClickOutside);
     document.addEventListener('touchstart', onClickOutside);
     window.addEventListener('resize', close);
@@ -168,7 +175,7 @@ function AccountMenu() {
         <span className="account-name">{me?.displayName || ''}</span>
       </button>
       {open && createPortal(
-        <div className="account-sheet" ref={sheetRef} style={{ top: pos.top, right: pos.right }}>
+        <div className="account-sheet" ref={sheetRef} style={{ top: pos.top, right: pos.right, maxHeight: `calc(100dvh - ${pos.top + 12}px)` }}>
           <div className="account-sheet-label">ธีม</div>
           <div style={{ display: 'flex', gap: '0.35rem' }}>
             {THEMES.map(([k, l]) => <button key={k} type="button" style={chip(theme === k)} onClick={() => pickTheme(k)}>{l}</button>)}

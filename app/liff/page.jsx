@@ -96,6 +96,9 @@ function LiffEntryPageInner() {
         }
 
         if (cancelled) return;
+        // A link from a PRIVATE chat shows the person's own space — never whatever group they were last looking at in this browser.
+        // (A link from a group goes through /api/space/enter, which selects that group itself.)
+        if (!/^\/api\/space\/enter(\?|$)/.test(to)) await fetch('/api/space', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ space: 'personal' }) }).catch(() => {});
         const id = params.get('id');
         const dest = id ? `${to}${to.includes('?') ? '&' : '?'}id=${encodeURIComponent(id)}` : to;
         window.location.replace(dest);

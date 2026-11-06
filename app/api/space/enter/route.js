@@ -9,6 +9,13 @@ const page = (title, body, status = 403) => new Response(`<!doctype html><html l
 
 export async function GET(request) {
   const url = new URL(request.url);
+  // ?g=me → "my own space": used by notifications about PERSONAL things, so they never open on whatever group was last looked at
+  if (url.searchParams.get('g') === 'me') {
+    const to = url.searchParams.get('to') || '';
+    const res = NextResponse.redirect(new URL(/^\/dashboard(\/[a-z-]+)?$/.test(to) ? to : '/dashboard/today', request.url));
+    res.cookies.set(SPACE_COOKIE, '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 0 });
+    return res;
+  }
   const gid = parseSpace('g:' + (url.searchParams.get('g') || ''));
   if (!gid) return page('ลิงก์ไม่ถูกต้อง', 'ขอลิงก์ใหม่ในกลุ่ม โดยพิมพ์ @บอท เว็บ', 400);
   const store = await cookies();
