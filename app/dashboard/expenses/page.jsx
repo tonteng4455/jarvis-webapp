@@ -5,6 +5,7 @@
 // a LIFF link) and ?new=1 (open the add form).
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
+import { consumeDeepLinkId } from '../../../lib/deepLink';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, CategorySelect, EXPENSE_CATEGORIES } from '../_components';
 import { apiGet, DraftNote, ResumeDraft, ErrorState, Fab, ListSkeleton, useDraft, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
@@ -85,6 +86,7 @@ function ExpensesPageInner() {
   const [expenses, setExpenses] = useState(null);
   const [error, setError] = useState(false);
   const [editingId, setEditingId] = useState(searchParams.get('id'));
+  useEffect(() => { consumeDeepLinkId(); }, []);
   const [adding, setAdding] = useState(searchParams.get('new') === '1');
   const [filter, setFilter] = useState('all'); // all | expense | income
   const [exporting, setExporting] = useState(false);

@@ -17,6 +17,7 @@ import { notesToPdf } from '../../lib/notePdf';
 import { createZip } from '../../lib/zip';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from './_ui';
 import { AddedBy, useSpace } from './_space';
+import { consumeDeepLinkId } from '../../lib/deepLink';
 
 
 const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -179,6 +180,7 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
     if (autoEditId && String(note.id) === String(autoEditId)) {
       setEditing(true);
       ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      consumeDeepLinkId();                                   // used once: reloading / coming back never re-opens it
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEditId]);

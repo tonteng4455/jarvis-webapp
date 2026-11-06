@@ -7,6 +7,7 @@
 // Calendar through the bot Worker (see /api/calendar).
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { consumeDeepLinkId } from '../../../lib/deepLink';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, formatDate } from '../_components';
 import { ConvertToTaskSheet } from '../_taskEditor';
@@ -258,7 +259,8 @@ export default function CalendarPage() {
 function CalendarPageInner() {
   const toast = useToast();
   const searchParams = useSearchParams();
-  const deepLinkId = searchParams.get('id');
+  const deepLinkId = useRef(searchParams.get('id')).current;          // what the link asked for at load time (the address itself is cleaned below)
+  useEffect(() => { if (deepLinkId) consumeDeepLinkId(); }, [deepLinkId]);
   const wantsNew = searchParams.get('new') === '1';
 
   const today = new Date();

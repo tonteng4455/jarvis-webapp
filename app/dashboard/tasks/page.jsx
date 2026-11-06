@@ -4,6 +4,7 @@
 // weekly/monthly) that syncs a reminder to Google Calendar.
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { consumeDeepLinkId } from '../../../lib/deepLink';
 import { useSearchParams } from 'next/navigation';
 import { DashNav } from '../_components';
 import { apiGet, ErrorState, Fab, ListSkeleton, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
@@ -71,6 +72,7 @@ function TaskRow({ task, onUpdate, onDelete, onOpen, onConvert, autoEditId }) {
     if (autoEditId && String(task.id) === String(autoEditId)) {
       setRoutineOpen(true);
       ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      consumeDeepLinkId();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEditId]);
