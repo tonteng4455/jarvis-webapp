@@ -848,6 +848,11 @@ html[data-fs="lg"] { font-size: 18px; }
 .file-selbar .fsb-btn { border: 1px solid var(--border-strong); background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: 0.78rem; font-weight: 600; min-height: 38px; padding: 0 0.7rem; border-radius: 10px; cursor: pointer; white-space: nowrap; }
 .file-selbar .fsb-btn.danger { color: var(--danger); }
 .file-selbar .fsb-btn:disabled { opacity: 0.45; cursor: default; }
+/* The bar is fixed at the top and must never run past the screen edge (large phone text made the 🗑️ ลบ button fall outside): the buttons wrap onto a second line when they do not all fit. */
+.file-selbar { flex-wrap: wrap; row-gap: 0.35rem; }
+.file-selbar .fsb-btn { white-space: nowrap; }
+.file-selbar > span { flex: 1 1 0; min-width: 0; }
+@media (max-width: 559px) { .file-selbar .fsb-btn { padding: 0 0.55rem; } }
 .convert-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 0.8rem 1rem; border-radius: 14px; border: 1px solid var(--border-strong); background: var(--surface-muted); color: var(--text-primary); font: inherit; cursor: pointer; }
 .convert-choice b { font-size: 1rem; }
 .dl-pack { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0 0 0.8rem; border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; }
