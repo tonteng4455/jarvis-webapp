@@ -12,7 +12,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const r = await callBotInternal('/internal/google-status', { userId: session.lineUserId, detail: true }).catch(() => null);
   if (!r?.ok) return NextResponse.json({ error: 'bot_unreachable' }, { status: 502 });
-  return NextResponse.json({ connected: !!r.connected, email: r.email || null, driveFolderUrl: r.driveFolderUrl || null, connectUrl: r.connectUrl || null });
+  return NextResponse.json({ connected: !!r.connected, expired: !!r.expired, email: r.email || null, driveFolderUrl: r.driveFolderUrl || null, connectUrl: r.connectUrl || null });
 }
 
 export async function POST(request) {

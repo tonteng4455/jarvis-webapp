@@ -71,7 +71,14 @@ export default function GroupPage() {
         <b>📆 Google ของกลุ่ม</b>
         {!st ? <p className="muted">กำลังโหลด…</p> : st.connected ? (
           <>
-            <p className="muted" style={{ margin: '0.3rem 0 0.6rem' }}>🟢 เชื่อมแล้ว{st.email ? ` · ${st.email}` : ''} — นัดหมายของกลุ่มลงปฏิทินบัญชีนี้ และไฟล์ที่ส่งในกลุ่มเก็บในโฟลเดอร์ Bot_file ของบัญชีนี้</p>
+            {st.expired ? (
+              <div role="alert" data-act="google-expired">
+                <p style={{ margin: '0.3rem 0 0.6rem' }}>🔌 <b>การเชื่อมหมดอายุ</b>{st.email ? ` · ${st.email}` : ''} — Google ยกเลิกสิทธิ์ที่เคยให้ไว้ จึงเก็บไฟล์และลงปฏิทินไม่ได้ในตอนนี้ กด “เชื่อมใหม่” แล้วเลือกบัญชีเดิม ข้อมูลและโฟลเดอร์ที่เก็บไว้ยังอยู่ครบ</p>
+                <button type="button" className="glass-btn" data-act="reconnect-google" disabled={busy === 'connect'} onClick={() => connect(false)}>🔗 เชื่อมใหม่</button>
+              </div>
+            ) : (
+              <p className="muted" style={{ margin: '0.3rem 0 0.6rem' }}>🟢 เชื่อมแล้ว{st.email ? ` · ${st.email}` : ''} — นัดหมายของกลุ่มลงปฏิทินบัญชีนี้ และไฟล์ที่ส่งในกลุ่มเก็บในโฟลเดอร์ Bot_file ของบัญชีนี้</p>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               {st.driveFolderUrl && <a className="glass-btn-outline" style={{ color: 'var(--text-primary)' }} href={st.driveFolderUrl} target="_blank" rel="noopener noreferrer">📂 เปิดโฟลเดอร์ไดรฟ์</a>}
               <button className="glass-btn-outline" style={{ color: 'var(--text-primary)' }} data-act="switch-google" disabled={busy === 'connect'} onClick={() => connect(true)}>🔄 เปลี่ยนบัญชี Google</button>

@@ -124,7 +124,13 @@ function AccountInner() {
         {gcal?.error && <p className="muted">ตรวจสถานะไม่สำเร็จ ลองรีเฟรชหน้านี้</p>}
         {gcal && !gcal.error && gcal.connected && (
           <>
-            <p style={{ margin: '0 0 0.6rem' }} data-act="gcal-status">🟢 เชื่อมอยู่{gcal.email ? ` · ${gcal.email}` : ''}</p>
+            <p style={{ margin: '0 0 0.6rem' }} data-act="gcal-status">{gcal.expired ? '🔌 การเชื่อมหมดอายุ' : '🟢 เชื่อมอยู่'}{gcal.email ? ` · ${gcal.email}` : ''}</p>
+            {gcal.expired && (
+              <div role="alert" data-act="gcal-expired" style={{ margin: '0 0 0.7rem' }}>
+                <p className="muted" style={{ margin: '0 0 0.5rem' }}>Google ยกเลิกสิทธิ์ที่เคยให้ไว้ จึงลงนัดและเก็บไฟล์ใน Google ไม่ได้ในตอนนี้ กด “เชื่อมใหม่” แล้วเลือกบัญชีเดิม ข้อมูลที่เก็บไว้ยังอยู่ครบ</p>
+                {gcal.connectUrl && <a className="glass-btn" data-act="gcal-reconnect" href={gcal.connectUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>🔗 เชื่อมใหม่</a>}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               {gcal.driveFolderUrl && <a className="glass-btn-outline" style={{ color: 'var(--text-primary)', textDecoration: 'none' }} href={gcal.driveFolderUrl} target="_blank" rel="noopener noreferrer">📂 เปิดโฟลเดอร์ Drive</a>}
               <button type="button" className="glass-btn-outline" style={{ color: 'var(--text-primary)' }} data-act="gcal-disconnect" disabled={busy} onClick={disconnectGoogle}>🔌 ยกเลิกการเชื่อม</button>

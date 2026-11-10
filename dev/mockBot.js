@@ -80,8 +80,9 @@ export async function mockBotInternal(path, payload) {
     }
     case '/internal/google-status': {
       const off = payload.userId === 'mock-nodrive' || (globalThis.__mockGoogleOff ||= new Set()).has(payload.userId);
+      const expired = !off && (globalThis.__mockGoogleExpired ||= new Set()).has(payload.userId);
       return off ? { ok: true, connected: false, connectUrl: 'https://example.invalid/google/connect?mock=1' }
-        : { ok: true, connected: true, connectUrl: null, ...(payload.detail ? { email: 'mock@example.com', driveFolderUrl: 'https://drive.google.com/drive/folders/MOCKME' } : {}) };
+        : { ok: true, connected: true, expired, connectUrl: expired ? 'https://example.invalid/google/connect?mock=1' : null, ...(payload.detail ? { email: 'mock@example.com', driveFolderUrl: 'https://drive.google.com/drive/folders/MOCKME' } : {}) };
     }
     case '/internal/google-disconnect': { (globalThis.__mockGoogleOff ||= new Set()).add(payload.userId); return { ok: true, had: true }; }
     // ---- calendars (several Google calendars: personal + a work one shared in + a read-only holiday one)
@@ -202,8 +203,8 @@ export async function mockBotInternal(path, payload) {
       const g = (globalThis.__mockGroupCfg ||= {})[payload.groupId] ||= { connected: false, email: null, files: true, quoteText: false };
       if (payload.action === 'set') { if (typeof payload.files === 'boolean') g.files = payload.files; if (typeof payload.quoteText === 'boolean') g.quoteText = payload.quoteText; }
       if (payload.action === 'disconnect') { g.connected = false; g.email = null; }
-      if (payload.action === 'connect') { if (g.connected && !payload.replace) return { ok: true, alreadyConnected: true }; return { ok: true, url: 'https://accounts.google.com/o/oauth2/v2/auth?state=g.' + payload.groupId + '.1.' + (g.connected ? 'r' : 'n') + '.sig' }; }
-      return { ok: true, connected: g.connected, email: g.email, driveFolderUrl: g.connected ? 'https://drive.google.com/drive/folders/MOCKFOLDER' : null, files: g.files, quoteText: g.quoteText };
+      if (payload.action === 'connect') { if (g.connected && !payload.replace && !g.expired) return { ok: true, alreadyConnected: true }; return { ok: true, url: 'https://accounts.google.com/o/oauth2/v2/auth?state=g.' + payload.groupId + '.1.' + (g.connected ? 'r' : 'n') + '.sig' }; }
+      return { ok: true, connected: g.connected, expired: !!(g.connected && g.expired), email: g.email, driveFolderUrl: g.connected ? 'https://drive.google.com/drive/folders/MOCKFOLDER' : null, files: g.files, quoteText: g.quoteText };
     }
     case '/internal/calendar-sync':
     case '/internal/task-recurrence': return { ok: true, synced: true };
