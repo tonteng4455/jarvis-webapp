@@ -102,8 +102,7 @@ export default function GroupPage() {
       <div className="glass-card" style={{ marginTop: '0.8rem' }} data-act="group-switches">
         <b>🤖 บอทในกลุ่ม</b>
         <label className="push-check"><input type="checkbox" className="big-check" data-act="files-switch" checked={st ? st.files : true} disabled={!st || busy === 'patch'} onChange={e => patch({ files: e.target.checked }, e.target.checked ? 'เริ่มเก็บรูป/ไฟล์ที่ส่งในกลุ่ม' : 'หยุดเก็บรูป/ไฟล์ที่ส่งในกลุ่ม')} /> เก็บรูป/ไฟล์ที่ส่งในกลุ่มลงไดรฟ์ของกลุ่มอัตโนมัติ</label>
-        <label className="push-check"><input type="checkbox" className="big-check" data-act="quote-switch" checked={st ? st.quoteText : false} disabled={!st || busy === 'patch'} onChange={e => patch({ quoteText: e.target.checked }, e.target.checked ? 'เปิดการอ้างอิงข้อความแล้ว' : 'ปิดการอ้างอิงข้อความแล้ว')} /> จำข้อความของเพื่อนในกลุ่มไว้ 48 ชั่วโมง เพื่อให้ Quote ข้อความแล้วสั่งบอทจดโน้ต/เพิ่มนัดได้</label>
-        <p className="muted" style={{ margin: '0.3rem 0 0' }}>สมาชิกทุกคนเปลี่ยนค่าเหล่านี้ได้ — ตรงกับคำสั่ง “หยุดเก็บไฟล์” และ “เปิดการอ้างอิงข้อความ” ในกลุ่ม LINE</p>
+        <p className="muted" style={{ margin: '0.3rem 0 0' }}>สมาชิกทุกคนเปลี่ยนค่าเหล่านี้ได้ — ตรงกับคำสั่ง “หยุดเก็บไฟล์” ในกลุ่ม LINE (Quote ข้อความเพื่อนใช้ได้เลย ไม่ต้องเปิดอะไร)</p>
       </div>
 
       <div className="glass-card" style={{ marginTop: '0.8rem' }} data-act="group-push">
