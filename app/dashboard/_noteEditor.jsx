@@ -1145,6 +1145,15 @@ export function NoteEditorPanel({
 }) {
   const toast = useToast();
   const [pickerOpen, setPickerOpen] = useState(false);
+  // desktop / tablet: ⤢ stretches the editor over the whole window (a phone's editor is already full screen). Remembered between notes.
+  const [full, setFull] = useState(false);
+  useEffect(() => { try { if (localStorage.getItem('jarvis_note_full') === '1') setFull(true); } catch { /* no storage */ } }, []);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (full) root.setAttribute('data-note-full', '1'); else root.removeAttribute('data-note-full');
+    return () => root.removeAttribute('data-note-full');
+  }, [full]);
+  function toggleFull() { setFull(v => { const n = !v; try { localStorage.setItem('jarvis_note_full', n ? '1' : '0'); } catch { /* ok */ } return n; }); }
   const [pdfBusy, setPdfBusy] = useState(false);
   const [info, setInfo] = useState({ list: false, canIndent: false, canOutdent: false });
   const bodyRef = useRef(null);
@@ -1197,6 +1206,7 @@ export function NoteEditorPanel({
         <ToolBtn title={`รายการ: กดเพื่อสลับ เลขข้อ → จุด → ช่องติ๊ก → ข้อความ (ตอนนี้: ${LIST_LABEL[info.type] || 'ข้อความ'})`} active={info.list} className="ne-list" onClick={() => bodyRef.current?.cycle()}>{LIST_GLYPH[info.type] || '☰'}</ToolBtn>
         <ToolBtn title="ลดย่อหน้า" disabled={!info.canOutdent} onClick={() => bodyRef.current?.indent(-1)}>⇤</ToolBtn>
         <ToolBtn title="เพิ่มย่อหน้า" disabled={!info.canIndent} onClick={() => bodyRef.current?.indent(1)}>⇥</ToolBtn>
+        <ToolBtn title={full ? 'ย่อหน้าต่าง' : 'ขยายเต็มหน้า'} className="ne-expand" active={full} onClick={toggleFull}>{full ? '⤡' : '⤢'}</ToolBtn>
         <ToolBtn title="เสร็จสิ้น" className="ne-done" disabled={doneDisabled} onClick={onDone}>✓</ToolBtn>
       </div>
 
