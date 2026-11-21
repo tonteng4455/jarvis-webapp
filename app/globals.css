@@ -1033,3 +1033,9 @@ html[data-note-full="1"] .ne-toolbar { margin-left: calc(-1 * clamp(1rem, 4vw, 3
 /* expanded: the writing area takes all the free height, the category / undo bar sits at the bottom */
 html[data-note-full="1"] .note-editor-modal .kl-root { flex: 1 0 auto; }
 html[data-note-full="1"] .note-editor-modal .ne-bottom { margin-top: 0.4rem; }
+
+/* stand-alone ⇅ button (lists without a search box) */
+.sort-solo-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+.note-sort-btn.solo { position: static; transform: none; width: 40px; height: 40px; border: 1px solid var(--border-strong, rgba(128,128,128,.35)); background: var(--surface-muted); }
+.note-search-wrap input[type="search"]::-webkit-search-cancel-button { display: none; }
+.note-sort-menu.left { right: auto; left: 0; }

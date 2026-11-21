@@ -44,22 +44,24 @@ export async function GET(request) {
   const limitParam = parseInt(searchParams.get('limit') || '', 10);
   const limitN = Number.isFinite(limitParam) ? Math.min(500, Math.max(1, limitParam)) : 500;
   // withSeries: false when event_recurrence.sql has not been run yet — then this is exactly the list from before repeating appointments
-  const build = withSeries => {
-    let q = supabase.from('calendar_events').select(withSeries ? SERIES_SELECT : BASE_SELECT).eq('user_id', session.lineUserId).neq('status', 'cancelled');
+  const STAMPS = ', created_at, updated_at';          // for "edited most recently first" in the list (updated_at: updated_at.sql)
+  const build = (withSeries, stamps = false) => {
+    let q = supabase.from('calendar_events').select((withSeries ? SERIES_SELECT : BASE_SELECT) + (stamps ? STAMPS : '')).eq('user_id', session.lineUserId).neq('status', 'cancelled');
     if (withSeries) q = q.is('recurrence_rule', null);
     if (ranged) q = q.gte('start_time', from).lt('start_time', to).order('start_time', { ascending: true });
     else q = past ? q.lt('start_time', nowIso).order('start_time', { ascending: false }) : q.gte('start_time', nowIso).order('start_time', { ascending: true });
     return q.limit(limitN);
   };
-  let withSeries = true;
-  let { data, error } = await build(true);
+  let withSeries = true, stamps = true;
+  let { data, error } = await build(true, true);
+  if (error) { stamps = false; ({ data, error } = await build(true)); }
   if (error) { withSeries = false; ({ data, error } = await build(false)); }
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
 
   // repeating appointments: one row each, shown once per date inside the window (never hidden by the Google reconcile below)
   let seriesRows = [], seriesEvents = [];
   if (withSeries) {
-    const r = await supabase.from('calendar_events').select(SERIES_SELECT).eq('user_id', session.lineUserId).neq('status', 'cancelled').not('recurrence_rule', 'is', null).order('start_time', { ascending: true }).limit(100);
+    const r = await supabase.from('calendar_events').select(SERIES_SELECT + (stamps ? STAMPS : '')).eq('user_id', session.lineUserId).neq('status', 'cancelled').not('recurrence_rule', 'is', null).order('start_time', { ascending: true }).limit(100);
     seriesRows = r.error ? [] : r.data || [];
     const lo = ranged ? from : past ? new Date(Date.now() - 365 * 86400e3).toISOString() : nowIso;
     const hi = ranged ? to : past ? nowIso : new Date(Date.now() + 120 * 86400e3).toISOString();

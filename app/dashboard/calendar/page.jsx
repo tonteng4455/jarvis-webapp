@@ -7,6 +7,16 @@
 // Calendar through the bot Worker (see /api/calendar).
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { BY_EDITED, BY_TITLE, SortSolo, useSortPref, stampOf, thCompare } from '../_sort';
+
+const CAL_SORTS = [BY_EDITED, { key: 'date', icon: '📅', label: 'ตามวันที่นัด' }, BY_TITLE];
+// list view only (the month grid is always by day). Rows with no stamp (Google-only events) come after the stamped ones, by date.
+function orderEvents(list, key, past) {
+  if (!list || key === 'date') return list;
+  const stamped = e => !!(e.updated_at || e.created_at);
+  const by = key === 'title' ? (a, b) => thCompare(a.title, b.title) : (a, b) => (Number(stamped(b)) - Number(stamped(a))) || (stampOf(b) - stampOf(a));
+  return [...list].sort(by);
+}
 import { consumeDeepLinkId } from '../../../lib/deepLink';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, formatDate } from '../_components';
@@ -272,6 +282,7 @@ function CalendarPageInner() {
   const [editingId, setEditingId] = useState(deepLinkId || null);
   const [creating, setCreating] = useState(wantsNew);
   const [showPast, setShowPast] = useState(false);
+  const [sortKey, pickSort] = useSortPref('jarvis_calendar_sort', CAL_SORTS);
   const [cals, setCals] = useState(null);          // { connected, calendars, targetCalendarId, displayCalendarIds }
   const [showCals, setShowCals] = useState(false);
   const [calsBusy, setCalsBusy] = useState(false);
@@ -534,7 +545,8 @@ function CalendarPageInner() {
         <>
           <div className="page-head">
             <h2 className="cal-day-title">{showPast ? 'ที่ผ่านมาแล้ว' : 'ที่กำลังจะถึง'}</h2>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <SortSolo options={CAL_SORTS} value={sortKey} onChange={pickSort} />
               <button className="glass-btn-outline" onClick={() => { setShowPast(v => !v); setEditingId(null); }}>
                 {showPast ? '⬅️ ดูที่จะถึง' : '🕘 ดูที่ผ่านมาแล้ว'}
               </button>
@@ -545,7 +557,7 @@ function CalendarPageInner() {
           {events === null && <ListSkeleton />}
           {events?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showPast ? 'ยังไม่มีนัดหมายที่ผ่านมาแล้วครับ' : 'ไม่มีนัดหมายที่กำลังจะถึงครับ'}</p></div>}
           <div className="list-stack">
-            {events?.map(e => editingId === kOf(e)
+            {orderEvents(events, sortKey, showPast)?.map(e => editingId === kOf(e)
               ? <EventEditor key={kOf(e)} cals={cals} event={e} onSave={saveEvent} onCancel={() => setEditingId(null)} onConvert={ev => setConvert({ ev, to: null })} onExtend={extendSeries} />
               : <EventCard key={kOf(e)} cals={cals} e={e} showDate onEdit={setEditingId} onCancel={cancelEvent} onConvert={ev => setConvert({ ev, to: null })} />)}
           </div>

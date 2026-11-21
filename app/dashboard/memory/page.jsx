@@ -4,6 +4,9 @@
 // Rules are used BEFORE the AI, so they apply instantly and cost nothing. No AI on this page.
 
 import { useState, useEffect, useCallback } from 'react';
+import { BY_EDITED, BY_OLDEST, BY_TITLE, SortSolo, useSortPref, stampOf, thCompare } from '../_sort';
+
+const MEM_SORTS = [{ ...BY_EDITED, label: 'ใหม่สุดก่อน' }, BY_OLDEST, { ...BY_TITLE, label: 'คำที่สอน ก–ฮ' }];
 import { DashNav, NOTE_CATEGORIES, EXPENSE_CATEGORIES } from '../_components';
 import { apiGet, ErrorState, ListSkeleton, useRefreshOnReturn, useToast } from '../_ui';
 
@@ -31,6 +34,7 @@ export default function MemoryPage() {
   const [setup, setSetup] = useState(false);
   const [error, setError] = useState(false);
   const [kindKey, setKindKey] = useState('expense');
+  const [sortKey, pickSort] = useSortPref('jarvis_memory_sort', MEM_SORTS);
   const [trigger, setTrigger] = useState('');
   const [value, setValue] = useState('food');
   const [saving, setSaving] = useState(false);
@@ -121,8 +125,9 @@ export default function MemoryPage() {
       {error && <ErrorState onRetry={() => { setItems(null); load(); }} />}
       {!error && items === null && <ListSkeleton rows={3} height={56} />}
       {items?.length === 0 && !setup && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>ยังไม่มีอะไรที่จำไว้ครับ ลองสอนสักข้อด้านบนได้เลย</p></div>}
+      {items?.length > 1 && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}><SortSolo options={MEM_SORTS} value={sortKey} onChange={pickSort} /></div>}
       <div className="list-stack">
-        {items?.map(e => (
+        {(items && [...items].sort(sortKey === 'oldest' ? (a, b) => stampOf(a) - stampOf(b) : sortKey === 'title' ? (a, b) => thCompare(a.trigger, b.trigger) : (a, b) => stampOf(b) - stampOf(a)))?.map(e => (
           <div key={e.id} className="glass-card exp-row" style={{ cursor: 'default' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="exp-memo">“{e.trigger}”</div>

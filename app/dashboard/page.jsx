@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DashNav, NOTE_CATEGORIES } from './_components';
+import { BY_EDITED, BY_OLDEST, BY_TITLE, SortMenu, useSortPref, thCompare } from './_sort';
 import { NoteEditorPanel, EditorOverlay, useNoteImages, DownloadSheet, COLORS, colorBg } from './_noteEditor';
 import { ConvertToTaskSheet, ConvertToEventSheet, noteSource } from './_taskEditor';
 import { ConvertChooser, convertItem } from './_convert';
@@ -340,9 +341,7 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
 // target-index detection unambiguous — no column-jumping to reason
 // about, just "which row am I closest to vertically".
 const SORT_OPTIONS = [
-  { key: 'updated', icon: '🕘', label: 'แก้ไขล่าสุดก่อน' },
-  { key: 'oldest', icon: '🕰️', label: 'เก่าสุดก่อน' },
-  { key: 'title', icon: '🔤', label: 'ชื่อ ก–ฮ' },
+  BY_EDITED, BY_OLDEST, BY_TITLE,
   { key: 'manual', icon: '✋', label: 'เรียงเอง (ลากสลับได้)' },
 ];
 // → a new array. `frozen(id)` gives a note's earlier stamp while it is open in the editor (autosave would otherwise move it under the cursor).
@@ -353,7 +352,7 @@ function sortNotes(list, key, frozen) {
   if (key === 'manual') return list;
   const stamp = n => Date.parse(frozen?.(n.id) || n.updated_at || n.created_at || 0) || 0;
   const by = key === 'oldest' ? (a, b) => stamp(a) - stamp(b)
-    : key === 'title' ? (a, b) => String(a.title || a.content || '').trim().localeCompare(String(b.title || b.content || '').trim(), 'th')
+    : key === 'title' ? (a, b) => thCompare(a.title || a.content, b.title || b.content)
     : (a, b) => stamp(b) - stamp(a);
   return [...list].sort(by);
 }
@@ -452,11 +451,8 @@ function NotesPageInner() {
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [viewMode, setViewMode] = useState('all'); // 'all' | 'grouped'
-  const [sortKey, setSortKey] = useState('updated');   // 'updated' (newest first) | 'oldest' | 'title' | 'manual' (the order the person dragged)
-  const [sortOpen, setSortOpen] = useState(false);
   const lastStamp = useRef(new Map());                 // id → updated_at as last shown, so a note being edited keeps its place until it is closed
-  useEffect(() => { try { const v = localStorage.getItem('jarvis_notes_sort'); if (SORT_OPTIONS.some(o => o.key === v)) setSortKey(v); } catch { /* no storage */ } }, []);
-  function pickSort(k) { setSortKey(k); setSortOpen(false); try { localStorage.setItem('jarvis_notes_sort', k); } catch { /* ok */ } }
+  const [sortKey, pickSort] = useSortPref('jarvis_notes_sort', SORT_OPTIONS);   // 'updated' (newest first, the default) | 'oldest' | 'title' | 'manual' (the order the person dragged)
   const [composerEditing, setComposerEditing] = useState(false);
   const [status, setStatus] = useState(null);
   const editingIds = useRef(new Set());
@@ -773,21 +769,7 @@ function NotesPageInner() {
             <div className="note-search-wrap">
               <input className="glass-input" placeholder="🔍 ค้นหาโน้ต..." value={search}
                 onChange={e => setSearch(e.target.value)} style={{ width: '100%', paddingRight: '2.6rem' }} />
-              <button type="button" className="note-sort-btn" data-act="sort-btn" aria-haspopup="menu" aria-expanded={sortOpen}
-                title={`เรียง: ${SORT_OPTIONS.find(o => o.key === sortKey)?.label}`} aria-label="เลือกการเรียงโน้ต" onClick={() => setSortOpen(v => !v)}>⇅</button>
-              {sortOpen && (
-                <>
-                  <div className="note-sort-scrim" onClick={() => setSortOpen(false)} />
-                  <div className="note-sort-menu" role="menu" data-act="sort-menu">
-                    {SORT_OPTIONS.map(o => (
-                      <button key={o.key} type="button" role="menuitemradio" aria-checked={sortKey === o.key} data-sort={o.key}
-                        className={sortKey === o.key ? 'on' : ''} onClick={() => pickSort(o.key)}>
-                        <span>{o.icon}</span><span>{o.label}</span><span className="tick">{sortKey === o.key ? '✓' : ''}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+              <SortMenu inField options={SORT_OPTIONS} value={sortKey} onChange={pickSort} />
             </div>
             <div className="dash-nav" style={{ margin: 0, padding: 0 }}>
               <span className={`dash-nav-item${viewMode === 'all' ? ' active' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setViewMode('all')}>📌 ทั้งหมด</span>

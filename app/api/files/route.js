@@ -18,12 +18,9 @@ export async function GET() {
   const supabase = supabaseAdmin();
   await backfillLibrary(supabase, session.lineUserId).catch(e => console.error('image library backfill:', e?.message));      // pictures made before the library existed
   const base = 'id, file_name, kind, mime_type, size_bytes, storage, public_url, drive_file_id, created_at';
-  let { data, error } = await supabase
-    .from('user_files')
-    .select(base + ', source, note_id, original_name, description')
-    .eq('user_id', session.lineUserId)
-    .order('created_at', { ascending: false })
-    .limit(500);
+  const list = cols => supabase.from('user_files').select(cols).eq('user_id', session.lineUserId).order('created_at', { ascending: false }).limit(500);
+  let { data, error } = await list(base + ', source, note_id, original_name, description, updated_at');      // updated_at: updated_at.sql
+  if (error) ({ data, error } = await list(base + ', source, note_id, original_name, description'));
   if (error) {                                                   // before note_images.sql / file_rename.sql have been run some columns are missing
     ({ data, error } = await supabase.from('user_files').select(base + ', source, note_id').eq('user_id', session.lineUserId).order('created_at', { ascending: false }).limit(500));
     if (error) ({ data, error } = await supabase.from('user_files').select(base).eq('user_id', session.lineUserId).order('created_at', { ascending: false }).limit(500));

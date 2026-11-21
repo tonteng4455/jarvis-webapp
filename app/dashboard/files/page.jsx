@@ -4,6 +4,9 @@
 // Google Drive, in a "Bot_file" folder (see the bot's uploadToDrive). This page is for uploading, browsing, opening and deleting them.
 
 import { useState, useEffect, useRef } from 'react';
+import { BY_EDITED, BY_OLDEST, BY_TITLE, SortMenu, useSortPref, stampOf, thCompare } from '../_sort';
+
+const FILE_SORTS = [BY_EDITED, BY_OLDEST, BY_TITLE, { key: 'size', icon: '📦', label: 'ขนาดใหญ่สุดก่อน' }];
 import { createPortal } from 'react-dom';
 import { DashNav } from '../_components';
 import { useSpace } from '../_space';
@@ -210,6 +213,7 @@ export default function FilesPage() {
   const [busy, setBusy] = useState(false);
   const [uploads, setUploads] = useState([]);       // the upload tray: { key, name, size, file, status: 'wait' | 'up' | 'done' | 'err', pct, error, connectUrl }
   const [dragging, setDragging] = useState(false);
+  const [sortKey, pickSort] = useSortPref('jarvis_files_sort', FILE_SORTS);
   const [query, setQuery] = useState('');           // search box: words in the name, the first name, the description or the note's title
   const picker = useRef(null);
   const running = useRef(0);
@@ -237,7 +241,7 @@ export default function FilesPage() {
   useRefreshOnReturn(load);
 
   function saved(file, driveFailed) {
-    setData(prev => ({ ...prev, files: prev.files.map(x => (x.id === file.id ? { ...x, ...file, note_title: x.note_title } : x)) }));
+    setData(prev => ({ ...prev, files: prev.files.map(x => (x.id === file.id ? { ...x, ...file, note_title: x.note_title, updated_at: new Date().toISOString() } : x)) }));
     setOpen(o => (o && o.id === file.id ? { ...o, ...file, note_title: o.note_title } : o));
     toast.show(driveFailed ? 'เปลี่ยนชื่อในระบบแล้ว แต่ในไฟล์บน Google Drive ไม่สำเร็จ' : '✅ บันทึกแล้ว');
   }
@@ -328,7 +332,8 @@ export default function FilesPage() {
   const srcOk = f => (filterSrc === 'all' ? true : filterSrc === 'note' ? isNote(f) && !!f.note_id : filterSrc === 'lib' ? isNote(f) && !f.note_id : filterSrc === 'web' ? f.source === 'web' : !isNote(f) && f.source !== 'web');
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const hit = f => !words.length || words.every(w => `${f.file_name || ''} ${f.original_name || ''} ${f.description || ''} ${f.note_title || ''}`.toLowerCase().includes(w));
-  const shown = files.filter(f => (filterKind === 'all' || f.kind === filterKind) && srcOk(f) && hit(f));
+  const byKey = sortKey === 'oldest' ? (a, b) => stampOf(a) - stampOf(b) : sortKey === 'title' ? (a, b) => thCompare(a.file_name, b.file_name) : sortKey === 'size' ? (a, b) => (Number(b.size_bytes) || 0) - (Number(a.size_bytes) || 0) : (a, b) => stampOf(b) - stampOf(a);
+  const shown = files.filter(f => (filterKind === 'all' || f.kind === filterKind) && srcOk(f) && hit(f)).sort(byKey);
   const srcCounts = { note: files.filter(f => isNote(f) && f.note_id).length, lib: files.filter(f => isNote(f) && !f.note_id).length, web: files.filter(f => f.source === 'web').length, chat: files.filter(f => !isNote(f) && f.source !== 'web').length };
   const visibleSelCount = sel ? shown.filter(x => sel.has(x.id)).length : 0;
   const kindCounts = files.reduce((acc, f) => { acc[f.kind] = (acc[f.kind] || 0) + 1; return acc; }, {});
@@ -366,7 +371,10 @@ export default function FilesPage() {
       {data && (
         <>
           {files.length > 0 && (
-            <input type="search" className="glass-input" data-testid="file-search" placeholder="🔎 ค้นหาจากชื่อ / ชื่อเดิม / คำอธิบาย" aria-label="ค้นหาไฟล์" value={query} onChange={e => setQuery(e.target.value)} style={{ width: '100%', marginBottom: '0.6rem' }} />
+            <div className="note-search-wrap" style={{ marginBottom: '0.6rem', width: '100%', flex: 'none' }}>
+              <input type="search" className="glass-input" data-testid="file-search" placeholder="🔎 ค้นหาจากชื่อ / ชื่อเดิม / คำอธิบาย" aria-label="ค้นหาไฟล์" value={query} onChange={e => setQuery(e.target.value)} style={{ width: '100%', paddingRight: '2.6rem' }} />
+              <SortMenu inField options={FILE_SORTS} value={sortKey} onChange={pickSort} />
+            </div>
           )}
           {(srcCounts.note + srcCounts.lib + srcCounts.web > 0) && (
             <div className="dash-nav" style={{ margin: '0 0 0.6rem' }} role="group" aria-label="แหล่งที่มา">

@@ -14,14 +14,13 @@ export async function GET(request) {
   const fromOk = from && !Number.isNaN(Date.parse(from));
 
   const supabase = supabaseAdmin();
-  let q = supabase
-    .from('expenses')
-    .select('id, type, amount, category, memo, created_at')
-    .eq('user_id', session.lineUserId);
-  if (fromOk) q = q.gte('created_at', new Date(Date.parse(from)).toISOString());
-  const { data, error } = await q
-    .order('created_at', { ascending: false })
-    .limit(500);
+  const run = cols => {
+    let q = supabase.from('expenses').select(cols).eq('user_id', session.lineUserId);
+    if (fromOk) q = q.gte('created_at', new Date(Date.parse(from)).toISOString());
+    return q.order('created_at', { ascending: false }).limit(500);
+  };
+  let { data, error } = await run('id, type, amount, category, memo, created_at, updated_at');      // updated_at: updated_at.sql
+  if (error) ({ data, error } = await run('id, type, amount, category, memo, created_at'));
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
 

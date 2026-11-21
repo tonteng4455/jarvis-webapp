@@ -7,8 +7,18 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { consumeDeepLinkId } from '../../../lib/deepLink';
 import { useSearchParams } from 'next/navigation';
+import { BY_EDITED, BY_OLDEST, SortSolo, useSortPref, stampOf } from '../_sort';
 import { DashNav, CategorySelect, EXPENSE_CATEGORIES } from '../_components';
 import { apiGet, DraftNote, ResumeDraft, ErrorState, Fab, ListSkeleton, useDraft, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
+
+const EXP_SORTS = [
+  BY_EDITED,
+  { key: 'newest', icon: '📅', label: 'วันที่ ใหม่ → เก่า' },
+  { key: 'oldest', icon: '🕰️', label: 'วันที่ เก่า → ใหม่' },
+  { key: 'big', icon: '⬆️', label: 'จำนวนเงินมากสุดก่อน' },
+  { key: 'small', icon: '⬇️', label: 'จำนวนเงินน้อยสุดก่อน' },
+];
+const GROUPED_SORTS = ['newest', 'oldest'];       // the others are one flat list (a day header would repeat)
 
 export default function ExpensesPage() {
   return (
@@ -81,6 +91,7 @@ function ExpenseEditor({ expense, categories, onSave, onCancel, onDelete }) {
 }
 
 function ExpensesPageInner() {
+  const [sortKey, pickSort] = useSortPref('jarvis_expenses_sort', EXP_SORTS);
   const toast = useToast();
   const searchParams = useSearchParams();
   const [expenses, setExpenses] = useState(null);
@@ -176,9 +187,13 @@ function ExpensesPageInner() {
       if (e.type === 'income') monthIn += amt; else monthOut += amt;
     }
   }
-  const shown = filter === 'all' ? list : list.filter(e => e.type === filter);
+  const made = e => Date.parse(e.created_at) || 0, amt = e => parseFloat(e.amount) || 0;
+  const by = { updated: (a, b) => stampOf(b) - stampOf(a), newest: (a, b) => made(b) - made(a), oldest: (a, b) => made(a) - made(b), big: (a, b) => amt(b) - amt(a), small: (a, b) => amt(a) - amt(b) }[sortKey] || ((a, b) => stampOf(b) - stampOf(a));
+  const shown = [...(filter === 'all' ? list : list.filter(e => e.type === filter))].sort(by);
+  const flat = !GROUPED_SORTS.includes(sortKey);
   const groups = [];
-  for (const e of shown) {
+  if (flat) { if (shown.length) groups.push({ k: 'flat', label: null, items: shown }); }
+  else for (const e of shown) {
     const k = dayKey(e.created_at);
     if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, label: dayLabel(e.created_at), items: [] });
     groups[groups.length - 1].items.push(e);
@@ -216,6 +231,7 @@ function ExpensesPageInner() {
             <button type="button" className="chip" onClick={exportToSheet} disabled={exporting} style={{ marginLeft: 'auto' }}>
               {exporting ? 'กำลังส่งออก...' : '📊 ส่งออก Sheets'}
             </button>
+            <SortSolo options={EXP_SORTS} value={sortKey} onChange={pickSort} />
           </div>
 
           {adding && <div style={{ marginBottom: '0.8rem' }}><ExpenseEditor key="new" expense={{}} categories={categoryOptions} onSave={saveExpense} onCancel={() => setAdding(false)} /></div>}
@@ -223,7 +239,7 @@ function ExpensesPageInner() {
 
           {groups.map(g => (
             <section key={g.k} style={{ marginBottom: '0.9rem' }}>
-              <div className="group-label">{g.label}</div>
+              {g.label && <div className="group-label">{g.label}</div>}
               <div className="list-stack">
                 {g.items.map(e => editingId === String(e.id)
                   ? <ExpenseEditor key={e.id} expense={e} categories={categoryOptions} onSave={saveExpense} onCancel={() => setEditingId(null)} onDelete={deleteExpense} />
@@ -232,7 +248,7 @@ function ExpensesPageInner() {
                       <span className="exp-icon">{catIcon(e.category, e.type)}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="exp-memo">{e.memo || e.category || '-'}</div>
-                        <div className="muted">{e.category}{' · '}{new Date(e.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
+                        <div className="muted">{e.category}{' · '}{flat ? new Date(e.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) + ' ' : ''}{new Date(e.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</div>
                       </div>
                       <div className="exp-amount" style={{ color: e.type === 'income' ? 'var(--success)' : 'var(--danger)' }}>
                         {e.type === 'income' ? '+' : '-'}{money(e.amount)}

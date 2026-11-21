@@ -14,6 +14,16 @@ import { ConvertChooser, convertItem, taskToNotePayload } from '../_convert';
 import { previewText } from '../../../lib/noteBlocks';
 import { dueState, sortTasks } from '../../../lib/taskDue';
 import { AddedBy } from '../_space';
+import { BY_EDITED, BY_OLDEST, BY_TITLE, SortSolo, useSortPref, stampOf, thCompare } from '../_sort';
+
+const TASK_SORTS = [BY_EDITED, { key: 'due', icon: '⏰', label: 'ใกล้ครบกำหนดก่อน' }, BY_OLDEST, BY_TITLE];
+// open tasks first in every order (finished ones sink to the bottom)
+function orderTasks(list, key) {
+  if (!list) return list;
+  if (key === 'due') return sortTasks(list);
+  const by = key === 'oldest' ? (a, b) => stampOf(a) - stampOf(b) : key === 'title' ? (a, b) => thCompare(a.task_name, b.task_name) : (a, b) => stampOf(b) - stampOf(a);
+  return [...list].sort((a, b) => (Number(!!a.is_done) - Number(!!b.is_done)) || by(a, b));
+}
 
 const RECURRENCE_LABEL = { daily: '🔁 ทุกวัน', weekly: '🔁 ทุกสัปดาห์', monthly: '🔁 ทุกเดือน' };
 
@@ -130,6 +140,7 @@ function TasksPageInner() {
   const [status, setStatus] = useState(null);
   const [convert, setConvert] = useState(null);     // { task, to: null | 'event' } — the "เปลี่ยนเป็น…" flow
   const [editor, setEditor] = useState(null);          // null | 'new' | the task being edited
+  const [sortKey, pickSort] = useSortPref('jarvis_tasks_sort', TASK_SORTS);
   const searchParams = useSearchParams();
   const autoEditId = searchParams.get('id');
 
@@ -181,7 +192,8 @@ function TasksPageInner() {
   // → true when the server has it, false when it could not be sent (the editor then keeps the change marked "unsent" and retries)
   const offlineToastAt = useRef(0);
   async function updateTask(id, patch) {
-    setTasks(prev => prev && ('due_at' in patch ? sortTasks(prev.map(t => t.id === id ? { ...t, ...patch } : t)) : prev.map(t => t.id === id ? { ...t, ...patch } : t)));
+    const touched = { ...patch, updated_at: new Date().toISOString() };          // so "edited most recently first" is right at once
+    setTasks(prev => prev && ('due_at' in patch ? sortTasks(prev.map(t => t.id === id ? { ...t, ...touched } : t)) : prev.map(t => t.id === id ? { ...t, ...touched } : t)));
     let res;
     try { res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), keepalive: true }); }
     catch {
@@ -230,9 +242,12 @@ function TasksPageInner() {
       <DashNav />
       <div className="page-head">
         <h1 className="page-title" style={{ marginBottom: 0 }}>✅ งานของฉัน</h1>
-        <button className="glass-btn-outline" onClick={() => { const v = !showArchived; setShowArchived(v); setTasks(null); load(v); }}>
-          {showArchived ? '⬅️ กลับไปงานปกติ' : '🗄️ ดูคลังเก็บ'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+          <SortSolo options={TASK_SORTS} value={sortKey} onChange={pickSort} />
+          <button className="glass-btn-outline" onClick={() => { const v = !showArchived; setShowArchived(v); setTasks(null); load(v); }}>
+            {showArchived ? '⬅️ กลับไปงานปกติ' : '🗄️ ดูคลังเก็บ'}
+          </button>
+        </div>
       </div>
       {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
       {!showArchived && <AddBar onOpen={() => setEditor('new')} />}
@@ -240,7 +255,7 @@ function TasksPageInner() {
       {!error && tasks === null && <ListSkeleton />}
       {tasks?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showArchived ? 'ยังไม่มีงานในคลังเก็บ' : 'ไม่มีงานค้างครับ 🎉'}</p></div>}
       <div className="list-stack">
-        {tasks?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} onOpen={setEditor} onConvert={t => setConvert({ task: t, to: null })} autoEditId={autoEditId} />)}
+        {orderTasks(tasks, sortKey)?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} onOpen={setEditor} onConvert={t => setConvert({ task: t, to: null })} autoEditId={autoEditId} />)}
       </div>
       {!showArchived && <Fab onClick={() => setEditor('new')} label="เพิ่มงาน" />}
       {editor && (
