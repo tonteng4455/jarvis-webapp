@@ -137,12 +137,25 @@
   .no-print { display: none !important; }
   .wc-sec h3.only-print { display: block; margin: 0.6rem 0 0.2rem; font-size: 1rem; }
   .wc-os-pane { display: block !important; }
+  .wc-os-pane.wc-block { display: grid !important; }
   .wc-page-root { max-width: none; padding: 0; color: #1d1d1f; }
-  .wc-sec { box-shadow: none; background: #fff; border-color: #ddd; margin-top: 0.9rem; }
+  /* the page is cut between blocks (a block = steps + pictures + tip), never through one; a section's frame is dropped on paper so a cut never slices a border */
+  .wc-sec { box-shadow: none; background: transparent; border: 0; border-radius: 0; padding: 0; margin-top: 1rem; }
+  .wc-sec h2 { padding-bottom: 0.25rem; border-bottom: 2px solid #0f9c8f; }
+  .wc-block { break-inside: avoid; page-break-inside: avoid; margin-bottom: 0.5rem; }
+  /* steps on the left, the pictures beside them (not under): a block takes about half the height */
+  .wc-block { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; align-items: start; }
+  .wc-block > * { grid-column: 1 / -1; }
+  .wc-block > .wc-steps { grid-column: 1; }
+  .wc-block > .wc-shots { grid-column: 2; flex-wrap: nowrap; justify-content: flex-start; margin: 0; }
+  .wc-block > .wc-steps + .wc-shots { grid-row: span 1; }
+  .wc-hero { padding-top: 0; }
+  /* one topic per page: Google, LINE (add + summary), appointments, money */
+  #google, #line-add, #line-event, #line-money { break-before: page; page-break-before: always; margin-top: 0; }
   .wc-fig, .wc-step, .wc-tip, .wc-shots { break-inside: avoid; page-break-inside: avoid; }
-  .wc-sec h2, .wc-sec h3 { break-after: avoid; page-break-after: avoid; }
+  .wc-sec h2, .wc-sec h3, .wc-lead, .wc-p, .wc-two, .wc-tries { break-after: avoid; page-break-after: avoid; }
   .wc-phone, .wc-hl, .wc-num, .wc-sec h2 span, .wc-tip, .wc-try, .wc-hero img, .wc-screen, .wc-flex-head, .wc-oa-cover, .wc-bubble, .wc-chips span { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .wc-phone { box-shadow: none; }
-  .wc-fig { zoom: 0.74; }                 /* smaller phones on paper: about 3 across, and a section's pictures fit under its steps */
+  .wc-fig { zoom: 0.66; }                 /* smaller phones on paper: about 3 across, and a section's pictures fit under its steps */
   .wc-shots { gap: 0.2rem 0.5rem; margin: 0.2rem 0; }
 }

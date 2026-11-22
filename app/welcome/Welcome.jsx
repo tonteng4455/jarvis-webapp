@@ -58,7 +58,7 @@ export default function Welcome() {
           <button type="button" role="tab" aria-selected={os === 'ios'} className={os === 'ios' ? 'on' : ''} onClick={() => setOs('ios')}>🍎 iPhone (iOS)</button>
         </div>
 
-        <div className={`wc-os-pane${os === 'android' ? ' show' : ''}`} data-os="android">
+        <div className={`wc-os-pane wc-block${os === 'android' ? ' show' : ''}`} data-os="android">
           <h3 className="only-print">🤖 Android</h3>
           <Steps>
             <Step n="1" title="เปิดเว็บ Jarvis ด้วย Chrome">ถ้าได้ลิงก์ใน LINE ให้เลือก “เปิดในเบราว์เซอร์” แล้วเลือก Chrome (เปิดในหน้าต่างของ LINE เองจะติดตั้งไม่ได้)</Step>
@@ -69,7 +69,7 @@ export default function Welcome() {
           <Tip>ถ้าไม่เห็น “ติดตั้งแอป” ลองรีเฟรชหน้าเว็บ 1 ครั้ง หรือใช้ Chrome เวอร์ชันล่าสุด</Tip>
         </div>
 
-        <div className={`wc-os-pane${os === 'ios' ? ' show' : ''}`} data-os="ios">
+        <div className={`wc-os-pane wc-block${os === 'ios' ? ' show' : ''}`} data-os="ios">
           <h3 className="only-print">🍎 iPhone (iOS)</h3>
           <Steps>
             <Step n="1" title="เปิดเว็บ Jarvis ด้วย Safari">ต้องเป็น Safari เท่านั้น (ถ้าได้ลิงก์ใน LINE ให้เลือก “เปิดใน Safari” หรือคัดลอกลิงก์ไปเปิดใน Safari)</Step>
@@ -81,22 +81,27 @@ export default function Welcome() {
           <Tip>การแจ้งเตือนเด้งบน iPhone ใช้ได้เมื่อติดตั้งเป็นแอปแล้วเท่านั้น (iOS 16.4 ขึ้นไป)</Tip>
         </div>
 
+        <div className="wc-block">
         <h3 className="wc-sub">เข้าสู่ระบบครั้งแรก</h3>
         <Steps>
           <Step n="1" title="เปิดแอป Jarvis แล้วกด “เข้าสู่ระบบด้วย LINE”">อนุญาตครั้งเดียว ต่อไปจะเข้าอัตโนมัติ — หรือเลือก “เข้าสู่ระบบด้วย Google” ก็ได้ (ดูหัวข้อถัดไป)</Step>
           <Step n="2" title="จะเข้าหน้าแชท/วันนี้ ใช้แถบเมนูล่างสลับ โน้ต · งาน · นัดหมาย · เงิน · ไฟล์" />
         </Steps>
+        </div>
       </section>
 
       {/* ============ 2. Google ============ */}
       <section id="google" className="wc-sec">
         <h2><span>2</span> ลิงก์บัญชี Google กับเว็บแอป</h2>
+        <div className="wc-block">
         <p className="wc-lead">มี 2 อย่างที่ต่างกัน ทำอย่างใดอย่างหนึ่งหรือทั้งสองก็ได้ — ไม่เชื่อมก็ใช้โน้ต งาน และรายรับ-รายจ่ายได้ปกติ</p>
         <div className="wc-two">
           <div className="wc-box"><b>🔵 ผูก Google เพื่อเข้าสู่ระบบ</b><p>เข้าเว็บแอปด้วย Google แทนหรือควบคู่กับ LINE ข้อมูลทั้งหมดเป็นชุดเดียวกัน</p></div>
           <div className="wc-box"><b>📆 เชื่อม Google Calendar + Drive</b><p>นัดที่จดไว้ไปอยู่ในปฏิทินของคุณ (และเตือนบนมือถือ) รูป/ไฟล์เก็บใน Drive ของคุณเอง</p></div>
         </div>
 
+        </div>
+        <div className="wc-block">
         <h3 className="wc-sub">ก. ผูก Google เพื่อเข้าสู่ระบบ</h3>
         <Steps>
           <Step n="1" title="ในเว็บแอป แตะรูปโปรไฟล์มุมขวาบน → “👤 บัญชีและการเข้าสู่ระบบ”" />
@@ -104,7 +109,9 @@ export default function Welcome() {
           <Step n="3" title="เลือกบัญชี Google ของคุณ">ถ้าขึ้นว่าบัญชีนี้มีข้อมูลอยู่แล้ว จะมีให้เลือก “รวมบัญชี” ได้ (ทำย้อนกลับไม่ได้ แต่ไม่มีข้อมูลหาย)</Step>
         </Steps>
         <Shots><MenuAccount /><LinkGoogle /><PickGoogle /></Shots>
+        </div>
 
+        <div className="wc-block">
         <h3 className="wc-sub">ข. เชื่อม Google Calendar และ Drive</h3>
         <Steps>
           <Step n="1" title="หน้าเดียวกัน เลื่อนลงไปที่การ์ด “📆 Google Calendar และ Drive”" />
@@ -113,11 +120,13 @@ export default function Welcome() {
         </Steps>
         <Shots><ConnectCalendar /><GoogleAllow /></Shots>
         <Tip>ถ้าวันหนึ่งขึ้นว่า “การเชื่อมหมดอายุ” แค่กด “🔗 เชื่อมใหม่” อีกครั้ง ข้อมูลเดิมไม่หาย</Tip>
+        </div>
       </section>
 
       {/* ============ 3. LINE ============ */}
       <section id="line-add" className="wc-sec">
         <h2><span>3</span> ใน LINE: เพิ่ม Jarvis เป็นเพื่อน</h2>
+        <div className="wc-block">
         <Steps>
           <Step n="1" title="เปิดลิงก์เพิ่มเพื่อน หรือค้นหา “Jarvis” ใน LINE">
             {LINE_OA_URL ? <a className="glass-btn wc-oa-link no-print" href={LINE_OA_URL}>💬 เพิ่ม Jarvis เป็นเพื่อน</a> : null}
@@ -134,11 +143,13 @@ export default function Welcome() {
           ]} />
         </Shots>
         <Tip>ปุ่ม “🌐 เปิดเว็บ” ใต้ข้อความตอบกลับ จะพาไปดูสิ่งที่เพิ่งบันทึกบนเว็บแอปได้ทันที</Tip>
+        </div>
       </section>
 
       <section id="line-summary" className="wc-sec">
         <h2><span>4</span> สรุปข้อความยาว ๆ</h2>
         <p className="wc-lead">ได้ข้อความยาวจากกลุ่มหรือเพื่อน? ส่งต่อให้ Jarvis แล้วให้สรุปให้</p>
+        <div className="wc-block">
         <Steps>
           <Step n="1" title="ส่งต่อ (Forward) หรือคัดลอกข้อความนั้นมาในแชท Jarvis" />
           <Step n="2" title="กดค้างที่ข้อความนั้น แล้วเลือก “ตอบกลับ” (Reply)" />
@@ -152,14 +163,18 @@ export default function Welcome() {
           ]} />
         </Shots>
         <Tip>ตอบกลับคำสรุปของ Jarvis แล้วถามต่อได้เลย เช่น “ต้องเตรียมอะไรบ้าง” — ส่งรูปเอกสารมาแล้วตอบกลับว่า “สรุป” ก็ได้</Tip>
+        </div>
       </section>
 
       <section id="line-event" className="wc-sec">
         <h2><span>5</span> สร้างนัดหมายจากข้อความ</h2>
         <p className="wc-lead">มี 2 วิธี — พิมพ์เอง หรือให้ Jarvis อ่านวันเวลาจากข้อความที่มีคนส่งมา</p>
+        <div className="wc-block">
         <h3 className="wc-sub">วิธีที่ 1: พิมพ์เอง</h3>
         <p className="wc-p">พิมพ์ “นัด” ตามด้วยเรื่อง วัน และเวลา เหมือนพูดกับคน</p>
         <div className="wc-tries"><Try>นัด ประชุมทีม พรุ่งนี้ 10 โมง</Try><Try>นัดหมอฟัน 25 พ.ย. 14:00 ที่คลินิก</Try><Try>นัด ส่งงาน วันศุกร์ 9 โมง เตือนก่อน 1 วัน</Try></div>
+        </div>
+        <div className="wc-block">
         <h3 className="wc-sub">วิธีที่ 2: ให้ Jarvis อ่านจากข้อความ</h3>
         <Steps>
           <Step n="1" title="ส่งต่อหรือคัดลอกข้อความที่บอกวันเวลาประชุม มาในแชท Jarvis" />
@@ -178,11 +193,13 @@ export default function Welcome() {
           ]} />
         </Shots>
         <Tip>ถ้าข้อความไม่บอกเวลา Jarvis จะใส่ 09:00 ให้ก่อน แก้ได้ที่ปุ่ม “✏️ แก้” — เชื่อม Google Calendar ไว้แล้วนัดจะไปขึ้นในปฏิทินของคุณเอง</Tip>
+        </div>
       </section>
 
       <section id="line-money" className="wc-sec">
         <h2><span>6</span> จดรายรับ-รายจ่าย</h2>
         <p className="wc-lead">พิมพ์สั้น ๆ ว่าใช้ไปหรือได้มาเท่าไร Jarvis แยกหมวดให้เอง</p>
+        <div className="wc-block">
         <Steps>
           <Step n="1" title="พิมพ์ รายการ + จำนวนเงิน"><span className="wc-tries inline"><Try>ใช้ไป 120 ข้าวกลางวัน</Try><Try>ค่ากาแฟ 65</Try><Try>ได้เงินเดือน 30000</Try></span></Step>
           <Step n="2" title="พิมพ์ผิด? กด “↩️ เลิกทำ” ใต้ข้อความตอบกลับ" />
@@ -201,6 +218,7 @@ export default function Welcome() {
           ]} />
         </Shots>
         <Tip>มีใบเสร็จ/สลิป? ส่งรูปมาแล้วตอบกลับรูปนั้นว่า “รายจ่าย” Jarvis อ่านจำนวนเงินจากรูปให้ ตรวจดูแล้วบันทึก</Tip>
+        </div>
       </section>
 
       <footer className="wc-foot">
