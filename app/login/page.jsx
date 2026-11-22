@@ -27,6 +27,7 @@ export default function LoginPage() {
         </a>
         {err && <p role="alert" style={{ marginTop: '0.9rem', fontSize: '0.85rem', color: 'var(--danger, #c0392b)' }}>{ERRORS[err] || 'เข้าสู่ระบบไม่สำเร็จ ลองอีกครั้งครับ'}</p>}
         <p className="muted" style={{ marginTop: '0.9rem', fontSize: '0.78rem' }}>ใช้ได้ทั้งสองทาง ผูกบัญชีทีหลังได้ที่เมนูบัญชี ข้อมูลไม่หาย</p>
+        <p style={{ marginTop: '0.6rem', fontSize: '0.8rem' }}><a href="/welcome" data-act="welcome-link">📲 คู่มือเริ่มต้น: ติดตั้งแอปบนมือถือ · ผูก Google · เริ่มใช้ใน LINE</a></p>
         {process.env.NEXT_PUBLIC_MOCK_MODE === '1' && (
           <p style={{ marginTop: '1rem', fontSize: '0.8rem' }}>
             <a href="/api/auth/dev-login?user=demo">[test] เข้าด้วยบัญชีทดสอบ</a> · <a href="/api/auth/dev-login?user=nodrive">ไม่เชื่อม Drive</a>
