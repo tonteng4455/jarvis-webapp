@@ -130,6 +130,15 @@
 .wc-flex-row { display: flex; justify-content: space-between; gap: 6px; padding: 5px 10px; border-bottom: 1px solid #eee; font-size: 10px; }
 .wc-flex-row b.in { color: #1fa34d; } .wc-flex-row b.out { color: #e0362a; }
 
+.wc-flex.wide { width: 172px; }
+.wc-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px; background: #fff; }
+.wc-tile { display: flex; align-items: center; justify-content: center; padding: 5px 3px; border-radius: 8px; background: #f5f6f7; font-size: 9.5px; font-weight: 700; color: #222; min-height: 26px; }
+.wc-tile.on { background: transparent; padding: 0; }
+.wc-tile .wc-hl { padding: 5px 3px; font-size: 9.5px; background: #e6f6f4; }
+.wc-hl.line-green { background: #06c755; color: #fff; padding: 7px 12px; font-size: 11px; margin-top: 10px; }
+.wc-or { font-size: 10px; color: #888; }
+.wc-btn-plain { padding: 6px 12px; border-radius: 8px; border: 1px solid #ccd; font-size: 10.5px; color: #333; background: #fff; }
+
 /* ---------- print / PDF ---------- */
 @media print {
   @page { size: A4; margin: 12mm; }
@@ -150,8 +159,8 @@
   .wc-block > .wc-shots { grid-column: 2; flex-wrap: nowrap; justify-content: flex-start; margin: 0; }
   .wc-block > .wc-steps + .wc-shots { grid-row: span 1; }
   .wc-hero { padding-top: 0; }
-  /* one topic per page: Google, LINE (add + summary), appointments, money */
-  #google, #line-add, #line-event, #line-money { break-before: page; page-break-before: always; margin-top: 0; }
+  /* one topic per page: install, Google, summary, appointments, money (add-friend shares page 1 with the title) */
+  #install, #google, #line-summary, #line-event, #line-money { break-before: page; page-break-before: always; margin-top: 0; }
   .wc-fig, .wc-step, .wc-tip, .wc-shots { break-inside: avoid; page-break-inside: avoid; }
   .wc-sec h2, .wc-sec h3, .wc-lead, .wc-p, .wc-two, .wc-tries { break-after: avoid; page-break-after: avoid; }
   .wc-phone, .wc-hl, .wc-num, .wc-sec h2 span, .wc-tip, .wc-try, .wc-hero img, .wc-screen, .wc-flex-head, .wc-oa-cover, .wc-bubble, .wc-chips span { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

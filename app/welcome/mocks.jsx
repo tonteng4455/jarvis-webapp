@@ -141,6 +141,47 @@ export function LineAdd({ url }) {
   );
 }
 
+
+// the bot's main menu card, with the tile to tap highlighted (hl: 'web' | 'install')
+export function MenuCard({ hl = 'web', caption }) {
+  const tile = (icon, label, key) => (
+    <div className={`wc-tile${key === hl ? ' on' : ''}`}>{key === hl ? <Hl className="wide">{icon} {label}</Hl> : <>{icon} {label}</>}</div>
+  );
+  return (
+    <Phone caption={caption} tone="line">
+      <div className="wc-linebar"><span>‹</span><b>Jarvis</b></div>
+      <div className="wc-chat">
+        <div className="wc-msg me"><div className="wc-bubble-col"><div className="wc-bubble">เมนู</div></div></div>
+        <div className="wc-msg bot">
+          <AppIcon size={26} />
+          <div className="wc-bubble-col">
+            <div className="wc-flex wide">
+              <div className="wc-flex-head">🏠 เมนูหลัก</div>
+              <div className="wc-tiles">
+                {tile('📅', 'นัดหมาย')}{tile('📝', 'โน้ต')}{tile('💰', 'เงิน')}{tile('📁', 'ไฟล์')}
+                {tile('🌐', 'เปิดเว็บแอป', 'web')}{tile('📲', 'ติดตั้งแอป', 'install')}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Phone>
+  );
+}
+
+// the web app's sign-in page
+export function LoginLine() {
+  return (
+    <Phone caption="เปิดแอปจากไอคอนแล้วกด “เข้าสู่ระบบด้วย LINE” (ครั้งเดียว)">
+      <div className="wc-page tall"><AppIcon size={52} /><b>Jarvis</b><small>เข้าสู่ระบบ</small>
+        <Hl className="btn line-green">เข้าสู่ระบบด้วย LINE</Hl>
+        <span className="wc-or">หรือ</span>
+        <span className="wc-btn-plain">เข้าสู่ระบบด้วย Google</span>
+      </div>
+    </Phone>
+  );
+}
+
 // a LINE chat: messages = [{ from: 'me' | 'bot', text, quote?, card?: [{ k, v }], title?, chips?: [] }]
 export function Chat({ messages, caption }) {
   return (

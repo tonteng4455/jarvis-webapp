@@ -1,9 +1,9 @@
 'use client';
-// app/welcome/Welcome.jsx — the quick-start guide: install the web app on a phone, link Google, and the four things to try in LINE.
+// app/welcome/Welcome.jsx — the quick-start guide: 1 add the bot, 2 open the web app from the bot + install it, 3 link Google, 4-6 the things to try in LINE.
 // Public page (no sign-in) so the link can be sent to anyone; "บันทึกเป็น PDF" prints the same page (see welcome.css @media print).
 
 import { useEffect, useState } from 'react';
-import { AndroidMenu, IosShare, IosAddHome, HomeScreen, MenuAccount, LinkGoogle, PickGoogle, ConnectCalendar, GoogleAllow, LineAdd, Chat } from './mocks';
+import { AndroidMenu, IosShare, IosAddHome, HomeScreen, MenuAccount, LinkGoogle, PickGoogle, ConnectCalendar, GoogleAllow, LineAdd, Chat, MenuCard, LoginLine } from './mocks';
 
 const LINE_OA_URL = process.env.NEXT_PUBLIC_LINE_OA_URL || '';
 
@@ -44,57 +44,90 @@ export default function Welcome() {
           <button type="button" className="glass-btn-outline" onClick={share}>{copied ? '✅ คัดลอกลิงก์แล้ว' : '🔗 ส่งต่อคู่มือนี้'}</button>
         </div>
         <nav className="wc-toc no-print" aria-label="ไปยังหัวข้อ">
-          <a href="#install">📲 ติดตั้งแอป</a><a href="#google">🔵 ผูก Google</a><a href="#line-add">💬 เพิ่มเพื่อน</a>
+          <a href="#line-add">💬 เพิ่มเพื่อน</a><a href="#install">📲 เปิดเว็บ+ติดตั้ง</a><a href="#google">🔵 ผูก Google</a>
           <a href="#line-summary">🔎 สรุปข้อความ</a><a href="#line-event">📅 สร้างนัด</a><a href="#line-money">💰 รายรับ-รายจ่าย</a>
         </nav>
       </header>
 
-      {/* ============ 1. install ============ */}
+      {/* ============ 1. add the bot as a friend ============ */}
+      <section id="line-add" className="wc-sec">
+        <h2><span>1</span> เพิ่ม Jarvis เป็นเพื่อนใน LINE</h2>
+        <p className="wc-lead">เริ่มที่ LINE ก่อน — แล้วเปิดเว็บแอปจากในแชทของบอทได้เลย ไม่ต้องจำที่อยู่เว็บหรือสมัครสมาชิก</p>
+        <div className="wc-block">
+        <Steps>
+          <Step n="1" title="เปิดลิงก์เพิ่มเพื่อน หรือค้นหา “Jarvis” ใน LINE">
+            {LINE_OA_URL ? <a className="glass-btn wc-oa-link no-print" href={LINE_OA_URL}>💬 เพิ่ม Jarvis เป็นเพื่อน</a> : null}
+            {LINE_OA_URL ? <div className="only-print wc-url-print">{LINE_OA_URL}</div> : <span>ผู้ดูแลจะส่งลิงก์หรือ QR ให้ — สแกนด้วยกล้องใน LINE (แท็บ “เพิ่มเพื่อน” → QR code)</span>}
+          </Step>
+          <Step n="2" title="กด “เพิ่มเพื่อน” แล้วเปิดแชท">Jarvis จะทักทายพร้อมเมนู</Step>
+          <Step n="3" title="ลองพิมพ์ “เมนู”">ถ้าลืมคำสั่งตอนไหน พิมพ์ “เมนู” ได้เสมอ</Step>
+        </Steps>
+        <Shots>
+          <LineAdd url={LINE_OA_URL} />
+          <Chat caption="พิมพ์ “เมนู” Jarvis ตอบเป็นการ์ดพร้อมปุ่ม" messages={[
+            { from: 'me', text: 'เมนู' },
+            { from: 'bot', text: 'สวัสดีครับ ช่วยจดโน้ต นัดหมาย งาน และรายรับ-รายจ่ายให้ได้\nเลือกจากเมนูด้านล่าง หรือพิมพ์ได้เลยครับ', chips: ['📝 โน้ต', '📅 นัดหมาย', '💰 เงิน', '🌐 เปิดเว็บ'] },
+          ]} />
+        </Shots>
+        <Tip>เท่านี้ก็จดโน้ต นัดหมาย และรายรับ-รายจ่ายในแชทได้แล้ว — เว็บแอปไว้ดู ค้นหา และแก้ไขทั้งหมดในที่เดียว (ขั้นตอนถัดไป)</Tip>
+        </div>
+      </section>
+
+      {/* ============ 2. open the web app from the bot, then install it ============ */}
       <section id="install" className="wc-sec">
-        <h2><span>1</span> ติดตั้งเว็บแอปบนมือถือ</h2>
-        <p className="wc-lead">ติดตั้งครั้งเดียวจะได้ไอคอน Jarvis บนหน้าจอ เปิดเต็มจอเหมือนแอปทั่วไป และเปิดดูโน้ตล่าสุดได้แม้ไม่มีเน็ต ไม่ต้องโหลดจาก App Store หรือ Play Store</p>
+        <h2><span>2</span> เปิดเว็บแอปจากบอท แล้วติดตั้งลงมือถือ</h2>
+        <p className="wc-lead">ติดตั้งครั้งเดียวจะได้ไอคอน Jarvis บนหน้าจอ เปิดเต็มจอเหมือนแอปทั่วไป และดูโน้ตล่าสุดได้แม้ไม่มีเน็ต ไม่ต้องโหลดจาก App Store หรือ Play Store</p>
+
+        <div className="wc-block">
+        <h3 className="wc-sub">ก. เปิดจากในแชท แล้วส่งไปติดตั้งในเบราว์เซอร์</h3>
+        <Steps>
+          <Step n="1" title="ในแชท Jarvis พิมพ์ “เมนู” แล้วแตะ “🌐 เปิดเว็บแอป”">เปิดในหน้าต่างของ LINE และเข้าสู่ระบบให้อัตโนมัติ ใช้งานได้ทันที (ปุ่ม “🌐 เปิดเว็บ” ใต้ข้อความตอบกลับก็พาไปหน้าที่ตรงกับเรื่องที่คุยอยู่)</Step>
+          <Step n="2" title="อยากได้ไอคอนบนหน้าจอ: กลับแชท แล้วแตะ “📲 ติดตั้งแอป”">หน้าต่างของ LINE ติดตั้งแอปให้ไม่ได้ ปุ่มนี้จึงเปิดหน้าติดตั้งใน Chrome (Android) หรือ Safari (iPhone) ให้เอง และขึ้นขั้นตอนที่ตรงกับมือถือคุณ — พิมพ์ “ติดตั้งแอป” ในแชทก็ได้</Step>
+          <Step n="3" title="ทำตามขั้นตอนของเครื่องคุณ (ข. ด้านล่าง)" />
+        </Steps>
+        <Shots><MenuCard hl="web" caption="แตะ “🌐 เปิดเว็บแอป” เพื่อใช้ในหน้าต่างของ LINE" /><MenuCard hl="install" caption="แตะ “📲 ติดตั้งแอป” เพื่อติดตั้งลงหน้าจอ" /></Shots>
         <div className="wc-os no-print" role="tablist" aria-label="ระบบของมือถือ">
           <button type="button" role="tab" aria-selected={os === 'android'} className={os === 'android' ? 'on' : ''} onClick={() => setOs('android')}>🤖 Android</button>
           <button type="button" role="tab" aria-selected={os === 'ios'} className={os === 'ios' ? 'on' : ''} onClick={() => setOs('ios')}>🍎 iPhone (iOS)</button>
         </div>
+        </div>
 
         <div className={`wc-os-pane wc-block${os === 'android' ? ' show' : ''}`} data-os="android">
-          <h3 className="only-print">🤖 Android</h3>
+          <h3 className="only-print">ข. 🤖 Android</h3>
           <Steps>
-            <Step n="1" title="เปิดเว็บ Jarvis ด้วย Chrome">ถ้าได้ลิงก์ใน LINE ให้เลือก “เปิดในเบราว์เซอร์” แล้วเลือก Chrome (เปิดในหน้าต่างของ LINE เองจะติดตั้งไม่ได้)</Step>
-            <Step n="2" title="แตะเมนู ⋮ มุมขวาบน แล้วเลือก “ติดตั้งแอป”">บางเครื่องเขียนว่า “เพิ่มไปยังหน้าจอหลัก”</Step>
-            <Step n="3" title="ยืนยัน “ติดตั้ง”">รอสักครู่ จะมีไอคอน Jarvis บนหน้าจอ แตะเพื่อเปิดได้เลย</Step>
+            <Step n="1" title="แตะปุ่ม “⬇️ ติดตั้งแอปเลย” ในหน้าที่เปิดขึ้นมา">ถ้าไม่มีปุ่มนี้ ให้แตะเมนู ⋮ มุมขวาบนของ Chrome แล้วเลือก “ติดตั้งแอป” (บางเครื่องเขียนว่า “เพิ่มไปยังหน้าจอหลัก”)</Step>
+            <Step n="2" title="ยืนยัน “ติดตั้ง”">รอสักครู่ จะมีไอคอน Jarvis บนหน้าจอ</Step>
           </Steps>
           <Shots><AndroidMenu /><HomeScreen /></Shots>
-          <Tip>ถ้าไม่เห็น “ติดตั้งแอป” ลองรีเฟรชหน้าเว็บ 1 ครั้ง หรือใช้ Chrome เวอร์ชันล่าสุด</Tip>
+          <Tip>ถ้าหน้าติดตั้งเปิดค้างอยู่ในหน้าต่างของ LINE ให้แตะ ⋮ มุมขวาบน แล้วเลือก “เปิดในเบราว์เซอร์”</Tip>
         </div>
 
         <div className={`wc-os-pane wc-block${os === 'ios' ? ' show' : ''}`} data-os="ios">
-          <h3 className="only-print">🍎 iPhone (iOS)</h3>
+          <h3 className="only-print">ข. 🍎 iPhone (iOS)</h3>
           <Steps>
-            <Step n="1" title="เปิดเว็บ Jarvis ด้วย Safari">ต้องเป็น Safari เท่านั้น (ถ้าได้ลิงก์ใน LINE ให้เลือก “เปิดใน Safari” หรือคัดลอกลิงก์ไปเปิดใน Safari)</Step>
-            <Step n="2" title="แตะปุ่มแชร์ (สี่เหลี่ยมมีลูกศรชี้ขึ้น) ที่แถบล่าง" />
-            <Step n="3" title="เลื่อนลงแล้วแตะ “เพิ่มไปยังหน้าจอโฮม”" />
-            <Step n="4" title="แตะ “เพิ่ม” มุมขวาบน">จะได้ไอคอน Jarvis บนหน้าจอโฮม</Step>
+            <Step n="1" title="แตะปุ่มแชร์ (สี่เหลี่ยมมีลูกศรชี้ขึ้น) ที่แถบล่างของ Safari" />
+            <Step n="2" title="เลื่อนลงแล้วแตะ “เพิ่มไปยังหน้าจอโฮม”" />
+            <Step n="3" title="แตะ “เพิ่ม” มุมขวาบน">จะได้ไอคอน Jarvis บนหน้าจอโฮม</Step>
           </Steps>
           <Shots><IosShare /><IosAddHome /><HomeScreen /></Shots>
-          <Tip>การแจ้งเตือนเด้งบน iPhone ใช้ได้เมื่อติดตั้งเป็นแอปแล้วเท่านั้น (iOS 16.4 ขึ้นไป)</Tip>
+          <Tip>ต้องเป็น Safari เท่านั้น (ถ้าเปิดค้างในหน้าต่างของ LINE ให้แตะปุ่ม ⋯ แล้วเลือก “เปิดใน Safari”) · การแจ้งเตือนเด้งบน iPhone ใช้ได้เมื่อติดตั้งเป็นแอปแล้ว (iOS 16.4 ขึ้นไป)</Tip>
         </div>
 
         <div className="wc-block">
-        <h3 className="wc-sub">เข้าสู่ระบบครั้งแรก</h3>
+        <h3 className="wc-sub">ค. เปิดแอปครั้งแรก</h3>
         <Steps>
-          <Step n="1" title="เปิดแอป Jarvis แล้วกด “เข้าสู่ระบบด้วย LINE”">อนุญาตครั้งเดียว ต่อไปจะเข้าอัตโนมัติ — หรือเลือก “เข้าสู่ระบบด้วย Google” ก็ได้ (ดูหัวข้อถัดไป)</Step>
-          <Step n="2" title="จะเข้าหน้าแชท/วันนี้ ใช้แถบเมนูล่างสลับ โน้ต · งาน · นัดหมาย · เงิน · ไฟล์" />
+          <Step n="1" title="แตะไอคอน Jarvis บนหน้าจอ แล้วกด “เข้าสู่ระบบด้วย LINE”">แอปที่ติดตั้งใหม่ยังไม่รู้จักบัญชีของคุณ จึงต้องกดเข้าสู่ระบบอีกหนึ่งครั้ง (โดยเฉพาะ iPhone) — ข้อมูลทั้งหมดเป็นชุดเดียวกับในแชท ครั้งต่อไปจะเข้าอัตโนมัติ</Step>
+          <Step n="2" title="จะเข้าหน้าวันนี้ ใช้แถบเมนูล่างสลับ โน้ต · งาน · นัดหมาย · เงิน · ไฟล์" />
         </Steps>
+        <Shots><LoginLine /></Shots>
         </div>
       </section>
 
-      {/* ============ 2. Google ============ */}
+      {/* ============ 3. Google ============ */}
       <section id="google" className="wc-sec">
-        <h2><span>2</span> ลิงก์บัญชี Google กับเว็บแอป</h2>
+        <h2><span>3</span> ลิงก์บัญชี Google กับเว็บแอป</h2>
         <div className="wc-block">
-        <p className="wc-lead">มี 2 อย่างที่ต่างกัน ทำอย่างใดอย่างหนึ่งหรือทั้งสองก็ได้ — ไม่เชื่อมก็ใช้โน้ต งาน และรายรับ-รายจ่ายได้ปกติ</p>
+        <p className="wc-lead">มี 2 อย่างที่ต่างกัน ทำอย่างใดอย่างหนึ่งหรือทั้งสองก็ได้ — ไม่เชื่อมก็ใช้โน้ต งาน และรายรับ-รายจ่ายได้ปกติ (ทำในแอปที่ติดตั้งแล้ว หรือในเว็บก็ได้)</p>
         <div className="wc-two">
           <div className="wc-box"><b>🔵 ผูก Google เพื่อเข้าสู่ระบบ</b><p>เข้าเว็บแอปด้วย Google แทนหรือควบคู่กับ LINE ข้อมูลทั้งหมดเป็นชุดเดียวกัน</p></div>
           <div className="wc-box"><b>📆 เชื่อม Google Calendar + Drive</b><p>นัดที่จดไว้ไปอยู่ในปฏิทินของคุณ (และเตือนบนมือถือ) รูป/ไฟล์เก็บใน Drive ของคุณเอง</p></div>
@@ -120,29 +153,6 @@ export default function Welcome() {
         </Steps>
         <Shots><ConnectCalendar /><GoogleAllow /></Shots>
         <Tip>ถ้าวันหนึ่งขึ้นว่า “การเชื่อมหมดอายุ” แค่กด “🔗 เชื่อมใหม่” อีกครั้ง ข้อมูลเดิมไม่หาย</Tip>
-        </div>
-      </section>
-
-      {/* ============ 3. LINE ============ */}
-      <section id="line-add" className="wc-sec">
-        <h2><span>3</span> ใน LINE: เพิ่ม Jarvis เป็นเพื่อน</h2>
-        <div className="wc-block">
-        <Steps>
-          <Step n="1" title="เปิดลิงก์เพิ่มเพื่อน หรือค้นหา “Jarvis” ใน LINE">
-            {LINE_OA_URL ? <a className="glass-btn wc-oa-link no-print" href={LINE_OA_URL}>💬 เพิ่ม Jarvis เป็นเพื่อน</a> : null}
-            {LINE_OA_URL ? <div className="only-print wc-url-print">{LINE_OA_URL}</div> : <span>ผู้ดูแลจะส่งลิงก์หรือ QR ให้ — สแกนด้วยกล้องใน LINE (แท็บ “เพิ่มเพื่อน” → QR code)</span>}
-          </Step>
-          <Step n="2" title="กด “เพิ่มเพื่อน” แล้วเปิดแชท">Jarvis จะทักทายพร้อมเมนู</Step>
-          <Step n="3" title="ลองพิมพ์ “เมนู”">ถ้าลืมคำสั่งตอนไหน พิมพ์ “เมนู” ได้เสมอ</Step>
-        </Steps>
-        <Shots>
-          <LineAdd url={LINE_OA_URL} />
-          <Chat caption="ลองพิมพ์ดู แล้ว Jarvis ตอบเป็นการ์ดพร้อมปุ่ม" messages={[
-            { from: 'me', text: 'เมนู' },
-            { from: 'bot', text: 'สวัสดีครับ ช่วยจดโน้ต นัดหมาย งาน และรายรับ-รายจ่ายให้ได้\nเลือกจากเมนูด้านล่าง หรือพิมพ์ได้เลยครับ', chips: ['📝 โน้ต', '📅 นัดหมาย', '💰 เงิน', '🌐 เปิดเว็บ'] },
-          ]} />
-        </Shots>
-        <Tip>ปุ่ม “🌐 เปิดเว็บ” ใต้ข้อความตอบกลับ จะพาไปดูสิ่งที่เพิ่งบันทึกบนเว็บแอปได้ทันที</Tip>
         </div>
       </section>
 
