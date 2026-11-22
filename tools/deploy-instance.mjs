@@ -2,7 +2,7 @@
 // usage: node tools/deploy-instance.mjs <instance> [--dry]      (npm run deploy:jarvis / deploy:friday)
 // One instance of the web app = a Worker config (wrangler.jsonc for "jarvis", wrangler.<instance>.jsonc for the others) and, optionally,
 // a brand folder brands/<instance>/ with
-//     brand.json   { "name": "Friday", "gender": "female" }        → NEXT_PUBLIC_BRAND_NAME / NEXT_PUBLIC_BRAND_GENDER while building
+//     brand.json   { "name": "Friday", "gender": "female", "lineOaUrl": "https://line.me/R/ti/p/@…" }   → NEXT_PUBLIC_BRAND_NAME / _GENDER / _LINE_OA_URL while building
 //     public/*     the logo and app icons of that instance          → laid over public/ for the build, put back afterwards
 // Steps: refuse while the config still has a REPLACE… → lay the brand files over public/ → build → wrangler deploy → put public/ back (also on failure / Ctrl+C).
 import { readFileSync, existsSync, readdirSync, copyFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -25,6 +25,7 @@ export function plan(name, root = ROOT) {
   const env = {};
   if (brand.name) env.NEXT_PUBLIC_BRAND_NAME = String(brand.name);
   if (brand.gender) env.NEXT_PUBLIC_BRAND_GENDER = String(brand.gender);
+  if (brand.lineOaUrl && !process.env.NEXT_PUBLIC_LINE_OA_URL) env.NEXT_PUBLIC_LINE_OA_URL = String(brand.lineOaUrl);   // the OA's "Add friend" link (the guide's button + QR)
   return { name, config, env, assetsDir, assets };
 }
 

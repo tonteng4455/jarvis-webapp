@@ -56,8 +56,16 @@ export default function Welcome() {
         <div className="wc-block">
         <Steps>
           <Step n="1" title="เปิดลิงก์เพิ่มเพื่อน หรือค้นหา “Jarvis” ใน LINE">
-            {LINE_OA_URL ? <a className="glass-btn wc-oa-link no-print" href={LINE_OA_URL}>💬 เพิ่ม Jarvis เป็นเพื่อน</a> : null}
-            {LINE_OA_URL ? <div className="only-print wc-url-print">{LINE_OA_URL}</div> : <span>ผู้ดูแลจะส่งลิงก์หรือ QR ให้ — สแกนด้วยกล้องใน LINE (แท็บ “เพิ่มเพื่อน” → QR code)</span>}
+            {LINE_OA_URL ? (
+              <div className="wc-oa-box">
+                <img className="wc-qr" src="/line-qr.svg" alt="QR code เพิ่มเพื่อน" width="132" height="132" />
+                <div>
+                  <small>สแกนด้วยกล้อง หรือแอป LINE (แท็บ “เพิ่มเพื่อน” → QR code)</small>
+                  <a className="glass-btn wc-oa-link no-print" href={LINE_OA_URL}>💬 เพิ่ม Jarvis เป็นเพื่อน</a>
+                  <div className="wc-url-print">{LINE_OA_URL.replace(/^https?:\/\//, '')}</div>
+                </div>
+              </div>
+            ) : <span>ผู้ดูแลจะส่งลิงก์หรือ QR ให้ — สแกนด้วยกล้องใน LINE (แท็บ “เพิ่มเพื่อน” → QR code)</span>}
           </Step>
           <Step n="2" title="กด “เพิ่มเพื่อน” แล้วเปิดแชท">Jarvis จะทักทายพร้อมเมนู</Step>
           <Step n="3" title="ลองพิมพ์ “เมนู”">ถ้าลืมคำสั่งตอนไหน พิมพ์ “เมนู” ได้เสมอ</Step>

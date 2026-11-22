@@ -37,7 +37,10 @@
 .wc-try { display: inline-block; margin: 0.15rem 0.25rem 0.15rem 0; padding: 0.2rem 0.6rem; border-radius: 10px; background: var(--accent-soft); color: var(--text-primary); font: inherit; font-size: 0.88rem; }
 .wc-tries { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-bottom: 0.5rem; }
 .wc-tries.inline { display: block; margin-top: 0.3rem; }
-.wc-url-print { word-break: break-all; }
+.wc-url-print { word-break: break-all; font-size: 0.85rem; margin-top: 0.2rem; }
+.wc-oa-box { display: flex; gap: 0.9rem; align-items: center; margin-top: 0.5rem; padding: 0.6rem; border-radius: var(--radius-md); background: var(--surface-muted); border: 1px solid var(--border); }
+.wc-oa-box small { display: block; color: var(--text-secondary); line-height: 1.45; }
+.wc-qr { flex: 0 0 auto; border-radius: 8px; background: #fff; image-rendering: pixelated; }
 .wc-foot { margin-top: 1.4rem; text-align: center; color: var(--text-secondary); }
 
 /* ---------- phone screens ---------- */

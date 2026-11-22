@@ -48,7 +48,9 @@ test('deploy plan: Jarvis builds as it always did; Friday gets its name, voice a
   const pj = plan('jarvis'), pf = plan('friday');
   assert.equal(pj.config, 'wrangler.jsonc'); assert.deepEqual(pj.env, {}); assert.equal(pj.assets.length, 0);
   assert.equal(pf.config, 'wrangler.friday.jsonc');
-  assert.deepEqual(pf.env, { NEXT_PUBLIC_BRAND_NAME: 'Friday', NEXT_PUBLIC_BRAND_GENDER: 'female' });
+  assert.equal(pf.env.NEXT_PUBLIC_BRAND_NAME, 'Friday'); assert.equal(pf.env.NEXT_PUBLIC_BRAND_GENDER, 'female');
+  assert.match(pf.env.NEXT_PUBLIC_LINE_OA_URL, /^https:\/\/line\.me\/R\/ti\/p\/@/);   // the guide's add-friend link; its QR is brands/friday/public/line-qr.svg
+  assert.ok(pf.assets.includes('line-qr.svg'));
   for (const f of ['logo-head.png', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon-48.png', 'favicon.ico']) assert.ok(pf.assets.includes(f), f);
   assert.throws(() => plan('../x'));
   assert.throws(() => plan('nope'));
