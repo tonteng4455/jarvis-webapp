@@ -2,7 +2,7 @@
 // app/dashboard/guide/page.jsx — คู่มือการใช้งาน (user manual). Content lives in content.js.
 // Searchable, collapsible sections; every example is a chip you can tap to copy and paste into LINE.
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { DashNav } from '../_components';
 import { useToast } from '../_ui';
 import { GUIDE } from './content';
@@ -40,7 +40,12 @@ export default function GuidePage() {
 
       {!query && (
         <div className="chip-row" aria-label="ไปยังหัวข้อ">
-          {GUIDE.map(s => <a key={s.id} href={`#${s.id}`} className="chip" style={{ textDecoration: 'none' }} onClick={() => { const el = document.getElementById(s.id); if (el) el.open = true; }}>{s.icon} {s.title}</a>)}
+          {GUIDE.map(s => (
+            <Fragment key={s.id}>
+              {s.part && <div className="guide-part-label">{s.part}</div>}
+              <a href={`#${s.id}`} className="chip" style={{ textDecoration: 'none' }} onClick={() => { const el = document.getElementById(s.id); if (el) el.open = true; }}>{s.icon} {s.title}</a>
+            </Fragment>
+          ))}
         </div>
       )}
 
@@ -48,7 +53,9 @@ export default function GuidePage() {
 
       <div className="list-stack">
         {sections.map((sec, i) => (
-          <details key={sec.id} id={sec.id} className="glass-card guide-sec" open={!!query || i === 0}>
+          <Fragment key={sec.id}>
+          {sec.part && !query && <h2 className="guide-part">{sec.part}</h2>}
+          <details id={sec.id} className="glass-card guide-sec" open={!!query || i === 0}>
             <summary><span className="guide-ico">{sec.icon}</span>{sec.title}</summary>
             {sec.intro && <p className="guide-intro">{sec.intro}</p>}
             {sec.items.map((it, j) => (
@@ -61,6 +68,7 @@ export default function GuidePage() {
               </div>
             ))}
           </details>
+          </Fragment>
         ))}
       </div>
       <p className="muted" style={{ textAlign: 'center', margin: '1.2rem 0' }}>แตะข้อความตัวอย่างเพื่อคัดลอก แล้ววางในแชท Jarvis ได้เลย</p>

@@ -653,6 +653,11 @@ html[data-fs="lg"] { font-size: 18px; }
 }
 
 /* ---------- User guide ---------- */
+/* guide "parts": a label above each group of index chips, and a heading above each group of sections */
+.guide-part-label { flex: 0 0 100%; margin-top: 0.35rem; font-size: 0.74rem; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.01em; }
+.guide-part-label:first-child { margin-top: 0; }
+.guide-part { margin: 1.1rem 0 0.1rem; padding-left: 0.2rem; font-size: 0.82rem; font-weight: 700; color: var(--accent); }
+.list-stack > .guide-part:first-child { margin-top: 0.2rem; }
 .guide-sec { padding: 0; scroll-margin-top: 5rem; }
 .guide-sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.6rem; padding: 0.95rem 1rem; font-weight: 700; font-size: 1rem; min-height: 52px; }
 .guide-sec > summary::-webkit-details-marker { display: none; }
