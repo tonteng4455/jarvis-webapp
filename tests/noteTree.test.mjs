@@ -54,3 +54,16 @@ test('a label comes from the title, else the first line without its list marker'
   assert.equal(noteLabel({ title: '', content: '[ ] ซื้อนม\nอย่างอื่น' }), 'ซื้อนม');
   assert.equal(noteLabel({ title: '', content: '' }), 'โน้ตไม่มีชื่อ');
 });
+
+test('ids may be numbers (the database) or text (a URL): both find the same note', () => {
+  const rows = [{ id: 1, parent_id: null }, { id: 2, parent_id: 1 }, { id: 3, parent_id: 2 }];
+  const { byId, kids } = indexNotes(rows);
+  assert.equal(byId.get('2').id, 2);
+  assert.equal(byId.has('3'), true);
+  assert.deepEqual(pathOf('3', byId).map(n => n.id), [1, 2, 3]);
+  assert.deepEqual(descendantIds('1', kids), [2, 3]);
+  assert.equal(wouldCycle('1', '3', byId), true);
+  assert.equal(wouldCycle(1, 3, byId), true);
+  assert.equal(wouldCycle(3, 1, byId), false);
+  assert.equal(parentOf(rows[1], byId), 1);
+});

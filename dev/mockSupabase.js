@@ -77,7 +77,7 @@ class Query {
   update(p) { this.op = 'update'; this.payload = p; return this; }
   upsert(p, opts) { this.op = 'upsert'; this.payload = p; this.upsertKey = opts?.onConflict || 'id'; return this; }
   delete() { this.op = 'delete'; return this; }
-  eq(col, val) { this.filters.push(r => r[col] === val); return this; }
+  eq(col, val) { this.filters.push(r => r[col] === val || (typeof r[col] === 'number' && String(r[col]) === String(val))); return this; }   // a URL id is text, a bigint column is a number — the database matches them
   in(col, vals) { const set = new Set(vals || []); this.filters.push(r => set.has(r[col])); return this; }
   is(col, val) { this.filters.push(r => (val === null ? r[col] == null : r[col] === val)); return this; }
   neq(col, val) { this.filters.push(r => r[col] !== val); return this; }

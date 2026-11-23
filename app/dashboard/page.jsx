@@ -522,7 +522,7 @@ function NotesPageInner() {
     if (!autoEditId || notes === null || deepDone.current === autoEditId) return;
     deepDone.current = autoEditId;
     const n = byId.get(autoEditId); const pid = n ? parentOf(n, byId) : null;
-    if (pid && pid !== curId) router.replace(`/dashboard?p=${encodeURIComponent(pid)}&id=${encodeURIComponent(autoEditId)}`);
+    if (pid != null && String(pid) !== String(curId)) router.replace(`/dashboard?p=${encodeURIComponent(pid)}&id=${encodeURIComponent(autoEditId)}`);
   }, [autoEditId, notes, byId, curId, router]);
   // One-time (per device) clean-up: photos attached before photos became private lose their "anyone with the link" access.
   const privacyRan = useRef(false);
