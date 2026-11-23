@@ -12,6 +12,8 @@ import { DueChip, DuePicker } from '../_due';
 import { TaskEditorModal, ConvertToEventSheet, PRIORITY_COLOR, PRIORITY_LABEL } from '../_taskEditor';
 import { ConvertChooser, convertItem, taskToNotePayload } from '../_convert';
 import { previewText } from '../../../lib/noteBlocks';
+import { completeAllChecks, formatMoment } from '../../../lib/taskChecks';
+import { TaskProgress, PROGRESS_STYLES, useProgressStyle } from '../_taskProgress';
 import { dueState, sortTasks } from '../../../lib/taskDue';
 import { AddedBy } from '../_space';
 import { BY_EDITED, BY_OLDEST, BY_TITLE, SortSolo, useSortPref, stampOf, thCompare } from '../_sort';
@@ -71,7 +73,7 @@ function RoutinePicker({ task, onUpdate, onClose }) {
   );
 }
 
-function TaskRow({ task, onUpdate, onDelete, onOpen, onConvert, autoEditId }) {
+function TaskRow({ task, onUpdate, onDelete, onOpen, onConvert, autoEditId, pstyle }) {
   const [routineOpen, setRoutineOpen] = useState(false);
   const [dueOpen, setDueOpen] = useState(false);
   const ref = useRef(null);
@@ -98,6 +100,8 @@ function TaskRow({ task, onUpdate, onDelete, onOpen, onConvert, autoEditId }) {
         <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onOpen(task)} role="button" tabIndex={0}
           onKeyDown={e => { if (e.key === 'Enter') onOpen(task); }} title="แตะเพื่อแก้ไข / ดูรายละเอียด">
           <div style={{ fontSize: '0.9rem', textDecoration: task.is_done ? 'line-through' : 'none' }}>{task.task_name} <AddedBy item={task} /></div>
+          {task.details && <div style={{ marginTop: '0.2rem' }}><TaskProgress details={task.details} variant={pstyle} /></div>}
+          {task.is_done && task.done_at && <div className="muted" style={{ fontSize: '0.72rem' }}>✓ เสร็จเมื่อ {formatMoment(task.done_at)}</div>}
           {detailsPreview && <div className="muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detailsPreview}</div>}
           <div className="muted">
             {task.category || 'general'} · {PRIORITY_LABEL[task.priority] || task.priority}
@@ -141,6 +145,7 @@ function TasksPageInner() {
   const [convert, setConvert] = useState(null);     // { task, to: null | 'event' } — the "เปลี่ยนเป็น…" flow
   const [editor, setEditor] = useState(null);          // null | 'new' | the task being edited
   const [sortKey, pickSort] = useSortPref('jarvis_tasks_sort', TASK_SORTS);
+  const [pstyle, pickPstyle] = useProgressStyle();            // how a checklist's progress is drawn: bar · donut · 2/5 · 40%
   const searchParams = useSearchParams();
   const autoEditId = searchParams.get('id');
 
@@ -193,7 +198,9 @@ function TasksPageInner() {
   const offlineToastAt = useRef(0);
   async function updateTask(id, patch) {
     const touched = { ...patch, updated_at: new Date().toISOString() };          // so "edited most recently first" is right at once
-    setTasks(prev => prev && ('due_at' in patch ? sortTasks(prev.map(t => t.id === id ? { ...t, ...touched } : t)) : prev.map(t => t.id === id ? { ...t, ...touched } : t)));
+    // finishing a task ticks its open sub-checkboxes (the server does the same): show it at once
+    const apply = t => (t.id !== id ? t : { ...t, ...touched, ...(patch.is_done === true ? { details: completeAllChecks(t.details) ?? t.details, done_at: touched.updated_at } : patch.is_done === false ? { done_at: null } : null) });
+    setTasks(prev => prev && ('due_at' in patch ? sortTasks(prev.map(apply)) : prev.map(apply)));
     let res;
     try { res = await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), keepalive: true }); }
     catch {
@@ -208,6 +215,10 @@ function TasksPageInner() {
       return false;
     }
     if ('archived' in patch) load();
+    if ('is_done' in patch) {                         // what the server ended up with (its sub-checkbox ticks, the time it was finished)
+      const j = await res.clone().json().catch(() => null);
+      if (j?.task) setTasks(prev => prev?.map(t => (t.id === id ? { ...t, details: j.task.details, done_at: j.task.done_at ?? t.done_at } : t)));
+    }
     return true;
   }
 
@@ -244,6 +255,7 @@ function TasksPageInner() {
         <h1 className="page-title" style={{ marginBottom: 0 }}>✅ งานของฉัน</h1>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
           <SortSolo options={TASK_SORTS} value={sortKey} onChange={pickSort} />
+          <SortSolo options={PROGRESS_STYLES} value={pstyle} onChange={pickPstyle} glyph="📊" label="ความก้าวหน้า" />
           <button className="glass-btn-outline" onClick={() => { const v = !showArchived; setShowArchived(v); setTasks(null); load(v); }}>
             {showArchived ? '⬅️ กลับไปงานปกติ' : '🗄️ ดูคลังเก็บ'}
           </button>
@@ -255,7 +267,7 @@ function TasksPageInner() {
       {!error && tasks === null && <ListSkeleton />}
       {tasks?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showArchived ? 'ยังไม่มีงานในคลังเก็บ' : 'ไม่มีงานค้างครับ 🎉'}</p></div>}
       <div className="list-stack">
-        {orderTasks(tasks, sortKey)?.map(t => <TaskRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} onOpen={setEditor} onConvert={t => setConvert({ task: t, to: null })} autoEditId={autoEditId} />)}
+        {orderTasks(tasks, sortKey)?.map(t => <TaskRow key={t.id} pstyle={pstyle} task={t} onUpdate={updateTask} onDelete={deleteTask} onOpen={setEditor} onConvert={t => setConvert({ task: t, to: null })} autoEditId={autoEditId} />)}
       </div>
       {!showArchived && <Fab onClick={() => setEditor('new')} label="เพิ่มงาน" />}
       {editor && (

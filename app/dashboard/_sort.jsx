@@ -23,7 +23,7 @@ export function useSortPref(storageKey, options, def) {
 }
 
 // inField: the button sits inside a `.note-search-wrap` (the search box) and the menu opens under it; otherwise it is a small stand-alone button.
-export function SortMenu({ options, value, onChange, inField = false, label = 'เรียง' }) {
+export function SortMenu({ options, value, onChange, inField = false, label = 'เรียง', glyph = '⇅' }) {
   const [open, setOpen] = useState(false);
   const cur = options.find(o => o.key === value) || options[0];
   const menuRef = useRef(null);
@@ -36,7 +36,7 @@ export function SortMenu({ options, value, onChange, inField = false, label = '�
   return (
     <>
       <button type="button" className={`note-sort-btn${inField ? '' : ' solo'}`} data-act="sort-btn" aria-haspopup="menu" aria-expanded={open}
-        title={`${label}: ${cur.label}`} aria-label={`เลือกการเรียง (ตอนนี้: ${cur.label})`} onClick={() => setOpen(v => !v)}>⇅</button>
+        title={`${label}: ${cur.label}`} aria-label={`${label}: เลือกรูปแบบ (ตอนนี้: ${cur.label})`} onClick={() => setOpen(v => !v)}>{glyph}</button>
       {open && (
         <>
           <div className="note-sort-scrim" onClick={() => setOpen(false)} />

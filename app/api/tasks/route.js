@@ -55,7 +55,8 @@ export async function GET(request) {
     .limit(500);
   const BASE = 'id, task_name, category, priority, is_done, archived, recurrence, recurrence_time, google_event_id, created_at';
   // Optional columns come from tasks_due.sql / tasks_details.sql; until those have been run, keep the page working without them.
-  let { data, error } = await query(`${BASE}, due_at, due_all_day, details, updated_at`);      // updated_at: updated_at.sql
+  let { data, error } = await query(`${BASE}, due_at, due_all_day, details, updated_at, done_at`);      // updated_at: updated_at.sql · done_at: tasks_done_at.sql
+  if (error) ({ data, error } = await query(`${BASE}, due_at, due_all_day, details, updated_at`));
   if (error) ({ data, error } = await query(`${BASE}, due_at, due_all_day, details`));
   if (error) ({ data, error } = await query(`${BASE}, due_at, due_all_day`));
   if (error) ({ data, error } = await query(BASE));

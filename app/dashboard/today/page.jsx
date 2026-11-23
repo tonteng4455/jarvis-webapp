@@ -12,6 +12,8 @@ import SetupChecklist from '../_setup';
 import { useSpace } from '../_space';
 import { readShare } from '../../../lib/sharePending';
 import { sortTasks } from '../../../lib/taskDue';
+import { completeAllChecks } from '../../../lib/taskChecks';
+import { TaskProgress, useProgressStyle } from '../_taskProgress';
 
 const LINE_OA_URL = process.env.NEXT_PUBLIC_LINE_OA_URL || '';
 const money = n => Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 });
@@ -49,6 +51,7 @@ export default function TodayPage() {
   const [me, setMe] = useState(null);
   const [error, setError] = useState(false);
   const [q, setQ] = useState('');
+  const [pstyle] = useProgressStyle();
   const [pendingShare, setPendingShare] = useState(false);   // text shared in from another app is waiting
   useEffect(() => { setPendingShare(!!readShare()); }, []);
 
@@ -84,7 +87,7 @@ export default function TodayPage() {
   useEffect(() => { if (q.trim() && data && !full && !searching) loadFull(); }, [q, data, full, searching, loadFull]);
 
   async function toggleTask(t) {
-    setData(d => ({ ...d, tasks: d.tasks.map(x => x.id === t.id ? { ...x, is_done: !x.is_done } : x) }));
+    setData(d => ({ ...d, tasks: d.tasks.map(x => x.id === t.id ? { ...x, is_done: !x.is_done, ...(!x.is_done ? { details: completeAllChecks(x.details) ?? x.details } : null) } : x) }));   // finishing a task ticks its open sub-checkboxes (the server does too)
     const res = await fetch(`/api/tasks/${t.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_done: !t.is_done }) });
     if (!res.ok) { toast.show('❌ บันทึกไม่สำเร็จ', { tone: 'error' }); load(); }
   }
@@ -177,6 +180,7 @@ export default function TodayPage() {
                 <input type="checkbox" className="big-check" aria-label={`ทำเสร็จแล้ว: ${t.task_name}`} checked={!!t.is_done} onChange={() => toggleTask(t)} />
                 {/* only the box marks it done — the name opens the task's details */}
                 <Link href={`/dashboard/tasks?id=${t.id}`} className="task-line-name" data-act="open-task">{t.task_name}</Link>
+                {t.details && <TaskProgress details={t.details} variant={pstyle} />}
                 {t.due_at && <DueChip task={t} />}
               </div>
             ))}

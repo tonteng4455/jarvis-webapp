@@ -18,6 +18,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { MAX_NOTE_IMAGES } from '../../lib/noteImages';
 import { CategorySelect } from './_components';
 import { shareText, useToast, useDialogGuard, dialogGuard } from './_ui';
+import { stampNow, formatStamp } from '../../lib/taskChecks';
 import { notesToPdf, saveFile } from '../../lib/notePdf';
 import { notesToMarkdownFiles } from '../../lib/noteMarkdown';
 import SketchEditor from './_sketch';
@@ -597,7 +598,7 @@ const BULLETS = ['•', '◦', '▪', '•', '◦'];
 const LIST_GLYPH = { text: '☰', num: '1.', bullet: '•', check: '☑' };
 const LIST_LABEL = { text: 'ข้อความ', num: 'เลขข้อ', bullet: 'จุด', check: 'ช่องติ๊ก' };
 
-export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, onActive, images = [], busyIds, onOpenImage, onRemoveImage, placeholder = 'พิมพ์โน้ต...', autoFocus }, ref) {
+export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, onActive, images = [], busyIds, onOpenImage, onRemoveImage, placeholder = 'พิมพ์โน้ต...', autoFocus, stampChecks = false }, ref) {
   const [blocks, setBlocks] = useState(() => parseContent(initial));
   const blocksRef = useRef(blocks);
   // A selection across several rows (the rows are separate text boxes, so the browser can't do it): { a: {id,pos}, f: {id,pos} } — see lib/noteBlocks.js
@@ -1055,7 +1056,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
             ? (
               <button type="button" role="checkbox" aria-checked={b.checked} aria-label="ทำเสร็จแล้ว" className={`kl-mark kl-check${b.checked ? ' on' : ''}`}
                 onPointerDown={e => e.preventDefault()} onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
-                onClick={() => commit(toggleCheck(blocksRef.current, b.id), activeId.current)}>{b.checked ? '✓' : ''}</button>
+                onClick={() => commit(toggleCheck(blocksRef.current, b.id, stampChecks ? stampNow() : null), activeId.current)}>{b.checked ? '✓' : ''}</button>
             )
             : b.type === 'num' ? <span className="kl-mark kl-num">{nums[i]}.</span> : null;
         const inDrag = drag && i >= drag.i && i < drag.j;
@@ -1081,7 +1082,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
               </div>
             )}
             {!hidden && b.type !== 'img' && (
-              <div data-ri={i} className={`kl-row kl-r-${b.type}${inDrag ? ' lifted' : ''}${span && i >= span.i0 && i <= span.i1 ? ' insel' : ''}`}
+              <div data-ri={i} className={`kl-row kl-r-${b.type}${b.type === 'check' && b.checked && b.doneAt ? ' kl-has-stamp' : ''}${inDrag ? ' lifted' : ''}${span && i >= span.i0 && i <= span.i1 ? ' insel' : ''}`}
                 style={{ ...(b.type === 'text' ? null : { paddingLeft: `${b.indent * 1.5}rem` }), ...(inDrag ? { transform: `translateY(${drag.dy}px)` } : null) }}
                 onClick={e => { if (e.target === e.currentTarget) { e.stopPropagation(); focusAt(b.id, b.text.length); } }}>
                 {marker}
@@ -1089,6 +1090,7 @@ export const BlockEditor = forwardRef(function BlockEditor({ initial, onChange, 
                   placeholder={onlyEmptyText ? placeholder : (b.type !== 'text' && b.text === '' ? 'รายการ' : '')}
                   onInput={onInput} onKey={onKey} onPasteRow={onPasteRow} onCopyCut={onCopyCut}
                   onFocusRow={id => { activeId.current = id; report(); }} />
+                {b.type === 'check' && b.checked && b.doneAt && <span className="kl-stamp" title={`ติ๊กเมื่อ ${formatStamp(b.doneAt)}`}>✓ ติ๊กเมื่อ {formatStamp(b.doneAt)}</span>}
                 {b.type !== 'text' && (
                   <span className="kl-handle" title="ลากเพื่อย้าย" aria-label="ลากเพื่อย้ายแถว" role="button"
                     onPointerDown={e => startDrag(e, b)} onPointerMove={moveDrag}

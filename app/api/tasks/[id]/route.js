@@ -1,7 +1,7 @@
 // app/api/tasks/[id]/route.js
 //
 // PATCH — partial update (task_name/priority/category/is_done/archived/
-// recurrence/recurrence_time). When recurrence-related fields change,
+// recurrence/recurrence_time). Marking a task done also ticks every sub-checkbox in its details that was still open. When recurrence-related fields change,
 // this ALSO calls the Worker's internal endpoint to create/update/
 // remove the recurring Google Calendar reminder — the Worker is the
 // only place that holds anyone's Google OAuth tokens, so this route
@@ -13,6 +13,7 @@ import { cookies } from 'next/headers';
 import { getSpaceSession as getPremiumSession, attachCreators, trashRow } from '../../../../lib/space';
 import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { callBotInternal } from '../../../../lib/botWorker';
+import { completeAllChecks } from '../../../../lib/taskChecks';
 
 const EDITABLE_FIELDS = ['task_name', 'priority', 'category', 'is_done', 'archived', 'recurrence', 'recurrence_time', 'due_at', 'due_all_day', 'details'];
 const RECURRENCE_FIELDS = ['recurrence', 'recurrence_time'];
@@ -45,6 +46,13 @@ export async function PATCH(request, { params }) {
   }
 
   const supabase = supabaseAdmin();
+  // finishing a task finishes its checklist: every open "[ ]" in the details is ticked (with this moment) — from the task page, Today, anywhere
+  if (updates.is_done === true) {
+    let base = updates.details;
+    if (!('details' in updates)) base = (await supabase.from('tasks').select('details').eq('id', id).eq('user_id', session.lineUserId).maybeSingle()).data?.details;
+    const ticked = completeAllChecks(base);
+    if (ticked !== null) updates.details = ticked;
+  }
   const { data, error } = await supabase
     .from('tasks')
     .update(updates)

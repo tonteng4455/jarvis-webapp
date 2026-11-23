@@ -11,6 +11,7 @@ import { useToast, dialogGuard } from './_ui';
 import { useEscape } from './_convert';
 import { buildDue, dueInputs } from '../../lib/taskDue';
 import { previewText, plainText } from '../../lib/noteBlocks';
+import { checkEvent } from '../../lib/taskChecks';
 
 export const PRIORITY_COLOR = { high: 'var(--danger)', medium: 'var(--warning)', low: 'var(--success)' };
 export const PRIORITY_LABEL = { high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' };
@@ -62,7 +63,7 @@ export function TaskEditorPanel({
       </div>
 
       <div className="te-label" style={{ marginTop: '0.9rem' }}>📝 รายละเอียด</div>
-      <BlockEditor ref={bodyRef} initial={details} onChange={onDetails} onActive={setInfo} placeholder="พิมพ์รายละเอียด หรือใช้ - [] 1. ทำรายการย่อย..." />
+      <BlockEditor ref={bodyRef} initial={details} onChange={onDetails} onActive={setInfo} stampChecks placeholder="พิมพ์รายละเอียด หรือใช้ - [] 1. ทำรายการย่อย..." />
 
       <div className="ne-bottom" onMouseDown={e => e.stopPropagation()}>
         <span className="ne-spacer" />
@@ -98,6 +99,13 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, 
   // A task saved WITHOUT a title is never thrown away: when the editor is closed (✓, click-away, leaving the page) it takes
   // its name from the first line of the details, or "งานที่ยังไม่ตั้งชื่อ" if only a due date / priority was set.
   const toast = useToast();
+  // ticking the LAST open sub-item finishes the task; un-ticking one of a finished task re-opens it (lib/taskChecks.js). Only a tick counts.
+  const doneNow = useRef(!!task?.is_done);
+  const doneRule = (before, after, patch) => {
+    const ev = checkEvent(before, after);
+    if (ev === 'complete' && !doneNow.current) { patch.is_done = true; doneNow.current = true; toast.show('✅ ติ๊กครบทุกข้อ — งานนี้เสร็จแล้ว'); }
+    else if (ev === 'reopen' && doneNow.current) { patch.is_done = false; doneNow.current = false; toast.show('↩️ มีข้อที่ยังไม่เสร็จ — งานนี้กลับเป็นยังไม่เสร็จ'); }
+  };
   const effectiveName = (c, final) => {
     const typed = c.name.trim();
     if (typed || !final) return typed;
@@ -123,7 +131,7 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, 
       }
       const now = snap(c), sent = created.current.sent, patch = {};
       if (c.name.trim() && now.name !== sent.name) patch.task_name = now.name;
-      if (now.details !== sent.details) patch.details = c.details;
+      if (now.details !== sent.details) { patch.details = c.details; doneRule(sent.details, c.details, patch); }
       if (now.priority !== sent.priority) patch.priority = c.priority;
       if (now.due !== sent.due) Object.assign(patch, buildDue(c.due.date, c.due.time) || { due_at: null, due_all_day: false });
       if (!Object.keys(patch).length) return;
@@ -138,7 +146,7 @@ export function TaskEditorModal({ task, onCreate, onUpdate, onDiscard, onClose, 
     if (isNew) { if (discarded.current) return false; persistNew(final); return true; }
     const patch = {};
     if (c.name.trim() && c.name !== sent.current.name) patch.task_name = c.name.trim();
-    if (c.details !== sent.current.details) patch.details = c.details;
+    if (c.details !== sent.current.details) { patch.details = c.details; doneRule(sent.current.details, c.details, patch); }
     if (c.priority !== sent.current.priority) patch.priority = c.priority;
     if (JSON.stringify(c.due) !== sent.current.due) Object.assign(patch, buildDue(c.due.date, c.due.time) || { due_at: null, due_all_day: false });
     if (!Object.keys(patch).length) return true;

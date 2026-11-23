@@ -1075,3 +1075,20 @@ html[data-note-full="1"] .note-editor-modal .ne-bottom { margin-top: 0.4rem; }
 .nt-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .nt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nt-sheet { max-width: 480px; }
+
+/* a ticked sub-item shows when it was ticked (task details only; see lib/taskChecks.js) */
+.kl-row.kl-has-stamp { flex-wrap: wrap; }
+.kl-stamp { order: 9; flex: 0 0 100%; padding: 0 0 0.25rem 2.1rem; font-size: 0.7rem; line-height: 1.2; color: var(--text-secondary); margin-top: -0.35rem; }
+
+/* checklist progress on a task (app/dashboard/_taskProgress.jsx): bar · donut · 2/5 · 40% */
+.tp { flex: 0 0 auto; vertical-align: middle; }
+.tp-bar { display: block; width: 100%; max-width: 12rem; height: 4px; border-radius: 999px; background: var(--border-strong); overflow: hidden; }
+.tp-bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width .25s; }
+.tp-bar.full i { background: var(--success); }
+.tp-donut { display: inline-flex; width: 22px; height: 22px; }
+.tp-donut .tp-track { stroke: var(--border-strong); }
+.tp-donut .tp-arc { stroke: var(--accent); transition: stroke-dasharray .25s; }
+.tp-donut.full .tp-arc { stroke: var(--success); }
+.tp-txt { font-size: 0.72rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.tp-txt.full { background: var(--success-soft, var(--accent-soft)); color: var(--success); }
+.task-line .tp-bar { max-width: 4.5rem; }
