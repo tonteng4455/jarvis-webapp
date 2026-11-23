@@ -47,6 +47,7 @@ export async function POST(request) {
   if (t.table_name === 'tasks') { delete row.google_event_id; delete row.remind_state; }
   if (t.table_name === 'calendar_events') row.status = row.status === 'cancelled' ? 'scheduled' : row.status;
   let ins = await supabase.from(t.table_name).insert(row).select().single();
+  if (ins.error && row.parent_id && /parent_id|foreign key|23503/i.test(`${ins.error.code} ${ins.error.message}`)) ins = await supabase.from(t.table_name).insert({ ...row, parent_id: null }).select().single();   // its parent note is gone: it comes back at the top level
   const dup = ins.error && /duplicate|already exists|23505/i.test(`${ins.error.code} ${ins.error.message}`);
   // an appointment that was only "cancelled" (the bot and the web app do that, the row stays) comes back by flipping its status
   if (dup && t.table_name === 'calendar_events') ins = await supabase.from('calendar_events').update({ status: 'scheduled', google_event_id: null }).eq('id', row.id).eq('user_id', session.groupId).select().single();

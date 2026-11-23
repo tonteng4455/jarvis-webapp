@@ -87,6 +87,7 @@ class Query {
   or(clause) { const c = parseOrClause(clause); this.filters.push(r => matchesOr(r, c)); return this; }
   order(col, opts = {}) { this.orders.push({ col, asc: opts.ascending !== false, nullsFirst: !!opts.nullsFirst }); return this; }
   limit(n) { this.limitN = n; return this; }
+  range(from, to) { this.rangeFrom = from; this.rangeTo = to; return this; }
   single() { this.mode = 'single'; return this; }
   maybeSingle() { this.mode = 'maybe'; return this; }
 
@@ -144,6 +145,7 @@ class Query {
       db()[this.table] = rows.filter(r => !gone.has(r));
     } else {
       result = this._sort(this._match(rows));
+      if (this.rangeFrom != null) result = result.slice(this.rangeFrom, this.rangeTo + 1);
       if (this.limitN != null) result = result.slice(0, this.limitN);
     }
 

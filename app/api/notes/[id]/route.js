@@ -1,7 +1,8 @@
 // app/api/notes/[id]/route.js
 //
-// PATCH — partial update (title/content/category/color/pinned/archived)
-// DELETE — remove a note permanently
+// PATCH — partial update (title/content/category/color/pinned/archived/parent_id). parent_id moves the note under another note (null = top level);
+//         archiving a note archives the notes under it too.
+// DELETE — remove a note permanently. ?children=lift (default: its sub-notes move up one level) | delete (they go with it)
 //
 // Every query is scoped to BOTH id AND user_id — never trust the id
 // alone, or one user could edit/delete another user's note by guessing
@@ -14,8 +15,12 @@ import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { sanitizeNoteImages, replacedIds } from '../../../../lib/noteImages';
 import { registerNoteImages, releaseOtherImages, releaseNote, binImages } from '../../../../lib/noteImageIndex';
 import { learnCategory } from '../../../../lib/lexicon';
+import { loadTreeRows } from '../../../../lib/noteTreeDb';
+import { indexNotes, descendantIds, wouldCycle } from '../../../../lib/noteTree';
 
-const EDITABLE_FIELDS = ['title', 'content', 'category', 'color', 'images', 'pinned', 'archived', 'sort_order'];
+const inChunks = async (ids, fn) => { for (let i = 0; i < ids.length; i += 100) await fn(ids.slice(i, i + 100)); };
+
+const EDITABLE_FIELDS = ['title', 'content', 'category', 'color', 'images', 'pinned', 'archived', 'sort_order', 'parent_id'];
 // Only these count as "actually editing the note" — pin/archive/reorder
 // are structural UI state, not content, so they shouldn't bump
 // updated_at (that would wrongly make a reordered note look "recently
@@ -24,7 +29,7 @@ const CONTENT_FIELDS = ['title', 'content', 'category', 'color', 'images'];
 
 export async function PATCH(request, { params }) {
   const { id } = await params;
-  const { session, isPremium } = await getPremiumSession(await cookies());
+  const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const body = await request.json();
@@ -42,6 +47,16 @@ export async function PATCH(request, { params }) {
   }
 
   const supabase = supabaseAdmin();
+  // moving under another note: it must be this owner's, and never the note itself or one of its own sub-notes (that would be a loop)
+  if ('parent_id' in updates) {
+    const pid = updates.parent_id || null;
+    updates.parent_id = pid;
+    const { rows, ready } = await loadTreeRows(supabase, session.lineUserId);
+    if (!ready) return NextResponse.json({ error: 'tree_not_ready' }, { status: 409 });
+    const { byId } = indexNotes(rows);
+    if (pid && !byId.has(pid)) return NextResponse.json({ error: 'bad_parent' }, { status: 400 });
+    if (pid && wouldCycle(id, pid, byId)) return NextResponse.json({ error: 'cycle' }, { status: 400 });
+  }
   // Group spaces: two people editing the same note. The editor sends the `updated_at` it opened; if somebody ELSE saved a content change
   // since then, nothing is overwritten — the client gets 409 and asks (keep mine / take theirs / save mine as a new note).
   // (needs notes.updated_by from group_trash.sql; without that column there is nothing to compare, so saves go through as before)
@@ -73,6 +88,13 @@ export async function PATCH(request, { params }) {
   }
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
+  if ('archived' in updates && data) {                                  // a page and everything under it are filed away (or brought back) together
+    try {
+      const { rows } = await loadTreeRows(supabase, session.lineUserId);
+      const below = descendantIds(id, indexNotes(rows).kids);
+      await inChunks(below, ids => supabase.from('notes').update({ archived: updates.archived === true }).in('id', ids).eq('user_id', session.lineUserId));
+    } catch (e) { console.error('archive sub-notes:', e?.message); }
+  }
   if ('images' in updates && data) {                                  // the image library follows the note (best-effort: never fails the save)
     const uid = session.lineUserId;
     try {
@@ -87,18 +109,34 @@ export async function PATCH(request, { params }) {
 
 export async function DELETE(request, { params }) {
   const { id } = await params;
-  const { session, isPremium } = await getPremiumSession(await cookies());
+  const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const supabase = supabaseAdmin();
-  await trashRow(supabase, 'notes', id, session);                              // a group's deleted note stays restorable for 30 days
-  await releaseNote(supabase, session.lineUserId, id).catch(() => {});        // its pictures stay in the library (delete them there)
+  const owner = session.lineUserId;
+  const withKids = new URL(request.url).searchParams.get('children') === 'delete';
+  // sub-notes: by default they move up one level (never lost by accident); "delete" takes them with it
+  let below = [];
+  try {
+    const { rows } = await loadTreeRows(supabase, owner);
+    const { byId, kids } = indexNotes(rows);
+    const mine = byId.get(id);
+    if (mine && (kids.get(id) || []).length) {
+      if (withKids) below = descendantIds(id, kids);
+      else await supabase.from('notes').update({ parent_id: mine.parent_id || null }).eq('parent_id', id).eq('user_id', owner);
+    }
+  } catch (e) { console.error('delete sub-notes:', e?.message); }
+  for (const nid of [...below, id]) {
+    await trashRow(supabase, 'notes', nid, session);                             // a group's deleted note stays restorable for 30 days
+    await releaseNote(supabase, owner, nid).catch(() => {});                     // its pictures stay in the library (delete them there)
+  }
+  await inChunks(below, ids => supabase.from('notes').delete().in('id', ids).eq('user_id', owner));
   const { error } = await supabase
     .from('notes')
     .delete()
     .eq('id', id)
-    .eq('user_id', session.lineUserId);
+    .eq('user_id', owner);
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
-  return NextResponse.json({ deleted: true });
+  return NextResponse.json({ deleted: true, with_children: below.length });
 }

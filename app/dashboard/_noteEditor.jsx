@@ -1141,7 +1141,7 @@ export function DownloadSheet({ count, onPick, onClose }) {
 // ---------- the whole editor panel ----------
 export function NoteEditorPanel({
   titleValue, onTitle, initialContent, onContent, imgState, categories, category, onCategory,
-  pinned, onPin, archived, onArchive, onDelete, onDone, doneDisabled, onColor, color, shareTitle, isNew, editorKey, onConvert,
+  pinned, onPin, archived, onArchive, onDelete, onDone, doneDisabled, onColor, color, shareTitle, isNew, editorKey, onConvert, onMove, onAddChild,
 }) {
   const toast = useToast();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1221,6 +1221,8 @@ export function NoteEditorPanel({
         <div className="ne-cat"><CategorySelect options={categories} value={category} onChange={onCategory} /></div>
         <ToolBtn className="ne-push" title="เลิกทำ (Ctrl+Z)" disabled={!info.canUndo} onClick={() => bodyRef.current?.undo()}>↶</ToolBtn>
         <ToolBtn title="ทำซ้ำ (Ctrl+Shift+Z)" disabled={!info.canRedo} onClick={() => bodyRef.current?.redo()}>↷</ToolBtn>
+        {onAddChild && <ToolBtn title="เพิ่มหน้าย่อยในโน้ตนี้" className="ne-sub" onClick={onAddChild}>📑</ToolBtn>}
+        {onMove && <ToolBtn title="ย้ายโน้ตนี้ไปไว้ใต้โน้ตอื่น" onClick={onMove}>📂</ToolBtn>}
         {onConvert && <ToolBtn title="เปลี่ยนโน้ตนี้เป็นงานหรือนัดหมาย" onClick={onConvert}>🔄</ToolBtn>}
         <ToolBtn title="สี" onClick={() => setPickerOpen(v => !v)} active={pickerOpen}>🎨</ToolBtn>
         <ToolBtn title="ดาวน์โหลดโน้ตนี้ (Markdown หรือ PDF)" disabled={pdfBusy} onClick={() => setDlOpen(true)}>{pdfBusy ? '⏳' : '⬇️'}</ToolBtn>

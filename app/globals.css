@@ -608,7 +608,9 @@ html[data-fs="lg"] { font-size: 18px; }
 .result-row { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.55rem 0; text-decoration: none; border-top: 1px solid var(--border); min-height: 44px; justify-content: center; }
 .today-card .result-row:first-of-type { border-top: none; }
 .result-row b { font-size: 0.9rem; }
-.task-line { display: flex; align-items: center; gap: 0.7rem; padding: 0.45rem 0; min-height: 44px; font-size: 0.9rem; cursor: pointer; }
+.task-line { display: flex; align-items: center; gap: 0.7rem; padding: 0.45rem 0; min-height: 44px; font-size: 0.9rem; }
+.task-line-name { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: center; color: inherit; text-decoration: none; cursor: pointer; }
+.task-line-name:hover { color: var(--accent); }
 
 /* ---------- Month calendar ---------- */
 .cal-head { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.6rem; }
@@ -1039,3 +1041,37 @@ html[data-note-full="1"] .note-editor-modal .ne-bottom { margin-top: 0.4rem; }
 .note-sort-btn.solo { position: static; transform: none; width: 40px; height: 40px; border: 1px solid var(--border-strong, rgba(128,128,128,.35)); background: var(--surface-muted); }
 .note-search-wrap input[type="search"]::-webkit-search-cancel-button { display: none; }
 .note-sort-menu.left { right: auto; left: 0; }
+
+/* ---------- notes inside notes (app/dashboard/_noteTree.jsx) ---------- */
+.note-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.15rem; margin: 0 0 0.7rem; font-size: 0.9rem; }
+.note-crumb-wrap { display: inline-flex; align-items: center; gap: 0.15rem; min-width: 0; }
+.note-crumb { background: transparent; border: 0; padding: 0.35rem 0.4rem; border-radius: 8px; font: inherit; color: var(--accent); cursor: pointer; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 36px; }
+.note-crumb:hover { background: var(--accent-soft); }
+.note-crumb.here { color: var(--text-primary); cursor: default; padding: 0.35rem 0.4rem; }
+.note-crumb-sep { opacity: 0.5; }
+.note-sub-btn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.15rem; min-width: 44px; min-height: 36px; justify-content: center; padding: 0 0.5rem; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: 0.78rem; cursor: pointer; }
+.note-sub-btn:hover { background: var(--accent-soft); }
+.note-path { display: block; font-size: 0.68rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.note-level-label { margin: 0.9rem 0 0.4rem; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem; }
+.note-level-label .count { opacity: 0.7; font-weight: 400; }
+.note-page-head { margin-bottom: 0.4rem; }
+.note-empty-sub { padding: 0.8rem; border: 1px dashed var(--border-strong); border-radius: var(--radius-md); color: var(--text-secondary); font-size: 0.9rem; text-align: center; }
+
+.notes-split { display: block; }
+.notes-tree { display: none; }
+@media (min-width: 1100px) {
+  .notes-split { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 1.4rem; align-items: start; }
+  .notes-tree { display: block; position: sticky; top: 0.8rem; max-height: calc(100vh - 1.6rem); overflow: auto; padding: 0.5rem; border-radius: var(--radius-md); background: var(--surface-raised); border: 1px solid var(--border); font-size: 0.9rem; }
+}
+.nt-list { list-style: none; margin: 0; padding: 0; }
+.nt-list li { padding-left: calc(var(--d, 0) * 0.9rem); }
+.nt-row { display: flex; align-items: center; gap: 0.1rem; }
+.nt-twist { flex: 0 0 auto; width: 28px; height: 32px; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; font: inherit; border-radius: 6px; }
+.nt-twist.none { cursor: default; opacity: 0.35; text-align: center; line-height: 32px; display: inline-block; }
+.nt-item, .nt-root { display: flex; align-items: center; gap: 0.35rem; min-width: 0; flex: 1; text-align: left; min-height: 36px; padding: 0.2rem 0.5rem; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary); font: inherit; cursor: pointer; }
+.nt-root { width: 100%; font-weight: 600; margin-bottom: 0.2rem; }
+.nt-item:hover, .nt-root:hover { background: var(--accent-soft); }
+.nt-item.on, .nt-root.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.nt-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.nt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nt-sheet { max-width: 480px; }

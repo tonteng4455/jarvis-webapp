@@ -5,8 +5,8 @@
 // but title/content edits wait until you click "เสร็จสิ้น" or click
 // away before hitting the network (local state only until then).
 
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { DashNav, NOTE_CATEGORIES } from './_components';
 import { BY_EDITED, BY_OLDEST, BY_TITLE, SortMenu, useSortPref, thCompare } from './_sort';
 import { NoteEditorPanel, EditorOverlay, useNoteImages, DownloadSheet, COLORS, colorBg } from './_noteEditor';
@@ -19,6 +19,8 @@ import { createZip } from '../../lib/zip';
 import { apiGet, ErrorState, Fab, ListSkeleton, useToast, withoutPending } from './_ui';
 import { AddedBy, useSpace } from './_space';
 import { consumeDeepLinkId } from '../../lib/deepLink';
+import { indexNotes, parentOf, pathOf, descendantIds, noteLabel } from '../../lib/noteTree';
+import { Crumbs, TreePanel, MoveSheet, DeleteWithKidsSheet } from './_noteTree';
 
 
 const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -162,7 +164,7 @@ function Composer({ onCreate, onUpdate, onDiscard, onEditingChange, categories, 
 // used for creating a new note — big title input, auto-grow textarea,
 // category select, full toolbar — instead of editing cramped inside
 // the small row. Saves on "เสร็จสิ้น" or clicking away. ---
-function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHandlePointerDown, isDragging, autoEditId, categories, selection }) {
+function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHandlePointerDown, isDragging, autoEditId, categories, selection, tree, isHead }) {
   const [editing, setEditing] = useState(false);
   const [converting, setConverting] = useState(null);   // null | 'choose' | 'task' | 'event'
   const press = useRef(null);
@@ -279,6 +281,8 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
             pinned={!!note.pinned} onPin={() => onUpdate(note.id, { pinned: !note.pinned })}
             archived={!!isArchived} onArchive={() => onUpdate(note.id, { archived: !isArchived })}
             onDelete={() => onDelete(note.id)}
+            onMove={tree ? () => { persist(); setEditing(false); tree.move(note); } : undefined}
+            onAddChild={tree ? () => { persist(); setEditing(false); tree.addChild(note.id); } : undefined}
             onConvert={onConvert ? () => { persist(); setConverting('choose'); } : undefined}
             color={note.color || 'default'} onColor={key => onUpdate(note.id, { color: key })}
             onDone={saveEdit} doneDisabled={imgState.uploading > 0} />
@@ -316,6 +320,7 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
         onPointerDown={e => { e.stopPropagation(); rowCancel(); onHandlePointerDown(e); }} onClick={e => e.stopPropagation()}>⠿</span> : null}
       <div className="note-row-accent" style={{ background: colorBg(note.color) === 'var(--note-default)' ? 'var(--border-strong)' : colorBg(note.color) }} />
       <div style={{ flex: 1, minWidth: 0 }}>
+        {tree?.showPath && tree.pathText(note.id) && <span className="note-path">📂 {tree.pathText(note.id)}</span>}
         {note.title && <div style={{ fontWeight: 'bold', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note.title}</div>}
         <AddedBy item={note} />
         <div className="muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -325,6 +330,10 @@ function NoteCard({ note, onUpdate, onDelete, onConvert, onEditingChange, onHand
       {note.images?.length > 0 && <span title={`มีรูป ${note.images.length} รูป`} style={{ fontSize: '0.75rem', flex: '0 0 auto' }}>📷{note.images.length}</span>}
       {note.pinned && <span title="ปักหมุด">📌</span>}
       <span className="muted note-row-meta">{categoryLabel(note.category)}{note.updated_at ? <><br />{shortDate(note.updated_at)}</> : null}</span>
+      {tree && !isHead && !selection?.active && tree.count(note.id) > 0 && (
+        <button type="button" className="note-sub-btn" data-act="open-subpages" title="เปิดหน้าย่อย" aria-label={`เปิดหน้าย่อย ${tree.count(note.id)} หน้า`}
+          onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); tree.open(note.id); }}>📄 {tree.count(note.id)} ›</button>
+      )}
     </div>
   );
 }
@@ -356,7 +365,7 @@ function sortNotes(list, key, frozen) {
     : (a, b) => stamp(b) - stamp(a);
   return [...list].sort(by);
 }
-function DraggableSection({ notes, onUpdate, onDelete, onConvert, onEditingChange, onReorder, onDragStateChange, autoEditId, categories, selection, canDrag = true }) {
+function DraggableSection({ notes, onUpdate, onDelete, onConvert, onEditingChange, onReorder, onDragStateChange, autoEditId, categories, selection, tree, canDrag = true }) {
   const containerRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
   const dragState = useRef(null); // { fromIndex, pointerId }
@@ -418,7 +427,7 @@ function DraggableSection({ notes, onUpdate, onDelete, onConvert, onEditingChang
     <div className="list-stack" ref={containerRef}
       onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}>
       {notes.map((n, i) => (
-        <NoteCard onConvert={onConvert} selection={selection}
+        <NoteCard onConvert={onConvert} selection={selection} tree={tree}
           key={n.id}
           note={n}
           onUpdate={onUpdate}
@@ -459,6 +468,19 @@ function NotesPageInner() {
   const draggingRef = useRef(false);
   const searchParams = useSearchParams();
   const autoEditId = searchParams.get('id');
+  const router = useRouter();
+  // ---- notes inside notes: ?p=<note id> is the page being looked at (none = the top level) ----
+  const curId = searchParams.get('p') || null;
+  const { byId, kids } = useMemo(() => indexNotes(notes || []), [notes]);
+  const cur = curId && byId.has(curId) ? byId.get(curId) : null;       // a stale / archived id just shows the top level
+  const curRef = useRef(null);
+  curRef.current = cur ? cur.id : null;
+  const curPath = cur ? pathOf(cur.id, byId) : [];
+  const [moving, setMoving] = useState(null);          // the note being moved ("📂 ย้ายไปที่…")
+  const [kidsDel, setKidsDel] = useState(null);        // { note, count } — deleting a note that has sub-notes
+  const [addIn, setAddIn] = useState(null);            // "＋ หน้าย่อย": go into this note, then open the composer
+  const goTo = useCallback(id => { setSearch(''); router.push(id ? `/dashboard?p=${encodeURIComponent(id)}` : '/dashboard'); }, [router]);
+  const treeCmp = useCallback((a, b) => thCompare(a.title || a.content, b.title || b.content), []);
 
   // NOTE_CATEGORIES is a fixed default list, not read from the
   // database — same underlying gap as expenses' EXPENSE_CATEGORIES
@@ -490,6 +512,18 @@ function NotesPageInner() {
   }, [showArchived]);
 
   useEffect(() => { load(); }, [load]);
+  // "＋ หน้าย่อย": once the page of that note is open, the composer opens on it
+  useEffect(() => {
+    if (addIn && notes !== null && curId === addIn) { setAddIn(null); setOpenSignal(n => n + 1); }
+  }, [addIn, curId, notes]);
+  // a link from the bot to a note that sits inside another note opens that page first (so the note is on screen to open)
+  const deepDone = useRef(null);
+  useEffect(() => {
+    if (!autoEditId || notes === null || deepDone.current === autoEditId) return;
+    deepDone.current = autoEditId;
+    const n = byId.get(autoEditId); const pid = n ? parentOf(n, byId) : null;
+    if (pid && pid !== curId) router.replace(`/dashboard?p=${encodeURIComponent(pid)}&id=${encodeURIComponent(autoEditId)}`);
+  }, [autoEditId, notes, byId, curId, router]);
   // One-time (per device) clean-up: photos attached before photos became private lose their "anyone with the link" access.
   const privacyRan = useRef(false);
   useEffect(() => {
@@ -551,7 +585,7 @@ function NotesPageInner() {
   async function createNote({ title, content, category, images, pinned, color }, { quiet = false } = {}) {
     let res;
     try {
-      const body = JSON.stringify({ title, content, category, images, pinned, color });
+      const body = JSON.stringify({ title, content, category, images, pinned, color, ...(curRef.current ? { parent_id: curRef.current } : {}) });
       res = await fetch('/api/notes', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
         keepalive: body.length < 60000,           // still delivered if the page is being closed / left (the draft is saved on pagehide)
@@ -560,8 +594,10 @@ function NotesPageInner() {
     if (res.ok) { const d = await res.json().catch(() => ({})); load(); return d.note || null; }
     const data = await res.json().catch(() => ({}));
     if (quiet) return null;
-    if (data.error === 'quota_reached') {
-      setStatus(`📝 คุณมีโน้ตครบ ${data.limit} รายการแล้วครับ (สูงสุดสำหรับ Free) ลองลบโน้ตเก่าที่ไม่ใช้แล้ว หรืออัปเกรด Premium เพื่อจดได้ไม่จำกัด`);
+    if (data.error === 'tree_not_ready') {
+      toast.show('📄 ยังสร้างหน้าย่อยไม่ได้ — ผู้ดูแลต้องรัน note_tree.sql ในฐานข้อมูลก่อน', { tone: 'error', duration: 7000 });
+    } else if (data.error === 'bad_parent') {
+      toast.show('📄 หน้าแม่ถูกลบหรือย้ายไปแล้ว ลองเปิดหน้านี้ใหม่', { tone: 'error' });
     } else {
       toast.show('❌ บันทึกไม่สำเร็จ', { tone: 'error' });
     }
@@ -617,18 +653,48 @@ function NotesPageInner() {
   function deleteNote(id) {
     const note = (notes || []).find(n => n.id === id);
     if (!note) return;
+    const below = descendantIds(id, kids).length;
+    if (below > 0) { setKidsDel({ note, count: below }); return; }          // ask what happens to its sub-notes first
+    runDelete(note, 'lift');
+  }
+  // mode 'lift': the sub-notes move up one level · 'delete': they go too. Either way: 6 seconds to undo.
+  function runDelete(note, mode) {
+    const id = note.id;
+    const below = new Set(mode === 'delete' ? descendantIds(id, kids) : []);
+    const goneKids = (notes || []).filter(n => below.has(n.id));
+    const liftedIds = new Set(mode === 'lift' ? (kids.get(id) || []).map(k => k.id) : []);
+    const up = note.parent_id && byId.has(note.parent_id) ? note.parent_id : null;
+    const sorter = (a, b) => (b.pinned - a.pinned) || ((a.sort_order ?? 1e9) - (b.sort_order ?? 1e9));
     toast.undoableDelete({
       id,
-      label: `ลบโน้ต${note.title ? ` “${note.title.slice(0, 24)}”` : ''}แล้ว`,
-      remove: () => setNotes(prev => prev?.filter(n => n.id !== id)),
+      label: `ลบโน้ต${note.title ? ` “${note.title.slice(0, 24)}”` : ''}${below.size ? ` และหน้าย่อย ${below.size} หน้า` : ''}แล้ว`,
+      remove: () => { setNotes(prev => prev?.filter(n => n.id !== id && !below.has(n.id)).map(n => (liftedIds.has(n.id) ? { ...n, parent_id: up } : n))); if (curRef.current === id || below.has(curRef.current)) goTo(up); },
       commit: async () => {
         try {
-          const res = await fetch(`/api/notes/${id}`, { method: 'DELETE', keepalive: true });
+          const res = await fetch(`/api/notes/${id}?children=${mode}`, { method: 'DELETE', keepalive: true });
           if (!res.ok) throw new Error(String(res.status));
+          load();
         } catch (e) { toast.show('❌ ลบไม่สำเร็จ', { tone: 'error' }); load(); }
       },
-      restore: () => setNotes(prev => prev ? [...prev, note].sort((a, b) => (b.pinned - a.pinned) || ((a.sort_order ?? 1e9) - (b.sort_order ?? 1e9))) : prev),
+      restore: () => setNotes(prev => prev ? [...prev.map(n => (liftedIds.has(n.id) ? { ...n, parent_id: id } : n)), note, ...goneKids].sort(sorter) : prev),
     });
+  }
+
+  // 📂 move a note under another one (or back to the top level)
+  async function moveNote(note, parentId) {
+    setMoving(null);
+    if ((parentId ?? null) === (note.parent_id ?? null)) return;
+    setNotes(prev => prev?.map(n => (n.id === note.id ? { ...n, parent_id: parentId } : n)));
+    let res = null;
+    try { res = await fetch(`/api/notes/${note.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parent_id: parentId }) }); } catch { /* offline */ }
+    if (res?.ok) {
+      const target = parentId ? byId.get(parentId) : null;
+      toast.show(target ? `📂 ย้ายไปไว้ใต้ “${noteLabel(target).slice(0, 24)}” แล้ว` : '📂 ย้ายไประดับบนสุดแล้ว');
+    } else {
+      const j = await res?.json().catch(() => ({})) || {};
+      toast.show(j.error === 'tree_not_ready' ? '📂 ยังย้ายไม่ได้ — ผู้ดูแลต้องรัน note_tree.sql ในฐานข้อมูลก่อน' : j.error === 'cycle' ? '📂 ย้ายไปไว้ใต้หน้าย่อยของตัวเองไม่ได้' : '❌ ย้ายไม่สำเร็จ', { tone: 'error', duration: 6000 });
+    }
+    load();
   }
 
   // Note → task / appointment: create the new item, then remove the note with the usual 6-second undo —
@@ -714,6 +780,7 @@ function NotesPageInner() {
     }
     setNotes(prev => prev?.filter(n => !done.includes(n.id)));
     exitSelect();
+    load();                                           // sub-notes of a deleted note moved up one level
     toast.show(done.length === ids.length ? `🗑️ ลบ ${done.length} โน้ตแล้ว` : `ลบได้ ${done.length} จาก ${ids.length} โน้ต — ที่เหลือลบไม่สำเร็จ`, done.length === ids.length ? undefined : { tone: 'error' });
   }
 
@@ -743,9 +810,17 @@ function NotesPageInner() {
     ));
   }
 
-  const filtered = notes?.filter(n =>
-    !search.trim() || `${n.title} ${n.content}`.toLowerCase().includes(search.toLowerCase())
-  ) || [];
+  // the page being looked at shows its own sub-notes; searching looks through ALL notes (each result shows where it lives)
+  const searching = !!search.trim();
+  const level = (notes || []).filter(n => parentOf(n, byId) === (cur ? cur.id : null));
+  const filtered = (searching ? (notes || []) : level).filter(n =>
+    !searching || `${n.title} ${n.content}`.toLowerCase().includes(search.toLowerCase())
+  );
+  const treeApi = {
+    count: id => (kids.get(id) || []).length, open: goTo, showPath: searching,
+    pathText: id => pathOf(id, byId).slice(0, -1).map(n => noteLabel(n).slice(0, 22)).join(' › '),
+    move: setMoving, addChild: id => { setAddIn(id); goTo(id); },
+  };
   const visibleSelCount = sel ? filtered.filter(n => sel.has(n.id)).length : 0;
   const ordered = sortNotes(filtered, sortKey, id => (editingIds.current.has(id) ? lastStamp.current.get(id) : undefined));
   for (const n of filtered) if (!editingIds.current.has(n.id)) lastStamp.current.set(n.id, n.updated_at);
@@ -764,7 +839,10 @@ function NotesPageInner() {
       <h1 className="page-title">📝 โน้ตของฉัน</h1>
       {status && <p className="text-white-muted" style={{ marginBottom: '0.8rem' }}>{status}</p>}
 
-      <>
+      <div className="notes-split">
+      <TreePanel notes={notes || []} curId={cur ? cur.id : null} onGo={goTo} cmp={treeCmp} />
+      <div className="notes-main">
+          {cur && !searching && <Crumbs path={curPath} onGo={goTo} />}
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
             <div className="note-search-wrap">
               <input className="glass-input" placeholder="🔍 ค้นหาโน้ต..." value={search}
@@ -793,24 +871,36 @@ function NotesPageInner() {
           )}
           {dlOpen && <DownloadSheet count={visibleSelCount} onClose={() => setDlOpen(false)} onPick={(fmt, pack) => (fmt === 'pdf' ? downloadPdf(pack) : downloadMd(pack))} />}
 
+          {cur && !searching && (
+            <>
+              <div className="note-level-label">📄 หน้านี้</div>
+              <div className="note-page-head">
+                <NoteCard note={cur} isHead tree={treeApi} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={null} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions} />
+              </div>
+              <div className="note-level-label">หน้าย่อย <span className="count">({level.length})</span></div>
+              {level.length === 0 && <p className="note-empty-sub">ยังไม่มีหน้าย่อย — กดปุ่ม ＋ ด้านล่างเพื่อเพิ่มหน้าย่อยในหน้านี้</p>}
+            </>
+          )}
+          {searching && <div className="note-level-label">🔍 ผลค้นหาจากทุกหน้า <span className="count">({filtered.length})</span></div>}
+
           {!showArchived && <Composer onCreate={createNote} onUpdate={updateNote} onDiscard={discardNote} onEditingChange={setComposerEditing} categories={categoryOptions} openSignal={openSignal} />}
 
           {error && <ErrorState onRetry={() => { setError(false); load(); }} />}
           {!error && notes === null && <ListSkeleton rows={4} height={72} />}
-          {notes?.length === 0 && <p className="text-white-muted">{showArchived ? 'ยังไม่มีโน้ตในคลังเก็บ' : 'ยังไม่มีโน้ตครับ ลองจดดูได้เลย'}</p>}
+          {notes?.length === 0 && !cur && <p className="text-white-muted">{showArchived ? 'ยังไม่มีโน้ตในคลังเก็บ' : 'ยังไม่มีโน้ตครับ ลองจดดูได้เลย'}</p>}
 
           {viewMode === 'all' && (
             <>
               {pinned.length > 0 && (
                 <>
                   <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>📌 ปักหมุด</div>
-                  <DraggableSection canDrag={sortKey === 'manual'} notes={pinned} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={selection} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
+                  <DraggableSection tree={treeApi} canDrag={sortKey === 'manual'} notes={pinned} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={selection} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                     onDragStateChange={(v) => { draggingRef.current = v; }}
                     onReorder={(r, opts) => reorderSection(r, new Set(pinned.map(n => n.id)), opts)} />
                   {others.length > 0 && <div className="text-white-muted" style={{ margin: '1rem 0 0.5rem', fontWeight: 600 }}>อื่นๆ</div>}
                 </>
               )}
-              <DraggableSection canDrag={sortKey === 'manual'} notes={others} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={selection} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
+              <DraggableSection tree={treeApi} canDrag={sortKey === 'manual'} notes={others} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={selection} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                 onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r, opts) => reorderSection(r, new Set(others.map(n => n.id)), opts)} />
             </>
@@ -821,12 +911,15 @@ function NotesPageInner() {
               <div className="text-white-muted" style={{ marginBottom: '0.5rem', fontWeight: 600 }}>
                 🏷️ {categoryLabel(category)} <span style={{ opacity: 0.7 }}>({catNotes.length})</span>
               </div>
-              <DraggableSection canDrag={sortKey === 'manual'} notes={catNotes} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={selection} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
+              <DraggableSection tree={treeApi} canDrag={sortKey === 'manual'} notes={catNotes} onUpdate={updateNote} onDelete={deleteNote} onConvert={convertNote} selection={selection} onEditingChange={setCardEditing} autoEditId={autoEditId} categories={categoryOptions}
                 onDragStateChange={(v) => { draggingRef.current = v; }}
                 onReorder={(r, opts) => reorderSection(r, new Set(catNotes.map(n => n.id)), opts)} />
             </div>
           ))}
-        </>
+      </div>
+      </div>
+      {moving && <MoveSheet notes={notes || []} moving={moving} cmp={treeCmp} onPick={pid => moveNote(moving, pid)} onClose={() => setMoving(null)} />}
+      {kidsDel && <DeleteWithKidsSheet note={kidsDel.note} count={kidsDel.count} onClose={() => setKidsDel(null)} onLift={() => { const n = kidsDel.note; setKidsDel(null); runDelete(n, 'lift'); }} onAll={() => { const n = kidsDel.note; setKidsDel(null); runDelete(n, 'delete'); }} />}
       {conflict && (
         <div className="space-overlay" style={{ zIndex: 5000 }} role="dialog" aria-label="มีคนแก้โน้ตนี้ไปแล้ว" data-act="conflict-sheet">
           <div className="space-sheet" onClick={e => e.stopPropagation()}>

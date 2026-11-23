@@ -1,11 +1,8 @@
 // app/api/notes/route.js
 //
 // GET  — list notes (Keep-style: pinned first, archived hidden by default)
-// POST — create a new note. Free tier is capped at NOTES_LIMIT_FREE
-// (matches the SAME limit the bot enforces — see requireNoteQuota in
-// jarvis-line-bot.js) — this used to be moot since only Premium could
-// reach this route at all; now that the whole dashboard is open to
-// everyone, the cap has to be enforced here too, not just bot-side.
+// POST — create a new note (optionally under another note: parent_id — see note_tree.sql). There is no cap on how many notes a person
+// may have: the old "free tier" limit went away with Premium (the bot's requireNoteQuota() allows everything too).
 
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
@@ -13,12 +10,14 @@ import { getSpaceSession as getPremiumSession, attachCreators } from '../../../l
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
 import { registerNoteImages, binImages } from '../../../lib/noteImageIndex';
 import { sanitizeNoteImages, replacedIds } from '../../../lib/noteImages';
+import { allRows, loadTreeRows, isMissingParentColumn } from '../../../lib/noteTreeDb';
+import { indexNotes } from '../../../lib/noteTree';
 
-const NOTES_LIMIT_FREE = 50; // keep in sync with NOTES_LIMIT_FREE on the bot's Worker
+const LIST_COLS = 'id, title, content, category, color, images, pinned, archived, sort_order, created_at, updated_at';
 
 // fingerprint of a list of notes — the same value from the full list and from the light ?stamp=1 call
 function notesStamp(rows) {
-  const s = rows.map(r => `${r.id}|${r.updated_at}|${r.sort_order}|${r.pinned}|${r.color}|${r.category}`).sort().join(';');
+  const s = rows.map(r => `${r.id}|${r.updated_at}|${r.sort_order}|${r.pinned}|${r.color}|${r.category}|${r.parent_id ?? ''}`).sort().join(';');
   return `${rows.length}:${hashString(s)}`;
 }
 
@@ -41,12 +40,9 @@ export async function GET(request) {
   // ?stamp=1 — "has anything changed?" for the open Notes page, which used to re-download every note every 8 s.
   // Returns a short fingerprint built from the tiny columns only (no note text, no images).
   if (searchParams.get('stamp') === '1') {
-    const { data: rows, error: stampErr } = await supabase
-      .from('notes')
-      .select('id, updated_at, sort_order, pinned, color, category')
-      .eq('user_id', session.lineUserId)
-      .eq('archived', showArchived)
-      .limit(500);
+    const run = cols => allRows(() => supabase.from('notes').select(cols).eq('user_id', session.lineUserId).eq('archived', showArchived).order('id'));
+    let { data: rows, error: stampErr } = await run('id, updated_at, sort_order, pinned, color, category, parent_id');
+    if (stampErr && isMissingParentColumn(stampErr)) ({ data: rows, error: stampErr } = await run('id, updated_at, sort_order, pinned, color, category'));
     if (stampErr) return NextResponse.json({ error: 'db_error' }, { status: 500 });
     return NextResponse.json({ stamp: notesStamp(rows) });
   }
@@ -66,25 +62,21 @@ export async function GET(request) {
     return NextResponse.json({ notes: await attachCreators(supabase, 'notes', rows, session), partial: true });
   }
 
-  const { data, error } = await supabase
-    .from('notes')
-    .select('id, title, content, category, color, images, pinned, archived, sort_order, created_at, updated_at')
-    .eq('user_id', session.lineUserId)
-    .eq('archived', showArchived)
-    .order('pinned', { ascending: false })
-    .order('sort_order', { ascending: true, nullsFirst: false })
-    .order('updated_at', { ascending: false })
-    .limit(500);
+  const list = cols => allRows(() => supabase.from('notes').select(cols)
+    .eq('user_id', session.lineUserId).eq('archived', showArchived)
+    .order('pinned', { ascending: false }).order('sort_order', { ascending: true, nullsFirst: false }).order('updated_at', { ascending: false }).order('id'));
+  let { data, error } = await list(`${LIST_COLS}, parent_id`);
+  if (error && isMissingParentColumn(error)) ({ data, error } = await list(LIST_COLS));        // note_tree.sql not run yet: every note is top level
 
   if (error) return NextResponse.json({ error: 'db_error' }, { status: 500 });
   return NextResponse.json({ notes: await attachCreators(supabase, 'notes', data, session), stamp: notesStamp(data) });
 }
 
 export async function POST(request) {
-  const { session, isPremium } = await getPremiumSession(await cookies());
+  const { session } = await getPremiumSession(await cookies());
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const { title, content, category, color, images, pinned } = await request.json();
+  const { title, content, category, color, images, pinned, parent_id } = await request.json();
   const cleanImages = sanitizeNoteImages(images);
   const replaced = replacedIds(images);
   if (!title?.trim() && !content?.trim() && cleanImages.length === 0) {
@@ -93,14 +85,13 @@ export async function POST(request) {
 
   const supabase = supabaseAdmin();
 
-  if (!isPremium) {
-    const { count } = await supabase
-      .from('notes')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', session.lineUserId);
-    if ((count || 0) >= NOTES_LIMIT_FREE) {
-      return NextResponse.json({ error: 'quota_reached', limit: NOTES_LIMIT_FREE }, { status: 403 });
-    }
+  // under another note? it must be one of this owner's notes (a stale or foreign id is refused, never silently ignored)
+  let parentId = null;
+  if (parent_id) {
+    const { rows, ready } = await loadTreeRows(supabase, session.lineUserId);
+    if (!ready) return NextResponse.json({ error: 'tree_not_ready' }, { status: 409 });
+    if (!indexNotes(rows).byId.has(parent_id)) return NextResponse.json({ error: 'bad_parent' }, { status: 400 });
+    parentId = parent_id;
   }
 
   // New notes always land at the very top of the list — one less than
@@ -127,6 +118,7 @@ export async function POST(request) {
     pinned: pinned === true,
     images: cleanImages,
     sort_order: sortOrder,
+    ...(parentId ? { parent_id: parentId } : {}),
   };
   // a group's note remembers who added it (group_created_by.sql; retried without the column until that has been run)
   let { data, error } = await supabase.from('notes').insert(session.space === 'group' ? { ...noteRow, created_by: session.actorId } : noteRow).select().single();
