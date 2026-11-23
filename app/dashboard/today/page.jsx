@@ -173,11 +173,12 @@ export default function TodayPage() {
           <Card title={`✅ งานที่ค้าง${openTasks.length ? ` (${openTasks.length})` : ''}`} href="/dashboard/tasks">
             {openTasks.length === 0 && <p className="muted" style={{ margin: 0 }}>ไม่มีงานค้าง 🎉</p>}
             {openTasks.slice(0, 5).map(t => (
-              <label key={t.id} className="task-line">
-                <input type="checkbox" className="big-check" checked={!!t.is_done} onChange={() => toggleTask(t)} />
-                <span style={{ flex: 1, minWidth: 0 }}>{t.task_name}</span>
+              <div key={t.id} className="task-line">
+                <input type="checkbox" className="big-check" aria-label={`ทำเสร็จแล้ว: ${t.task_name}`} checked={!!t.is_done} onChange={() => toggleTask(t)} />
+                {/* only the box marks it done — the name opens the task's details */}
+                <Link href={`/dashboard/tasks?id=${t.id}`} className="task-line-name" data-act="open-task">{t.task_name}</Link>
                 {t.due_at && <DueChip task={t} />}
-              </label>
+              </div>
             ))}
           </Card>
 
