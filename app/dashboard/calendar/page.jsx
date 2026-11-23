@@ -27,6 +27,7 @@ import { RepeatPicker, ScopeSheet, EMPTY_REPEAT, repeatPayload, repeatSummary } 
 import { parseRRule, spanTh, dateTh } from '../../../lib/recur';
 import { apiGet, DraftNote, ResumeDraft, ErrorState, Fab, ListSkeleton, useDraft, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
 import { AddedBy } from '../_space';
+import { ActionSheet } from '../_actionSheet';
 
 const kOf = e => e.key || e.id;   // a repeating appointment has one entry per date: same id, a key per date
 
@@ -221,6 +222,7 @@ function EventEditor({ event, cals, onSave, onCancel, onConvert, onExtend }) {
 }
 
 function EventCard({ e, cals, onEdit, onCancel, onConvert, showDate }) {
+  const [menuOpen, setMenuOpen] = useState(false);               // phone: the "⋯" menu
   if (e.external) {
     return (
       <div className="glass-card" style={{ borderLeft: `3px solid ${evCal(cals, e)?.color || 'var(--border-strong)'}` }}>
@@ -237,7 +239,17 @@ function EventCard({ e, cals, onEdit, onCancel, onConvert, showDate }) {
   }
   return (
     <div className="glass-card" style={{ opacity: e.status === 'pending' ? 0.7 : 1, cursor: 'pointer' }} onClick={() => onEdit(kOf(e))}>
-      <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{e.is_series ? '🔁 ' : ''}{e.title} <AddedBy item={e} /></div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
+        <div style={{ flex: 1, minWidth: 0, fontWeight: 'bold', fontSize: '0.95rem' }}>{e.is_series ? '🔁 ' : ''}{e.title} <AddedBy item={e} /></div>
+        <button type="button" className="more-btn" aria-label="เมนูนัดหมาย" title="เมนู" onClick={ev => { ev.stopPropagation(); setMenuOpen(true); }}>⋯</button>
+      </div>
+      {menuOpen && (
+        <ActionSheet title={e.title} onClose={() => setMenuOpen(false)} items={[
+          { key: 'edit', icon: '✏️', label: 'แก้ไข', onClick: () => onEdit(kOf(e)) },
+          !e.is_series && { key: 'convert', icon: '🔄', label: 'เปลี่ยนเป็น…', onClick: () => onConvert(e) },
+          { key: 'cancel', icon: '🗑️', label: 'ยกเลิกนัด', danger: true, onClick: () => onCancel(e) },
+        ]} />
+      )}
       <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', marginTop: '0.2rem' }}>
         {showDate ? formatDate(e.start_time) : `🕐 ${timeLabel(e.start_time)}`}
       </div>
@@ -249,9 +261,9 @@ function EventCard({ e, cals, onEdit, onCancel, onConvert, showDate }) {
         {reminderLabel(e.reminder_minutes) && <span className="muted">{reminderLabel(e.reminder_minutes)}</span>}
         {multi(cals) && <CalTag cal={evCal(cals, e)} />}
         {e.google_event_id && <span className="muted">🔗 ซิงก์ Google Calendar แล้ว</span>}
-        {!e.is_series && <button className="note-icon-btn" style={{ marginLeft: 'auto' }}
+        {!e.is_series && <button className="note-icon-btn desk-only" style={{ marginLeft: 'auto' }}
           onClick={(ev) => { ev.stopPropagation(); onConvert(e); }}>🔄 เปลี่ยนเป็น…</button>}
-        <button className="note-icon-btn" style={e.is_series ? { marginLeft: 'auto' } : undefined}
+        <button className="note-icon-btn desk-only" style={e.is_series ? { marginLeft: 'auto' } : undefined}
           onClick={(ev) => { ev.stopPropagation(); onCancel(e); }}>🗑️ ยกเลิก</button>
       </div>
     </div>
@@ -282,6 +294,7 @@ function CalendarPageInner() {
   const [editingId, setEditingId] = useState(deepLinkId || null);
   const [creating, setCreating] = useState(wantsNew);
   const [showPast, setShowPast] = useState(false);
+  const [listMenu, setListMenu] = useState(false);              // phone: the "⋯" menu of the list view
   const [sortKey, pickSort] = useSortPref('jarvis_calendar_sort', CAL_SORTS);
   const [cals, setCals] = useState(null);          // { connected, calendars, targetCalendarId, displayCalendarIds }
   const [showCals, setShowCals] = useState(false);
@@ -547,12 +560,19 @@ function CalendarPageInner() {
             <h2 className="cal-day-title">{showPast ? 'ที่ผ่านมาแล้ว' : 'ที่กำลังจะถึง'}</h2>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <SortSolo options={CAL_SORTS} value={sortKey} onChange={pickSort} />
-              <button className="glass-btn-outline" onClick={() => { setShowPast(v => !v); setEditingId(null); }}>
+              <button className="glass-btn-outline desk-only" onClick={() => { setShowPast(v => !v); setEditingId(null); }}>
                 {showPast ? '⬅️ ดูที่จะถึง' : '🕘 ดูที่ผ่านมาแล้ว'}
               </button>
-              <button type="button" className="glass-btn" onClick={startCreate}>➕ เพิ่ม</button>
+              <button type="button" className="glass-btn desk-only" onClick={startCreate}>➕ เพิ่ม</button>
+              <button type="button" className="more-btn" aria-label="เมนู" title="เมนู" onClick={() => setListMenu(true)}>⋯</button>
             </div>
           </div>
+          {listMenu && (
+            <ActionSheet title="นัดหมาย" onClose={() => setListMenu(false)} items={[
+              { key: 'add', icon: '➕', label: 'เพิ่มนัด', onClick: startCreate },
+              { key: 'past', icon: showPast ? '⬅️' : '🕘', label: showPast ? 'ดูที่จะถึง' : 'ดูที่ผ่านมาแล้ว', onClick: () => { setShowPast(v => !v); setEditingId(null); } },
+            ]} />
+          )}
           {creating && <div style={{ marginBottom: '0.6rem' }}><EventEditor key="new" cals={cals} event={createDraft} onSave={saveEvent} onCancel={() => setCreating(false)} /></div>}
           {events === null && <ListSkeleton />}
           {events?.length === 0 && <div className="glass-card"><p className="muted" style={{ margin: 0 }}>{showPast ? 'ยังไม่มีนัดหมายที่ผ่านมาแล้วครับ' : 'ไม่มีนัดหมายที่กำลังจะถึงครับ'}</p></div>}

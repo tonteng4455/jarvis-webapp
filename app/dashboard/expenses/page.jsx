@@ -9,6 +9,7 @@ import { consumeDeepLinkId } from '../../../lib/deepLink';
 import { useSearchParams } from 'next/navigation';
 import { BY_EDITED, BY_OLDEST, SortSolo, useSortPref, stampOf } from '../_sort';
 import { DashNav, CategorySelect, EXPENSE_CATEGORIES } from '../_components';
+import { ActionSheet } from '../_actionSheet';
 import { apiGet, DraftNote, ResumeDraft, ErrorState, Fab, ListSkeleton, useDraft, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
 
 const EXP_SORTS = [
@@ -101,6 +102,7 @@ function ExpensesPageInner() {
   const [adding, setAdding] = useState(searchParams.get('new') === '1');
   const [filter, setFilter] = useState('all'); // all | expense | income
   const [exporting, setExporting] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);               // phone: the "⋯" menu
 
   const load = useCallback(async () => {
     setError(false);
@@ -228,10 +230,17 @@ function ExpensesPageInner() {
             {[['all', 'ทั้งหมด'], ['expense', '💸 รายจ่าย'], ['income', '💵 รายรับ']].map(([k, l]) => (
               <button key={k} type="button" className={`chip${filter === k ? ' active' : ''}`} onClick={() => setFilter(k)}>{l}</button>
             ))}
-            <button type="button" className="chip" onClick={exportToSheet} disabled={exporting} style={{ marginLeft: 'auto' }}>
+            <button type="button" className="chip desk-only" onClick={exportToSheet} disabled={exporting} style={{ marginLeft: 'auto' }}>
               {exporting ? 'กำลังส่งออก...' : '📊 ส่งออก Sheets'}
             </button>
+            <span className="phone-only" style={{ marginLeft: 'auto' }} />
             <SortSolo options={EXP_SORTS} value={sortKey} onChange={pickSort} />
+            <button type="button" className="more-btn" aria-label="เมนู" title="เมนู" onClick={() => setMenuOpen(true)}>⋯</button>
+            {menuOpen && (
+              <ActionSheet title="รายรับ-รายจ่าย" onClose={() => setMenuOpen(false)} items={[
+                { key: 'export', icon: exporting ? '⏳' : '📊', label: 'ส่งออก Sheets', disabled: exporting, onClick: exportToSheet },
+              ]} />
+            )}
           </div>
 
           {adding && <div style={{ marginBottom: '0.8rem' }}><ExpenseEditor key="new" expense={{}} categories={categoryOptions} onSave={saveExpense} onCancel={() => setAdding(false)} /></div>}

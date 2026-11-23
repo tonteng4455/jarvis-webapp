@@ -114,7 +114,7 @@ function TaskRow({ task, onUpdate, onDelete, onOpen, onConvert, autoEditId, psty
             onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setDueOpen(v => !v); } }}><DueChip task={task} /></span></div>}
         </div>
         {/* phone: one "⋯" instead of the row of six buttons below */}
-        <button type="button" className="task-more" aria-label="เมนูงาน" title="เมนู" onClick={() => setMenuOpen(true)}>⋯</button>
+        <button type="button" className="more-btn" aria-label="เมนูงาน" title="เมนู" onClick={() => setMenuOpen(true)}>⋯</button>
       </div>
       {menuOpen && (
         <ActionSheet title={task.task_name} onClose={() => setMenuOpen(false)} items={[
