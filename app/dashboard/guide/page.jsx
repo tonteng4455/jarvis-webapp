@@ -20,6 +20,10 @@ function Say({ text }) {
   );
 }
 
+// which part (1, 2, …) a section belongs to — the first section of each part carries `part`
+const PART_OF = (() => { const m = {}; let n = 0; for (const s of GUIDE) { if (s.part) n += 1; m[s.id] = n || 1; } return m; })();
+const partNo = id => PART_OF[id] || 1;
+
 export default function GuidePage() {
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
@@ -54,7 +58,7 @@ export default function GuidePage() {
       <div className="list-stack">
         {sections.map((sec, i) => (
           <Fragment key={sec.id}>
-          {sec.part && !query && <h2 className="guide-part">{sec.part}</h2>}
+          {sec.part && !query && <h2 className="guide-part">{sec.part}<a className="guide-pdf" href={`/manual?part=${partNo(sec.id)}`} target="_blank" rel="noopener noreferrer">🖨️ พิมพ์ / PDF</a></h2>}
           <details id={sec.id} className="glass-card guide-sec" open={!!query || i === 0}>
             <summary><span className="guide-ico">{sec.icon}</span>{sec.title}</summary>
             {sec.intro && <p className="guide-intro">{sec.intro}</p>}
