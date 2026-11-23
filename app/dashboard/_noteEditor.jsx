@@ -17,6 +17,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useImperativeHandle, forw
 import { createPortal, flushSync } from 'react-dom';
 import { MAX_NOTE_IMAGES } from '../../lib/noteImages';
 import { CategorySelect } from './_components';
+import { ActionSheet } from './_actionSheet';
 import { shareText, useToast, useDialogGuard, dialogGuard } from './_ui';
 import { stampNow, formatStamp } from '../../lib/taskChecks';
 import { notesToPdf, saveFile } from '../../lib/notePdf';
@@ -1161,6 +1162,8 @@ export function NoteEditorPanel({
   const bodyRef = useRef(null);
   const contentRef = useRef(initialContent || '');
   const [dlOpen, setDlOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);              // phone: the "⋯" menu
+  const shareNote = () => shareText({ title: titleValue, text: stripImageMarkers(contentRef.current) }, toast);
   async function downloadNote(fmt) {                      // this note as .md or PDF (drawn in the browser; pictures stay between their rows)
     setDlOpen(false);
     const note = { title: titleValue, content: contentRef.current, images: imgState.images };
@@ -1202,8 +1205,8 @@ export function NoteEditorPanel({
       <div className="ne-toolbar" role="toolbar" aria-label="เครื่องมือโน้ต">
         <NoteImageButton state={imgState} />
         <ToolBtn title={pinned ? 'เลิกปักหมุด' : 'ปักหมุด'} onClick={onPin} active={pinned}>{pinned ? '📌' : '📍'}</ToolBtn>
-        {onArchive && <ToolBtn title={archived ? 'ย้ายกลับไปโน้ตปกติ' : 'เก็บเข้าคลัง'} onClick={onArchive}>{archived ? '↩️' : '🗄️'}</ToolBtn>}
-        {onDelete && <ToolBtn title={isNew ? 'ทิ้งร่างนี้' : 'ลบ (เลิกทำได้)'} onClick={onDelete}>🗑️</ToolBtn>}
+        {onArchive && <ToolBtn className="ne-desk-only" title={archived ? 'ย้ายกลับไปโน้ตปกติ' : 'เก็บเข้าคลัง'} onClick={onArchive}>{archived ? '↩️' : '🗄️'}</ToolBtn>}
+        {onDelete && <ToolBtn className="ne-desk-only" title={isNew ? 'ทิ้งร่างนี้' : 'ลบ (เลิกทำได้)'} onClick={onDelete}>🗑️</ToolBtn>}
         <span className="ne-spacer" />
         <ToolBtn title={`รายการ: กดเพื่อสลับ เลขข้อ → จุด → ช่องติ๊ก → ข้อความ (ตอนนี้: ${LIST_LABEL[info.type] || 'ข้อความ'})`} active={info.list} className="ne-list" onClick={() => bodyRef.current?.cycle()}>{LIST_GLYPH[info.type] || '☰'}</ToolBtn>
         <ToolBtn title="ลดย่อหน้า" disabled={!info.canOutdent} onClick={() => bodyRef.current?.indent(-1)}>⇤</ToolBtn>
@@ -1223,13 +1226,27 @@ export function NoteEditorPanel({
         <div className="ne-cat"><CategorySelect options={categories} value={category} onChange={onCategory} /></div>
         <ToolBtn className="ne-push" title="เลิกทำ (Ctrl+Z)" disabled={!info.canUndo} onClick={() => bodyRef.current?.undo()}>↶</ToolBtn>
         <ToolBtn title="ทำซ้ำ (Ctrl+Shift+Z)" disabled={!info.canRedo} onClick={() => bodyRef.current?.redo()}>↷</ToolBtn>
-        {onAddChild && <ToolBtn title="เพิ่มหน้าย่อยในโน้ตนี้" className="ne-sub" onClick={onAddChild}>📑</ToolBtn>}
-        {onMove && <ToolBtn title="ย้ายโน้ตนี้ไปไว้ใต้โน้ตอื่น" onClick={onMove}>📂</ToolBtn>}
-        {onConvert && <ToolBtn title="เปลี่ยนโน้ตนี้เป็นงานหรือนัดหมาย" onClick={onConvert}>🔄</ToolBtn>}
-        <ToolBtn title="สี" onClick={() => setPickerOpen(v => !v)} active={pickerOpen}>🎨</ToolBtn>
-        <ToolBtn title="ดาวน์โหลดโน้ตนี้ (Markdown หรือ PDF)" disabled={pdfBusy} onClick={() => setDlOpen(true)}>{pdfBusy ? '⏳' : '⬇️'}</ToolBtn>
-        <ToolBtn title="แชร์/คัดลอกข้อความ" onClick={() => shareText({ title: titleValue, text: stripImageMarkers(contentRef.current) }, toast)}>📤</ToolBtn>
+        {onAddChild && <ToolBtn title="เพิ่มหน้าย่อยในโน้ตนี้" className="ne-sub ne-desk-only" onClick={onAddChild}>📑</ToolBtn>}
+        {onMove && <ToolBtn className="ne-desk-only" title="ย้ายโน้ตนี้ไปไว้ใต้โน้ตอื่น" onClick={onMove}>📂</ToolBtn>}
+        {onConvert && <ToolBtn className="ne-desk-only" title="เปลี่ยนโน้ตนี้เป็นงานหรือนัดหมาย" onClick={onConvert}>🔄</ToolBtn>}
+        <ToolBtn className="ne-desk-only" title="สี" onClick={() => setPickerOpen(v => !v)} active={pickerOpen}>🎨</ToolBtn>
+        <ToolBtn className="ne-desk-only" title="ดาวน์โหลดโน้ตนี้ (Markdown หรือ PDF)" disabled={pdfBusy} onClick={() => setDlOpen(true)}>{pdfBusy ? '⏳' : '⬇️'}</ToolBtn>
+        <ToolBtn className="ne-desk-only" title="แชร์/คัดลอกข้อความ" onClick={shareNote}>📤</ToolBtn>
+        {/* phone: everything above that is not needed while typing lives in this one menu */}
+        <ToolBtn className="ne-phone-only ne-more" title="เมนูเพิ่มเติม" active={moreOpen} onClick={() => setMoreOpen(true)}>⋯</ToolBtn>
       </div>
+      {moreOpen && (
+        <ActionSheet title="เมนูโน้ต" onClose={() => setMoreOpen(false)} items={[
+          onAddChild && { key: 'sub', icon: '📑', label: 'หน้าย่อย', onClick: onAddChild },
+          onMove && { key: 'move', icon: '📂', label: 'ย้าย', onClick: onMove },
+          onConvert && { key: 'convert', icon: '🔄', label: 'เปลี่ยนเป็นงาน/นัด', onClick: onConvert },
+          { key: 'color', icon: '🎨', label: 'สี', onClick: () => setPickerOpen(true) },
+          { key: 'download', icon: pdfBusy ? '⏳' : '⬇️', label: 'ดาวน์โหลด', disabled: pdfBusy, onClick: () => setDlOpen(true) },
+          { key: 'share', icon: '📤', label: 'แชร์', onClick: shareNote },
+          onArchive && { key: 'archive', icon: archived ? '↩️' : '🗄️', label: archived ? 'เอากลับ' : 'เก็บเข้าคลัง', onClick: onArchive },
+          onDelete && { key: 'delete', icon: '🗑️', label: isNew ? 'ทิ้งร่าง' : 'ลบ', danger: true, onClick: onDelete },
+        ]} />
+      )}
       {dlOpen && <DownloadSheet count={1} onPick={fmt => downloadNote(fmt)} onClose={() => setDlOpen(false)} />}
       {pickerOpen && (
         <div className="note-swatch-row">

@@ -9,6 +9,7 @@ import { useSearchParams } from 'next/navigation';
 import { DashNav } from '../_components';
 import { apiGet, ErrorState, Fab, ListSkeleton, useRefreshOnReturn, useToast, withoutPending } from '../_ui';
 import { DueChip, DuePicker } from '../_due';
+import { ActionSheet } from '../_actionSheet';
 import { TaskEditorModal, ConvertToEventSheet, PRIORITY_COLOR, PRIORITY_LABEL } from '../_taskEditor';
 import { ConvertChooser, convertItem, taskToNotePayload } from '../_convert';
 import { previewText } from '../../../lib/noteBlocks';
@@ -76,6 +77,7 @@ function RoutinePicker({ task, onUpdate, onClose }) {
 function TaskRow({ task, onUpdate, onDelete, onOpen, onConvert, autoEditId, pstyle }) {
   const [routineOpen, setRoutineOpen] = useState(false);
   const [dueOpen, setDueOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef(null);
 
   // Coming from a LIFF link with ?id=... — jump straight to this task's
@@ -104,13 +106,28 @@ function TaskRow({ task, onUpdate, onDelete, onOpen, onConvert, autoEditId, psty
           {task.is_done && task.done_at && <div className="muted" style={{ fontSize: '0.72rem' }}>✓ เสร็จเมื่อ {formatMoment(task.done_at)}</div>}
           {detailsPreview && <div className="muted" style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detailsPreview}</div>}
           <div className="muted">
-            {task.category || 'general'} · {PRIORITY_LABEL[task.priority] || task.priority}
+            {task.category && task.category !== 'general' && <>{task.category} · </>}{PRIORITY_LABEL[task.priority] || task.priority}
             {task.recurrence && <> · {RECURRENCE_LABEL[task.recurrence]} {task.recurrence_time}</>}
           </div>
-          {task.due_at && <div style={{ marginTop: '0.25rem' }}><DueChip task={task} /></div>}
+          {task.due_at && <div style={{ marginTop: '0.25rem' }}><span role="button" tabIndex={0} title="แตะเพื่อแก้วัน-เวลา" style={{ cursor: 'pointer' }}
+            onClick={e => { e.stopPropagation(); setDueOpen(v => !v); }}
+            onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setDueOpen(v => !v); } }}><DueChip task={task} /></span></div>}
         </div>
+        {/* phone: one "⋯" instead of the row of six buttons below */}
+        <button type="button" className="task-more" aria-label="เมนูงาน" title="เมนู" onClick={() => setMenuOpen(true)}>⋯</button>
       </div>
-      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+      {menuOpen && (
+        <ActionSheet title={task.task_name} onClose={() => setMenuOpen(false)} items={[
+          { key: 'edit', icon: '✏️', label: 'แก้ไข', onClick: () => onOpen(task) },
+          { key: 'due', icon: '⏰', label: 'กำหนดเวลา', onClick: () => setDueOpen(true) },
+          { key: 'routine', icon: '🔁', label: 'ทำซ้ำ', onClick: () => setRoutineOpen(true) },
+          !task.archived && { key: 'convert', icon: '🔄', label: 'เปลี่ยนเป็น…', onClick: () => onConvert(task) },
+          task.archived ? { key: 'restore', icon: '↩️', label: 'เอากลับ', onClick: () => onUpdate(task.id, { archived: false }) }
+            : { key: 'archive', icon: '🗄️', label: 'เก็บเข้าคลัง', onClick: () => onUpdate(task.id, { archived: true }) },
+          { key: 'delete', icon: '🗑️', label: 'ลบ', danger: true, onClick: () => onDelete(task) },
+        ]} />
+      )}
+      <div className="task-actions" style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
         <button className="note-icon-btn" onClick={() => onOpen(task)}>✏️ แก้ไข</button>
         <button className="note-icon-btn" onClick={() => setDueOpen(v => !v)}>⏰ กำหนด</button>
         <button className="note-icon-btn" onClick={() => setRoutineOpen(v => !v)}>🔁 ทำซ้ำ</button>

@@ -704,6 +704,17 @@ html[data-fs="lg"] { font-size: 18px; }
 .ne-bottom { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.9rem; }
 .ne-cat { flex: 1 1 0; min-width: 0; max-width: 230px; }
 .ne-bottom .ne-push { margin-left: auto; }
+/* "⋯" menu: phones only. The buttons it replaces stay in the bars on wider screens. */
+.ne-btn.ne-phone-only { display: none; }
+.as-title { text-align: center; }
+.as-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.as-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem; min-height: 88px; padding: 0.6rem 0.25rem; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: 0.82rem; line-height: 1.25; text-align: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.as-item .as-ico { font-size: 1.75rem; line-height: 1; }
+.as-item:active:not(:disabled) { transform: scale(0.96); }
+.as-item.danger { color: var(--danger); }
+.as-item.on { box-shadow: inset 0 0 0 2px var(--accent); }
+.as-item:disabled { opacity: 0.35; cursor: default; }
+.task-more { display: none; }
 
 .note-editor-modal .note-image-strip { flex-wrap: nowrap; overflow-x: auto; margin: 0 0 0.5rem; padding-bottom: 0.2rem; -webkit-overflow-scrolling: touch; }
 .note-editor-modal .note-image-thumb { width: 72px; height: 72px; }
@@ -756,6 +767,16 @@ html[data-fs="lg"] { font-size: 18px; }
   .ne-toolbar { margin: 0 -1rem 0.5rem; padding-top: calc(0.35rem + env(safe-area-inset-top)); border-radius: 0; }
   .kl-text, .kl-ph, .kl-hl { font-size: 16px; }
   .ne-btn { min-width: 44px; height: 44px; }
+  /* one row at the bottom: [ประเภท ▾ ........] ↶ ↷ ⋯ — and the toolbar keeps only what is used while writing */
+  .ne-btn.ne-desk-only { display: none; }
+  .ne-btn.ne-phone-only { display: inline-flex; }
+  .ne-bottom { gap: 0.1rem; }
+  .ne-cat { flex: 1 1 auto; max-width: none; min-width: 8rem; margin-right: 0.3rem; }
+  .ne-bottom .ne-push { margin-left: 0; }
+  /* task cards: the row of six buttons becomes a "⋯" button */
+  .task-actions { display: none !important; }
+  .task-more { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; margin: -0.2rem -0.3rem 0 0; border: none; border-radius: 12px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 1.5rem; line-height: 1; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .task-more:active { background: var(--surface-muted); }
 }
 /* Portrait phone: all ten toolbar buttons (and ✓) must fit in the width — they share the row (and shrink a little) instead of running past the edge,
    so nothing has to be scrolled sideways to reach ✓. */
@@ -765,7 +786,7 @@ html[data-fs="lg"] { font-size: 18px; }
   .ne-toolbar .ne-btn.ne-done { flex: 0 0 auto; width: 40px; min-width: 40px; height: 40px; margin-left: 0.15rem; }
   .ne-toolbar .ne-spacer { flex: 0 0 0; }
   .ne-bottom { gap: 0; }
-  .ne-bottom .ne-btn { flex: 1 1 0; min-width: 0; max-width: 46px; padding: 0; }
+  .ne-bottom .ne-btn { flex: 0 0 44px; min-width: 0; width: 44px; padding: 0; }
 }
 
 /* ----- task due date: chip, picker, banner ----- */
